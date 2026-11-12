@@ -1,3 +1,5 @@
+> **MihonWT** is an unofficial personal fork of [Mihon](https://github.com/mihonapp/mihon) that adds speech bubble translation to the reader. It is not affiliated with the Mihon project, so report its issues here, not upstream.
+
 <div align="center">
 
 <a href="https://mihon.app">
