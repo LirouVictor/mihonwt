@@ -36,8 +36,11 @@ data class Translation(
             _statusFlow.value = status
         }
 
-    /** OCR has read [page] of [pages]; once they're equal the chapter is waiting on the translator. */
-    data class Progress(val page: Int, val pages: Int)
+    /**
+     * OCR has read [page] of [pages]; once they're equal the chapter is waiting on the translator, which has retried
+     * [retries] times.
+     */
+    data class Progress(val page: Int, val pages: Int, val retries: Int = 0)
 
     enum class State(val value: Int) {
         NOT_TRANSLATED(0),

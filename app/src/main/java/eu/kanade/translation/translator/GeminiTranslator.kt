@@ -45,13 +45,13 @@ class GeminiTranslator(
         .build()
 
     /** Fills [eu.kanade.translation.model.TranslationBlock.translation] and drops blocks marked as watermarks. */
-    suspend fun translate(pages: Map<String, PageTranslation>) {
+    suspend fun translate(pages: Map<String, PageTranslation>, onRetry: (attempt: Int) -> Unit = {}) {
         val input = buildJsonObject {
             pages.forEach { (name, page) ->
                 putJsonArray(name) { page.blocks.forEach { add(JsonPrimitive(it.text)) } }
             }
         }
-        val output = Json.parseToJsonElement(generate(input.toString())).jsonObject
+        val output = Json.parseToJsonElement(generate(input.toString(), onRetry)).jsonObject
 
         pages.forEach { (name, page) ->
             val translations = output[name] as? JsonArray
@@ -62,7 +62,7 @@ class GeminiTranslator(
         }
     }
 
-    private suspend fun generate(userText: String): String {
+    private suspend fun generate(userText: String, onRetry: (attempt: Int) -> Unit): String {
         val body = buildJsonObject {
             putJsonObject("systemInstruction") {
                 putJsonArray("parts") { addJsonObject { put("text", SYSTEM_PROMPT) } }
@@ -96,6 +96,7 @@ class GeminiTranslator(
         // Rate limits and "model overloaded" errors usually clear within seconds
         while (response.code in RETRY_CODES && attempt < RETRY_DELAYS.size) {
             response.close()
+            onRetry(attempt + 1)
             delay(RETRY_DELAYS[attempt++])
             response = client.newCall(request).await()
         }
@@ -121,7 +122,7 @@ class GeminiTranslator(
         const val WATERMARK_PLACEHOLDER = "RTMTH"
 
         val RETRY_CODES = setOf(429, 500, 503)
-        val RETRY_DELAYS = listOf(10.seconds, 30.seconds)
+        val RETRY_DELAYS = listOf(15.seconds, 30.seconds, 60.seconds)
 
         // Comics often trip the default filters, which would drop whole pages
         val SAFETY_CATEGORIES = listOf(
