@@ -26,6 +26,7 @@ internal class DirectoryPageLoader(
                 val streamFn = { file.openInputStream() }
                 ReaderPage(i).apply {
                     stream = streamFn
+                    translationKey = file.name
                     translation = translations[file.name]
                     status = Page.State.Ready
                 }
