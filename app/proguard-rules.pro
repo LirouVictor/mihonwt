@@ -91,3 +91,7 @@
     public <init>();
     public void destroy();
 }
+
+# ML Kit creates its components by reflection from names in the manifest, and the rule shipped with firebase-components
+# keeps the classes but, under R8's full mode, not their constructors
+-keep class * implements com.google.firebase.components.ComponentRegistrar { public <init>(); }
