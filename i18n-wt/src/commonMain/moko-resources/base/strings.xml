@@ -22,4 +22,7 @@
     <string name="translation_error_no_base_url">Add the API address in Settings › Translation</string>
     <string name="translation_progress_ai">Translating with AI</string>
     <string name="translation_progress_ai_retry">The service is busy, retry %1$d of 3</string>
+    <string name="pref_model_choose">Tap to choose</string>
+    <string name="pref_model_search">Search or type a name</string>
+    <string name="pref_model_list_error">Couldn\'t load the models: %1$s</string>
 </resources>

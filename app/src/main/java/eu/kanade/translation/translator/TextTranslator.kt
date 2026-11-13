@@ -5,7 +5,9 @@ package eu.kanade.translation.translator
 
 import eu.kanade.tachiyomi.network.await
 import eu.kanade.translation.model.PageTranslation
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -59,6 +61,9 @@ abstract class TextTranslator {
         }
     }
 
+    /** Returns the names of the models this API key can use, to pick one from. */
+    abstract suspend fun models(): List<String>
+
     /** Returns the model's reply to [userText], which should be a JSON object. */
     protected abstract suspend fun complete(
         systemPrompt: String,
@@ -67,7 +72,10 @@ abstract class TextTranslator {
     ): String
 
     /** Sends [request], retrying rate limits and overloads, and returns the response's JSON body. */
-    protected suspend fun send(request: Request, onRetry: (attempt: Int) -> Unit): JsonObject {
+    protected suspend fun send(
+        request: Request,
+        onRetry: (attempt: Int) -> Unit,
+    ): JsonObject = withContext(Dispatchers.IO) {
         var attempt = 0
         var response = client.newCall(request).await()
         // Rate limits and "model overloaded" errors usually clear within seconds
@@ -87,7 +95,7 @@ abstract class TextTranslator {
                 code = (error?.get("code") as? JsonPrimitive)?.contentOrNull,
             )
         }
-        return json
+        json
     }
 
     /** An error response, with the API's own error [code] when it gives one. */

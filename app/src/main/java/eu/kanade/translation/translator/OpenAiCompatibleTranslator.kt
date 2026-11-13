@@ -43,6 +43,16 @@ class OpenAiCompatibleTranslator(
             ?: throw IOException("$name returned no text, finish reason ${choice["finish_reason"]}")
     }
 
+    override suspend fun models(): List<String> {
+        val request = Request.Builder()
+            .url("${baseUrl.trimEnd('/')}/models")
+            .header("Authorization", "Bearer $apiKey")
+            .build()
+        return (send(request) {}["data"] as? JsonArray).orEmpty()
+            .mapNotNull { it.jsonObject["id"]?.jsonPrimitive?.contentOrNull }
+            .sorted()
+    }
+
     private fun request(systemPrompt: String, userText: String, jsonMode: Boolean): Request {
         val body = buildJsonObject {
             put("model", model)

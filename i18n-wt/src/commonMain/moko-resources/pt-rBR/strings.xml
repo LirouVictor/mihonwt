@@ -22,4 +22,7 @@
     <string name="translation_error_no_base_url">Informe o endereço da API em Configurações › Tradução</string>
     <string name="translation_progress_ai">Traduzindo com IA</string>
     <string name="translation_progress_ai_retry">Serviço ocupado, tentativa %1$d de 3</string>
+    <string name="pref_model_choose">Toque para escolher</string>
+    <string name="pref_model_search">Buscar ou digitar o nome</string>
+    <string name="pref_model_list_error">Não foi possível buscar os modelos: %1$s</string>
 </resources>

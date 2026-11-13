@@ -71,6 +71,20 @@ class GeminiTranslator(
             .ifEmpty { throw IOException("Gemini returned no text, finish reason ${candidate["finishReason"]}") }
     }
 
+    override suspend fun models(): List<String> {
+        val request = Request.Builder()
+            .url("$BASE_URL?pageSize=1000")
+            .header("x-goog-api-key", apiKey)
+            .build()
+        return (send(request) {}["models"] as? JsonArray).orEmpty()
+            .map { it.jsonObject }
+            .filter { model ->
+                (model["supportedGenerationMethods"] as? JsonArray).orEmpty()
+                    .any { it.jsonPrimitive.contentOrNull == "generateContent" }
+            }
+            .mapNotNull { it["name"]?.jsonPrimitive?.contentOrNull?.removePrefix("models/") }
+    }
+
     private companion object {
         const val BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 

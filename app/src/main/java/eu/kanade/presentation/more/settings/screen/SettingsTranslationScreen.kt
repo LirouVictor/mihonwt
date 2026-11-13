@@ -3,10 +3,14 @@ package eu.kanade.presentation.more.settings.screen
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import eu.kanade.presentation.more.settings.Preference
 import eu.kanade.translation.data.ApiKeyCipher
+import eu.kanade.translation.presentation.ModelPickerDialog
+import eu.kanade.translation.translator.TextTranslator
 import mihon.app.di.appGraph
 import tachiyomi.domain.translation.TranslationService
 import tachiyomi.i18n.wt.WTMR
@@ -26,6 +30,22 @@ object SettingsTranslationScreen : SearchableSettings {
         val service by translationPreferences.service.collectAsState()
         val apiKeyPref = remember(service) { ApiKeyCipher.wrap(translationPreferences.apiKey(service)) }
         val apiKey by apiKeyPref.collectAsState()
+        val modelPref = remember(service) { translationPreferences.model(service) }
+        val model by modelPref.collectAsState()
+
+        var isModelPickerShown by remember { mutableStateOf(false) }
+        if (isModelPickerShown) {
+            ModelPickerDialog(
+                title = stringResource(WTMR.strings.pref_model),
+                value = model,
+                loadModels = {
+                    TextTranslator.create(service, apiKey, "", translationPreferences.customBaseUrl.get()).models()
+                },
+                onConfirm = modelPref::set,
+                onDismissRequest = { isModelPickerShown = false },
+            )
+        }
+
         return listOf(
             Preference.PreferenceItem.ListPreference(
                 preference = translationPreferences.service,
@@ -54,9 +74,10 @@ object SettingsTranslationScreen : SearchableSettings {
                     stringResource(WTMR.strings.pref_api_key_summary)
                 },
             ),
-            Preference.PreferenceItem.EditTextPreference(
-                preference = remember(service) { translationPreferences.model(service) },
+            Preference.PreferenceItem.TextPreference(
                 title = stringResource(WTMR.strings.pref_model),
+                subtitle = model.ifBlank { stringResource(WTMR.strings.pref_model_choose) },
+                onClick = { isModelPickerShown = true },
             ),
         )
     }
