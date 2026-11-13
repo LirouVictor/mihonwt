@@ -39,6 +39,18 @@ abstract class TextTranslator {
 
     /** Fills [eu.kanade.translation.model.TranslationBlock.translation] and drops blocks marked as watermarks. */
     suspend fun translate(pages: Map<String, PageTranslation>, onRetry: (attempt: Int) -> Unit = {}) {
+        try {
+            translateBatch(pages, onRetry)
+        } catch (e: TruncatedReplyException) {
+            // A whole chapter can exceed the model's output limit, above all when its reasoning counts against it
+            if (pages.size < 2) throw e
+            pages.entries.chunked((pages.size + 1) / 2).forEach { half ->
+                translate(half.associate { it.key to it.value }, onRetry)
+            }
+        }
+    }
+
+    private suspend fun translateBatch(pages: Map<String, PageTranslation>, onRetry: (attempt: Int) -> Unit) {
         // Blocks are numbered rather than listed: with a list, the model sometimes merges two fragments of a sentence
         // and every later block on the page gets the translation of the one after it
         val input = buildJsonObject {
@@ -97,6 +109,10 @@ abstract class TextTranslator {
         }
         json
     }
+
+    /** Thrown when the reply hit the model's output limit, so a smaller batch may fit. */
+    class TruncatedReplyException(name: String) :
+        IOException("$name cut the reply short: the model's output limit is too small even for one page")
 
     /** An error response, with the API's own error [code] when it gives one. */
     class ApiException(message: String, val code: String?) : IOException(message)

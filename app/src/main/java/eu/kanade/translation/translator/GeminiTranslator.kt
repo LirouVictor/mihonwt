@@ -63,6 +63,7 @@ class GeminiTranslator(
 
         val candidate = (json["candidates"] as? JsonArray)?.firstOrNull()?.jsonObject
             ?: throw IOException("Gemini returned no candidates: ${json["promptFeedback"]}")
+        if (candidate["finishReason"]?.jsonPrimitive?.contentOrNull == "MAX_TOKENS") throw TruncatedReplyException(name)
         val parts = candidate["content"]?.jsonObject?.get("parts")?.jsonArray.orEmpty()
         return parts
             .map { it.jsonObject }
