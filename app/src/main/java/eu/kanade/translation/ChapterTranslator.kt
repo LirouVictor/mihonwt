@@ -4,8 +4,9 @@
 package eu.kanade.translation
 
 import android.content.Context
-import android.net.Uri
+import android.graphics.Bitmap
 import android.widget.Toast
+import ca.mpreg.imagedecoder.ImageDecoder
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import com.hippo.unifile.UniFile
@@ -52,7 +53,6 @@ import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.translation.TranslationPreferences
 import tachiyomi.i18n.wt.WTMR
-import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import kotlin.math.abs
@@ -170,12 +170,18 @@ class ChapterTranslator(
     suspend fun queueChapter(manga: Manga, chapter: Chapter) {
         val source = sourceManager.get(manga.source) as? HttpSource ?: return
         if (provider.findTranslationFile(chapter.name, chapter.scanlator, manga.title, source) != null) return
-        if (queueState.value.any { it.chapter.id == chapter.id }) return
+        val queued = queueState.value.find { it.chapter.id == chapter.id }
+        if (queued != null) {
+            if (queued.status != Translation.State.ERROR) return
+            // Queued again rather than reset, so a running queue notices it
+            removeFromQueue(queued)
+        }
         addToQueue(Translation(source, manga, chapter))
     }
 
     private suspend fun translateChapter(translation: Translation) {
         try {
+            translation.error = null
             translation.status = Translation.State.TRANSLATING
             val apiKey = translationPreferences.geminiApiKey.get()
             if (apiKey.isBlank()) throw IOException(context.stringResource(WTMR.strings.translation_error_no_api_key))
@@ -189,50 +195,57 @@ class ChapterTranslator(
                 translation.source,
             ) ?: throw IOException(context.stringResource(WTMR.strings.translation_error_not_downloaded))
 
-            val pages = recognizeChapter(chapterDir)
+            val pages = recognizeChapter(chapterDir, translation)
             translator.translate(pages)
 
             mangaDir.createFile(
                 provider.getTranslationFileName(translation.chapter.name, translation.chapter.scanlator),
             )!!.openOutputStream().use { it.write(Json.encodeToString(pages).toByteArray()) }
+            translation.progress = null
             translation.status = Translation.State.TRANSLATED
         } catch (e: Throwable) {
             if (e is CancellationException) throw e
-            translation.status = Translation.State.ERROR
             logcat(LogPriority.ERROR, e)
-            val message = context.stringResource(
-                WTMR.strings.translation_failed,
-                translation.chapter.name,
-                e.message.orEmpty(),
-            )
+            val error = e.message ?: e.toString()
+            translation.error = error
+            translation.progress = null
+            translation.status = Translation.State.ERROR
+            val message = context.stringResource(WTMR.strings.translation_failed, translation.chapter.name, error)
             withContext(Dispatchers.Main) { context.toast(message, Toast.LENGTH_LONG) }
         }
     }
 
     /** Returns the text blocks of each page that has any, keyed by the page's file name. */
-    private suspend fun recognizeChapter(chapterDir: UniFile): Map<String, PageTranslation> {
+    private suspend fun recognizeChapter(chapterDir: UniFile, translation: Translation): Map<String, PageTranslation> {
         val pages = mutableMapOf<String, PageTranslation>()
-        // ML Kit can't decode the image straight from an archive stream, so each page goes through a file
-        val tmpFile = File.createTempFile("translation", null, context.cacheDir)
-        try {
-            withChapterPages(chapterDir) { fileName, openStream ->
-                currentCoroutineContext().ensureActive()
-                openStream().use { input -> tmpFile.outputStream().use { input.copyTo(it) } }
-                val image = InputImage.fromFilePath(context, Uri.fromFile(tmpFile))
-                val blocks = textRecognizer.recognize(image).textBlocks
+        withChapterPages(chapterDir) { index, count, fileName, openStream ->
+            currentCoroutineContext().ensureActive()
+            translation.progress = Translation.Progress(index, count)
+            val bitmap = decodePage(openStream)
+            try {
+                val blocks = textRecognizer.recognize(InputImage.fromBitmap(bitmap, 0)).textBlocks
                     .filter { it.boundingBox != null && it.text.length > 1 }
-                val page = toPageTranslation(blocks, image.width, image.height)
+                val page = toPageTranslation(blocks, bitmap.width, bitmap.height)
                 if (page.blocks.isNotEmpty()) pages[fileName] = page
+            } finally {
+                bitmap.recycle()
             }
-        } finally {
-            tmpFile.delete()
+            translation.progress = Translation.Progress(index + 1, count)
         }
         return pages
     }
 
+    // ML Kit decodes with Android's own decoders, which return nothing for formats like AVIF or JPEG XL on many
+    // devices, so pages go through the reader's decoder instead
+    private fun decodePage(openStream: () -> InputStream): Bitmap {
+        val bitmap = openStream().use { input -> ImageDecoder.open(input).use { it.decodeToBitmap(null) } }
+        if (bitmap.config == Bitmap.Config.ARGB_8888) return bitmap
+        return bitmap.copy(Bitmap.Config.ARGB_8888, false).also { bitmap.recycle() }
+    }
+
     private suspend fun withChapterPages(
         chapterDir: UniFile,
-        block: suspend (fileName: String, openStream: () -> InputStream) -> Unit,
+        block: suspend (index: Int, count: Int, fileName: String, openStream: () -> InputStream) -> Unit,
     ) {
         if (chapterDir.isFile) {
             chapterDir.archiveReader(context).use { reader ->
@@ -243,13 +256,13 @@ class ChapterTranslator(
                         .sortedWith { n1, n2 -> n1.compareToCaseInsensitiveNaturalOrder(n2) }
                         .toList()
                 }
-                names.forEach { name -> block(name) { reader.getInputStream(name)!! } }
+                names.forEachIndexed { i, name -> block(i, names.size, name) { reader.getInputStream(name)!! } }
             }
         } else {
-            chapterDir.listFiles().orEmpty()
+            val files = chapterDir.listFiles().orEmpty()
                 .filter { ImageUtil.isImage(it.name) }
                 .sortedWith { f1, f2 -> f1.name.orEmpty().compareToCaseInsensitiveNaturalOrder(f2.name.orEmpty()) }
-                .forEach { file -> block(file.name!!) { file.openInputStream() } }
+            files.forEachIndexed { i, file -> block(i, files.size, file.name!!) { file.openInputStream() } }
         }
     }
 
@@ -257,7 +270,8 @@ class ChapterTranslator(
         val page = PageTranslation(imgWidth = width.toFloat(), imgHeight = height.toFloat())
         for (block in blocks) {
             val bounds = block.boundingBox!!
-            val symBounds = block.lines.first().elements.first().symbols.first().boundingBox!!
+            val element = block.lines.first().elements.first()
+            val symBounds = element.symbols.firstOrNull()?.boundingBox ?: element.boundingBox ?: bounds
             page.blocks.add(
                 TranslationBlock(
                     text = block.text,

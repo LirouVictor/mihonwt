@@ -292,6 +292,8 @@ class MangaViewModel(
                 item.copy(
                     downloadState = downloadState ?: item.downloadState,
                     translationState = translationState ?: item.translationState,
+                    translationError = translationManager.getQueuedTranslationOrNull(item.id)?.error
+                        .takeIf { translationState == Translation.State.ERROR },
                     selected = selected,
                 )
             },
@@ -763,6 +765,7 @@ class MangaViewModel(
         val manga = manga ?: return
         when (action) {
             ChapterTranslationAction.START -> translationManager.translateChapter(manga, item.chapter)
+            ChapterTranslationAction.RETRANSLATE -> translationManager.retranslateChapter(manga, item.chapter)
             ChapterTranslationAction.CANCEL -> {
                 translationManager.getQueuedTranslationOrNull(item.id)?.let(translationManager::cancelQueuedTranslation)
             }
@@ -1253,6 +1256,7 @@ sealed class ChapterList {
         val chapter: Chapter,
         val downloadState: Download.State,
         val translationState: Translation.State = Translation.State.NOT_TRANSLATED,
+        val translationError: String? = null,
         val selected: Boolean = false,
     ) : ChapterList() {
         val id = chapter.id

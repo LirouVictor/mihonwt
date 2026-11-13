@@ -18,11 +18,26 @@ data class Translation(
     private val _statusFlow = MutableStateFlow(State.NOT_TRANSLATED)
     val statusFlow = _statusFlow.asStateFlow()
 
+    private val _progressFlow = MutableStateFlow<Progress?>(null)
+    val progressFlow = _progressFlow.asStateFlow()
+
+    var progress: Progress?
+        get() = _progressFlow.value
+        set(progress) {
+            _progressFlow.value = progress
+        }
+
+    /** Why the last attempt failed, shown when the chapter's status is [State.ERROR]. */
+    var error: String? = null
+
     var status: State
         get() = _statusFlow.value
         set(status) {
             _statusFlow.value = status
         }
+
+    /** OCR has read [page] of [pages]; once they're equal the chapter is waiting on the translator. */
+    data class Progress(val page: Int, val pages: Int)
 
     enum class State(val value: Int) {
         NOT_TRANSLATED(0),

@@ -5,6 +5,7 @@ package eu.kanade.translation.translator
 
 import eu.kanade.tachiyomi.network.await
 import eu.kanade.translation.model.PageTranslation
+import kotlinx.coroutines.delay
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
@@ -24,6 +25,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * Translates every page of a chapter in a single request to the Gemini REST API.
@@ -89,7 +91,14 @@ class GeminiTranslator(
             .post(body.toString().toRequestBody("application/json".toMediaType()))
             .build()
 
-        val response = client.newCall(request).await()
+        var attempt = 0
+        var response = client.newCall(request).await()
+        // Rate limits and "model overloaded" errors usually clear within seconds
+        while (response.code in RETRY_CODES && attempt < RETRY_DELAYS.size) {
+            response.close()
+            delay(RETRY_DELAYS[attempt++])
+            response = client.newCall(request).await()
+        }
         val json = response.use { Json.parseToJsonElement(it.body.string()).jsonObject }
         if (!response.isSuccessful) {
             val message = json["error"]?.jsonObject?.get("message")?.jsonPrimitive?.contentOrNull
@@ -110,6 +119,9 @@ class GeminiTranslator(
         const val BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 
         const val WATERMARK_PLACEHOLDER = "RTMTH"
+
+        val RETRY_CODES = setOf(429, 500, 503)
+        val RETRY_DELAYS = listOf(10.seconds, 30.seconds)
 
         // Comics often trip the default filters, which would drop whole pages
         val SAFETY_CATEGORIES = listOf(

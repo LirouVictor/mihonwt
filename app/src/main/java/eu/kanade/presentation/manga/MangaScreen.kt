@@ -62,6 +62,8 @@ import eu.kanade.tachiyomi.ui.manga.ChapterList
 import eu.kanade.tachiyomi.ui.manga.MangaViewModel
 import eu.kanade.tachiyomi.util.system.copyToClipboard
 import eu.kanade.translation.presentation.ChapterTranslationAction
+import kotlinx.coroutines.flow.flowOf
+import mihon.app.di.appGraph
 import mihon.icons.materialsymbols.MaterialSymbols
 import mihon.icons.materialsymbols.roundedfilled.PlayArrow
 import tachiyomi.domain.chapter.model.Chapter
@@ -746,6 +748,7 @@ private fun LazyListScope.sharedChapterItems(
         contentType = { MangaScreenItem.CHAPTER },
     ) { item ->
         val haptic = LocalHapticFeedback.current
+        val translationManager = LocalContext.current.appGraph.translationManager
 
         when (item) {
             is ChapterList.MissingCount -> {
@@ -778,6 +781,10 @@ private fun LazyListScope.sharedChapterItems(
                     downloadStateProvider = { item.downloadState },
                     downloadProgressProvider = { downloadProgressProvider(item.id) },
                     translationStateProvider = { item.translationState },
+                    translationErrorProvider = { item.translationError },
+                    translationProgressFlow = {
+                        translationManager.getQueuedTranslationOrNull(item.id)?.progressFlow ?: flowOf(null)
+                    },
                     chapterSwipeStartAction = chapterSwipeStartAction,
                     chapterSwipeEndAction = chapterSwipeEndAction,
                     onLongClick = {

@@ -11,4 +11,8 @@
     <string name="translation_failed">Couldn\'t translate %1$s: %2$s</string>
     <string name="translation_error_no_api_key">Add a Gemini API key in Settings › Translation</string>
     <string name="translation_error_not_downloaded">Download the chapter before translating it</string>
+    <string name="action_retranslate">Translate again</string>
+    <string name="translation_queued">Waiting in the queue</string>
+    <string name="translation_progress_ocr">Reading page %1$d of %2$d</string>
+    <string name="translation_progress_gemini">Translating with Gemini</string>
 </resources>
