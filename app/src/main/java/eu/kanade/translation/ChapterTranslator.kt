@@ -23,6 +23,7 @@ import eu.kanade.translation.model.PageTranslation
 import eu.kanade.translation.model.Translation
 import eu.kanade.translation.model.TranslationBlock
 import eu.kanade.translation.recognizer.TextRecognizer
+import eu.kanade.translation.recognizer.grownIntoBubble
 import eu.kanade.translation.translator.TextTranslator
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -266,6 +267,7 @@ class ChapterTranslator(
                 val blocks = textRecognizer.recognize(InputImage.fromBitmap(bitmap, 0)).textBlocks
                     .filter { it.boundingBox != null && it.text.length > 1 }
                 val page = toPageTranslation(blocks, bitmap.width, bitmap.height)
+                page.blocks = page.blocks.mapTo(mutableListOf()) { it.grownIntoBubble(bitmap) }
                 if (page.blocks.isNotEmpty()) pages[fileName] = page
             } finally {
                 bitmap.recycle()

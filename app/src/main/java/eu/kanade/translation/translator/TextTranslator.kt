@@ -5,6 +5,7 @@ package eu.kanade.translation.translator
 
 import eu.kanade.tachiyomi.network.await
 import eu.kanade.translation.model.PageTranslation
+import eu.kanade.translation.model.joinLines
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -52,10 +53,13 @@ abstract class TextTranslator {
 
     private suspend fun translateBatch(pages: Map<String, PageTranslation>, onRetry: (attempt: Int) -> Unit) {
         // Blocks are numbered rather than listed: with a list, the model sometimes merges two fragments of a sentence
-        // and every later block on the page gets the translation of the one after it
+        // and every later block on the page gets the translation of the one after it. Their text goes without line
+        // breaks, which the model would copy into translations that need longer lines.
         val input = buildJsonObject {
             pages.forEach { (name, page) ->
-                putJsonObject(name) { page.blocks.forEachIndexed { i, block -> put(i.toString(), block.text) } }
+                putJsonObject(name) {
+                    page.blocks.forEachIndexed { i, block -> put(i.toString(), block.text.joinLines()) }
+                }
             }
         }
         var output = request(input.toString(), onRetry)
