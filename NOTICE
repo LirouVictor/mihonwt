@@ -5,3 +5,8 @@ This product is a modified version of Mihon (https://github.com/mihonapp/mihon),
 licensed under the Apache License, Version 2.0.
 Copyright 2015 Javier Tomás
 Copyright 2024 Mihon Open Source Project
+
+The speech bubble translation code in the eu.kanade.translation package is adapted
+from TachiyomiAT (https://github.com/mannu691/TachiyomiAT), licensed under the
+Apache License, Version 2.0.
+Copyright mannu691 and TachiyomiAT contributors

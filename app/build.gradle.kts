@@ -207,6 +207,7 @@ dependencies {
     baselineProfile(projects.baselineProfile)
 
     implementation(projects.i18n)
+    implementation(projects.i18nWt)
     implementation(projects.icons.customMaterialSymbols)
     implementation(projects.icons.materialSymbols)
     implementation(projects.icons.simpleIcons)
@@ -320,6 +321,9 @@ dependencies {
 
     // String similarity
     implementation(libs.stringSimilarity)
+
+    // Bubble translation OCR
+    implementation(libs.mlkit.textRecognition)
 
     // GraphQL generation
     implementation(libs.apollo)
