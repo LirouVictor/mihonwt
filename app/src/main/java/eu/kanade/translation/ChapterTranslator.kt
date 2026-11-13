@@ -195,18 +195,20 @@ class ChapterTranslator(
                 translation.source,
             ) ?: throw IOException(context.stringResource(WTMR.strings.translation_error_not_downloaded))
 
-            val pages = recognizeChapter(chapterDir)
+            val pages = recognizeChapter(chapterDir, translation)
             translator.translate(pages)
 
             mangaDir.createFile(
                 provider.getTranslationFileName(translation.chapter.name, translation.chapter.scanlator),
             )!!.openOutputStream().use { it.write(Json.encodeToString(pages).toByteArray()) }
+            translation.progress = null
             translation.status = Translation.State.TRANSLATED
         } catch (e: Throwable) {
             if (e is CancellationException) throw e
             logcat(LogPriority.ERROR, e)
             val error = e.message ?: e.toString()
             translation.error = error
+            translation.progress = null
             translation.status = Translation.State.ERROR
             val message = context.stringResource(WTMR.strings.translation_failed, translation.chapter.name, error)
             withContext(Dispatchers.Main) { context.toast(message, Toast.LENGTH_LONG) }
@@ -214,10 +216,11 @@ class ChapterTranslator(
     }
 
     /** Returns the text blocks of each page that has any, keyed by the page's file name. */
-    private suspend fun recognizeChapter(chapterDir: UniFile): Map<String, PageTranslation> {
+    private suspend fun recognizeChapter(chapterDir: UniFile, translation: Translation): Map<String, PageTranslation> {
         val pages = mutableMapOf<String, PageTranslation>()
-        withChapterPages(chapterDir) { fileName, openStream ->
+        withChapterPages(chapterDir) { index, count, fileName, openStream ->
             currentCoroutineContext().ensureActive()
+            translation.progress = Translation.Progress(index, count)
             val bitmap = decodePage(openStream)
             try {
                 val blocks = textRecognizer.recognize(InputImage.fromBitmap(bitmap, 0)).textBlocks
@@ -227,6 +230,7 @@ class ChapterTranslator(
             } finally {
                 bitmap.recycle()
             }
+            translation.progress = Translation.Progress(index + 1, count)
         }
         return pages
     }
@@ -241,7 +245,7 @@ class ChapterTranslator(
 
     private suspend fun withChapterPages(
         chapterDir: UniFile,
-        block: suspend (fileName: String, openStream: () -> InputStream) -> Unit,
+        block: suspend (index: Int, count: Int, fileName: String, openStream: () -> InputStream) -> Unit,
     ) {
         if (chapterDir.isFile) {
             chapterDir.archiveReader(context).use { reader ->
@@ -252,13 +256,13 @@ class ChapterTranslator(
                         .sortedWith { n1, n2 -> n1.compareToCaseInsensitiveNaturalOrder(n2) }
                         .toList()
                 }
-                names.forEach { name -> block(name) { reader.getInputStream(name)!! } }
+                names.forEachIndexed { i, name -> block(i, names.size, name) { reader.getInputStream(name)!! } }
             }
         } else {
-            chapterDir.listFiles().orEmpty()
+            val files = chapterDir.listFiles().orEmpty()
                 .filter { ImageUtil.isImage(it.name) }
                 .sortedWith { f1, f2 -> f1.name.orEmpty().compareToCaseInsensitiveNaturalOrder(f2.name.orEmpty()) }
-                .forEach { file -> block(file.name!!) { file.openInputStream() } }
+            files.forEachIndexed { i, file -> block(i, files.size, file.name!!) { file.openInputStream() } }
         }
     }
 

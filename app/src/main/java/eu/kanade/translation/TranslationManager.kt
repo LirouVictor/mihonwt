@@ -78,6 +78,16 @@ class TranslationManager(
         }
     }
 
+    /** Deletes the chapter's saved translation and queues it again, e.g. to compare models. */
+    fun retranslateChapter(manga: Manga, chapter: Chapter) {
+        scope.launch {
+            val source = sourceManager.get(manga.source) ?: return@launch
+            provider.findTranslationFile(chapter.name, chapter.scanlator, manga.title, source)?.delete()
+            translator.queueChapter(manga, chapter)
+            if (!translator.isRunning) translator.start()
+        }
+    }
+
     fun getQueuedTranslationOrNull(chapterId: Long): Translation? {
         return queueState.value.find { it.chapter.id == chapterId }
     }

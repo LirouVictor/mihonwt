@@ -765,6 +765,7 @@ class MangaViewModel(
         val manga = manga ?: return
         when (action) {
             ChapterTranslationAction.START -> translationManager.translateChapter(manga, item.chapter)
+            ChapterTranslationAction.RETRANSLATE -> translationManager.retranslateChapter(manga, item.chapter)
             ChapterTranslationAction.CANCEL -> {
                 translationManager.getQueuedTranslationOrNull(item.id)?.let(translationManager::cancelQueuedTranslation)
             }
