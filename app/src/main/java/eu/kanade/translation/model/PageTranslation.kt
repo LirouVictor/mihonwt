@@ -25,3 +25,9 @@ data class TranslationBlock(
     var symWidth: Float,
     val angle: Float,
 )
+
+private val HYPHEN_BREAK = Regex("""(?<=\p{L})-\s*\n\s*(?=\p{L})""")
+private val LINE_BREAK = Regex("""\s*\n\s*""")
+
+/** Joins text broken over lines, including words hyphenated across them, so it can be wrapped anew. */
+fun String.joinLines(): String = replace(HYPHEN_BREAK, "").replace(LINE_BREAK, " ")

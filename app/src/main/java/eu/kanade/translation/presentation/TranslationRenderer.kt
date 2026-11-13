@@ -16,6 +16,7 @@ import androidx.core.graphics.withSave
 import eu.kanade.tachiyomi.R
 import eu.kanade.translation.model.PageTranslation
 import eu.kanade.translation.model.TranslationBlock
+import eu.kanade.translation.model.joinLines
 import kotlin.math.abs
 
 /**
@@ -66,7 +67,9 @@ class TranslationRenderer(context: Context, translation: PageTranslation) {
             angle = block.angle,
             box = box.apply { offset(-centerX(), -centerY()) },
             cornerRadius = symHeight / 4,
-            text = fitText(block.translation, textWidth, textHeight),
+            // Translations of chapters saved before line breaks were dropped still carry the English ones, and a
+            // longer Portuguese line kept whole forced a tiny text size
+            text = fitText(block.translation.joinLines(), textWidth, textHeight),
         )
     }
 
