@@ -1,0 +1,18 @@
+{
+  "uniqueId": "com.github.crozynski:comicneue",
+  "artifactVersion": "2.003",
+  "name": "Comic Neue",
+  "description": "Font of the translated text in the reader.",
+  "website": "https://github.com/crozynski/comicneue",
+  "developers": [
+    {
+      "name": "Craig Rozynski"
+    },
+    {
+      "name": "Hrant Papazian"
+    }
+  ],
+  "licenses": [
+    "OFL-1.1"
+  ]
+}

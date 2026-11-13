@@ -8,6 +8,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
 import eu.kanade.domain.manga.model.readerOrientation
 import eu.kanade.domain.manga.model.readingMode
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderOrientation
@@ -15,7 +16,9 @@ import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderSettingsViewModel
 import eu.kanade.tachiyomi.ui.reader.setting.ReadingMode
 import eu.kanade.tachiyomi.ui.reader.viewer.webgpu.WebGpuViewerSettings
+import mihon.app.di.appGraph
 import tachiyomi.i18n.MR
+import tachiyomi.i18n.wt.WTMR
 import tachiyomi.presentation.core.components.CheckboxItem
 import tachiyomi.presentation.core.components.HeadingItem
 import tachiyomi.presentation.core.components.SettingsChipRow
@@ -62,6 +65,12 @@ internal fun ColumnScope.ReadingModePage(viewModel: ReaderSettingsViewModel) {
     } else {
         PagerViewerSettings(viewModel)
     }
+
+    HeadingItem(WTMR.strings.pref_category_translation)
+    CheckboxItem(
+        label = stringResource(WTMR.strings.pref_show_translations),
+        pref = LocalContext.current.appGraph.translationPreferences.showTranslations,
+    )
 }
 
 @Composable

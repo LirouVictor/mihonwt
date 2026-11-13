@@ -203,6 +203,13 @@ baselineProfile {
     mergeIntoMain = true
 }
 
+aboutLibraries {
+    collect {
+        // Bundled assets that aren't dependencies, such as fonts
+        configPath = file("aboutlibraries")
+    }
+}
+
 dependencies {
     baselineProfile(projects.baselineProfile)
 

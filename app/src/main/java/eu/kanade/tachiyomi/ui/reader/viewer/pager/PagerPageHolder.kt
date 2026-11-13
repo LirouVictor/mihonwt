@@ -8,7 +8,11 @@ import eu.kanade.tachiyomi.ui.reader.viewer.ReaderPageErrorView
 import eu.kanade.tachiyomi.ui.reader.viewer.ReaderPageImageView
 import eu.kanade.tachiyomi.ui.reader.viewer.ReaderProgressIndicator
 import eu.kanade.tachiyomi.ui.reader.viewer.processPagedImage
+import eu.kanade.tachiyomi.ui.reader.viewer.processPagedTranslation
 import eu.kanade.tachiyomi.widget.ViewPagerAdapter
+import eu.kanade.translation.model.cropped
+import eu.kanade.translation.presentation.TranslationRenderer
+import eu.kanade.translation.presentation.findBorderCrop
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
@@ -17,6 +21,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
 import logcat.LogPriority
+import mihon.app.di.appGraph
 import okio.Buffer
 import tachiyomi.core.common.util.system.ImageUtil
 import tachiyomi.core.common.util.system.logcat
@@ -90,6 +95,9 @@ class PagerPageHolder(
             launch(Dispatchers.IO) {
                 loader.loadPage(page)
             }
+            launch {
+                context.appGraph.translationPreferences.showTranslations.changes().collect { isTranslationShown = it }
+            }
             page.statusFlow.collectLatest { state ->
                 when (state) {
                     Page.State.Queue -> setQueued()
@@ -157,6 +165,13 @@ class PagerPageHolder(
                 }
                 Triple(source, isAnimated, background)
             }
+            val translation = page.translation?.takeIf { !isAnimated }?.let { translation ->
+                withContext(Dispatchers.Default) {
+                    var shown = viewer.simplePaged.processPagedTranslation(item, translation, viewer is L2RPagerViewer)
+                    if (viewer.paged.page.cropBorders) findBorderCrop(source)?.let { shown = shown.cropped(it) }
+                    TranslationRenderer(context, shown)
+                }
+            }
             withContext(Dispatchers.Main) {
                 setImage(
                     source,
@@ -168,6 +183,7 @@ class PagerPageHolder(
                         zoomStartPosition = viewer.imageZoomType,
                         landscapeZoom = viewer.paged.page.landscapeZoom,
                     ),
+                    translation,
                 )
                 if (!isAnimated) {
                     pageBackground = background

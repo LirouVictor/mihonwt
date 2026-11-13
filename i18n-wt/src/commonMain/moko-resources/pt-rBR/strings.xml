@@ -5,4 +5,5 @@
     <string name="pref_gemini_api_key">Chave da API do Gemini</string>
     <string name="pref_gemini_api_key_summary">Fica só neste aparelho e não entra nos backups</string>
     <string name="pref_gemini_model">Modelo do Gemini</string>
+    <string name="pref_show_translations">Mostrar traduções</string>
 </resources>
