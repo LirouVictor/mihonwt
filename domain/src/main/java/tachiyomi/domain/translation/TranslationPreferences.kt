@@ -19,4 +19,6 @@ class TranslationPreferences(
     )
 
     val geminiModel: Preference<String> = preferenceStore.getString("translation_gemini_model", "gemini-3.8-flash")
+
+    val showTranslations: Preference<Boolean> = preferenceStore.getBoolean("translation_show_in_reader", true)
 }

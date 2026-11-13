@@ -9,6 +9,7 @@ import android.graphics.Rect
 import android.view.MotionEvent
 import android.view.View
 import eu.kanade.tachiyomi.data.coil.ImageDecoder
+import eu.kanade.translation.presentation.TranslationRenderer
 import kotlin.math.roundToInt
 
 /**
@@ -33,6 +34,13 @@ class WebtoonStripImageView(context: Context) : View(context) {
         }
     private val clipRect = Rect()
     private val dstRect = Rect()
+
+    /** Drawn over the strips, scaled to the view's width. */
+    var translation: TranslationRenderer? = null
+        set(value) {
+            field = value
+            invalidate()
+        }
 
     /** Decodes the page again after its strips were freed off screen. */
     var onReload: (() -> Unit)? = null
@@ -104,6 +112,7 @@ class WebtoonStripImageView(context: Context) : View(context) {
             dstRect.set(0, top, width, bottom)
             canvas.drawBitmap(strip, null, dstRect, paint)
         }
+        translation?.let { it.draw(canvas, width / it.imageWidth, 0f, 0f) }
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean = false

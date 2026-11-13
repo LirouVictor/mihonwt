@@ -2,6 +2,10 @@ package eu.kanade.tachiyomi.ui.reader.viewer
 
 import eu.kanade.tachiyomi.ui.reader.model.InsertPage
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
+import eu.kanade.translation.model.PageTranslation
+import eu.kanade.translation.model.half
+import eu.kanade.translation.model.rotated
+import eu.kanade.translation.model.stackedHalves
 import okio.BufferedSource
 import tachiyomi.core.common.util.system.ImageUtil
 
@@ -48,8 +52,7 @@ fun DualPageSettings.processStripImage(imageSource: BufferedSource): BufferedSou
     if (dualPageSplit) {
         val isDoublePage = ImageUtil.isWideImage(imageSource)
         if (isDoublePage) {
-            val upperSide = if (dualPageInvert) ImageUtil.Side.LEFT else ImageUtil.Side.RIGHT
-            return ImageUtil.splitAndMerge(imageSource, upperSide)
+            return ImageUtil.splitAndMerge(imageSource, stripUpperSide)
         }
     }
 
@@ -59,8 +62,7 @@ fun DualPageSettings.processStripImage(imageSource: BufferedSource): BufferedSou
 private fun DualPageSettings.rotateDualPage(imageSource: BufferedSource): BufferedSource {
     val isDoublePage = ImageUtil.isWideImage(imageSource)
     return if (isDoublePage) {
-        val rotation = if (dualPageRotateToFitInvert) -90f else 90f
-        ImageUtil.rotateImage(imageSource, rotation)
+        ImageUtil.rotateImage(imageSource, rotateToFitDegrees)
     } else {
         imageSource
     }
@@ -71,19 +73,57 @@ private fun DualPageSettings.splitInHalf(
     page: ReaderPage,
     isLeftToRight: Boolean,
 ): BufferedSource {
-    var side = when {
+    return ImageUtil.splitInHalf(imageSource, splitSide(page, isLeftToRight))
+}
+
+/**
+ * [translation] moved onto the image [processPagedImage] makes of its [page], whose image it was made from.
+ */
+fun DualPageSettings.processPagedTranslation(
+    page: ReaderPage,
+    translation: PageTranslation,
+    isLeftToRight: Boolean,
+): PageTranslation {
+    // What ImageUtil.isWideImage tells of the same image
+    val isDoublePage = translation.imgWidth > translation.imgHeight
+    return when {
+        dualPageRotateToFit -> if (isDoublePage) translation.rotated(rotateToFitDegrees) else translation
+        !dualPageSplit -> translation
+        page is InsertPage || isDoublePage -> translation.half(splitSide(page, isLeftToRight))
+        else -> translation
+    }
+}
+
+/**
+ * [translation] moved onto the image [processStripImage] makes of the image it was made from.
+ */
+fun DualPageSettings.processStripTranslation(translation: PageTranslation): PageTranslation {
+    val isDoublePage = translation.imgWidth > translation.imgHeight
+    return when {
+        !isDoublePage -> translation
+        dualPageRotateToFit -> translation.rotated(rotateToFitDegrees)
+        dualPageSplit -> translation.stackedHalves(stripUpperSide)
+        else -> translation
+    }
+}
+
+private val DualPageSettings.rotateToFitDegrees: Float
+    get() = if (dualPageRotateToFitInvert) -90f else 90f
+
+private val DualPageSettings.stripUpperSide: ImageUtil.Side
+    get() = if (dualPageInvert) ImageUtil.Side.LEFT else ImageUtil.Side.RIGHT
+
+private fun DualPageSettings.splitSide(page: ReaderPage, isLeftToRight: Boolean): ImageUtil.Side {
+    val side = when {
         isLeftToRight && page is InsertPage -> ImageUtil.Side.RIGHT
         !isLeftToRight && page is InsertPage -> ImageUtil.Side.LEFT
         isLeftToRight && page !is InsertPage -> ImageUtil.Side.LEFT
         else -> ImageUtil.Side.RIGHT
     }
 
-    if (dualPageInvert) {
-        side = when (side) {
-            ImageUtil.Side.RIGHT -> ImageUtil.Side.LEFT
-            ImageUtil.Side.LEFT -> ImageUtil.Side.RIGHT
-        }
+    if (!dualPageInvert) return side
+    return when (side) {
+        ImageUtil.Side.RIGHT -> ImageUtil.Side.LEFT
+        ImageUtil.Side.LEFT -> ImageUtil.Side.RIGHT
     }
-
-    return ImageUtil.splitInHalf(imageSource, side)
 }

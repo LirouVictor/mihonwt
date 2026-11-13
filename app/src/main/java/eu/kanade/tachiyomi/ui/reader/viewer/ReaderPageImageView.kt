@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.ui.reader.viewer
 
 import android.content.Context
+import android.graphics.Canvas
 import android.graphics.ColorFilter
 import android.graphics.Paint
 import android.graphics.PointF
@@ -43,6 +44,7 @@ import eu.kanade.tachiyomi.data.coil.webtoonStrips
 import eu.kanade.tachiyomi.ui.reader.viewer.webtoon.WebtoonStripImageView
 import eu.kanade.tachiyomi.util.system.animatorDurationScale
 import eu.kanade.tachiyomi.util.view.isVisibleOnScreen
+import eu.kanade.translation.presentation.TranslationRenderer
 import okio.BufferedSource
 
 /**
@@ -90,6 +92,21 @@ open class ReaderPageImageView @JvmOverloads constructor(
     private var stripRequest: Disposable? = null
 
     private var config: Config? = null
+
+    /** Draws the translation of the image set, which animated images go without. */
+    private var translation: TranslationRenderer? = null
+        set(value) {
+            field = value
+            (pageView as? WebtoonStripImageView)?.translation = value.takeIf { isTranslationShown }
+            pageView?.invalidate()
+        }
+
+    var isTranslationShown = true
+        set(value) {
+            if (field == value) return
+            field = value
+            translation = translation
+        }
 
     var onImageLoaded: (() -> Unit)? = null
     var onImageLoadError: ((Throwable?) -> Unit)? = null
@@ -181,8 +198,15 @@ open class ReaderPageImageView @JvmOverloads constructor(
         }
     }
 
-    fun setImage(source: BufferedSource, isAnimated: Boolean, config: Config) {
+    /** Sets the image from [source], with [translation] laid out on the image as [source] decodes. */
+    fun setImage(
+        source: BufferedSource,
+        isAnimated: Boolean,
+        config: Config,
+        translation: TranslationRenderer? = null,
+    ) {
         this.config = config
+        this.translation = translation.takeIf { !isAnimated }
         if (isAnimated) {
             prepareAnimatedImageView()
             setAnimatedImage(source, config)
@@ -196,6 +220,7 @@ open class ReaderPageImageView @JvmOverloads constructor(
     }
 
     fun recycle() {
+        translation = null
         stripRequest?.dispose()
         stripRequest = null
         pageView?.let {
@@ -266,7 +291,12 @@ open class ReaderPageImageView @JvmOverloads constructor(
         if (pageView is SubsamplingScaleImageView) return
         removeView(pageView)
 
-        pageView = SubsamplingScaleImageView(context).apply {
+        pageView = object : SubsamplingScaleImageView(context) {
+            override fun onDraw(canvas: Canvas) {
+                super.onDraw(canvas)
+                drawTranslation(canvas)
+            }
+        }.apply {
             setDoubleTapZoomStyle(SubsamplingScaleImageView.ZOOM_FOCUS_CENTER)
             setPanLimit(SubsamplingScaleImageView.PAN_LIMIT_INSIDE)
             setMinimumTileDpi(180)
@@ -337,11 +367,20 @@ open class ReaderPageImageView @JvmOverloads constructor(
         }
     }
 
+    // Drawn with the page so it moves with every zoom and pan step
+    private fun SubsamplingScaleImageView.drawTranslation(canvas: Canvas) {
+        val translation = translation?.takeIf { isTranslationShown && isReady } ?: return
+        val origin = sourceToViewCoord(0f, 0f) ?: return
+        translation.draw(canvas, scale * sWidth / translation.imageWidth, origin.x, origin.y)
+    }
+
     private fun prepareStripImageView() {
         if (pageView is WebtoonStripImageView) return
         removeView(pageView)
 
-        pageView = WebtoonStripImageView(context)
+        pageView = WebtoonStripImageView(context).also {
+            it.translation = translation.takeIf { isTranslationShown }
+        }
         addView(pageView, MATCH_PARENT, WRAP_CONTENT)
         applyPageColorFilter()
     }

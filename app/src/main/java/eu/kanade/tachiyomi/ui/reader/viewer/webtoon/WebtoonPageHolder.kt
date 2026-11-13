@@ -14,7 +14,9 @@ import eu.kanade.tachiyomi.ui.reader.viewer.ReaderPageErrorView
 import eu.kanade.tachiyomi.ui.reader.viewer.ReaderPageImageView
 import eu.kanade.tachiyomi.ui.reader.viewer.ReaderProgressIndicator
 import eu.kanade.tachiyomi.ui.reader.viewer.processStripImage
+import eu.kanade.tachiyomi.ui.reader.viewer.processStripTranslation
 import eu.kanade.tachiyomi.util.system.dpToPx
+import eu.kanade.translation.presentation.TranslationRenderer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
@@ -23,6 +25,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
 import logcat.LogPriority
+import mihon.app.di.appGraph
 import okio.Buffer
 import tachiyomi.core.common.util.system.ImageUtil
 import tachiyomi.core.common.util.system.logcat
@@ -130,6 +133,10 @@ class WebtoonPageHolder(
             launch(Dispatchers.IO) {
                 loader.loadPage(page)
             }
+            launch {
+                context.appGraph.translationPreferences.showTranslations.changes()
+                    .collect { frame.isTranslationShown = it }
+            }
             page.statusFlow.collectLatest { state ->
                 when (state) {
                     Page.State.Queue -> setQueued()
@@ -180,7 +187,8 @@ class WebtoonPageHolder(
     private suspend fun setImage() {
         progressIndicator.setProgress(0)
 
-        val streamFn = page?.stream ?: return
+        val page = page ?: return
+        val streamFn = page.stream ?: return
 
         try {
             val buffer = withContext(Dispatchers.IO) { streamFn().use { Buffer().readFrom(it) } }
@@ -189,6 +197,12 @@ class WebtoonPageHolder(
                 val source = viewer.simpleLongStrip.page.processStripImage(buffer)
                 val isAnimated = ImageUtil.isAnimatedAndSupported(source)
                 Pair(source, isAnimated)
+            }
+            // Strips don't crop borders, so the translation only follows the splitting and merging
+            val translation = page.translation?.takeIf { !isAnimated }?.let { translation ->
+                withContext(Dispatchers.Default) {
+                    TranslationRenderer(context, viewer.simpleLongStrip.page.processStripTranslation(translation))
+                }
             }
             withContext(Dispatchers.Main) {
                 frame.setImage(
@@ -199,6 +213,7 @@ class WebtoonPageHolder(
                         minimumScaleType = SubsamplingScaleImageView.SCALE_TYPE_FIT_WIDTH,
                         cropBorders = viewer.longStrip.cropBorders,
                     ),
+                    translation,
                 )
                 removeErrorLayout()
             }
