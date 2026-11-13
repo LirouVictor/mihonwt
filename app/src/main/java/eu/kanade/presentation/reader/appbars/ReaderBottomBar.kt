@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -15,7 +16,9 @@ import mihon.icons.custommaterialsymbols.rounded.CropOff
 import mihon.icons.materialsymbols.MaterialSymbols
 import mihon.icons.materialsymbols.rounded.Crop
 import mihon.icons.materialsymbols.rounded.Settings
+import mihon.icons.materialsymbols.rounded.Translate
 import tachiyomi.i18n.MR
+import tachiyomi.i18n.wt.WTMR
 import tachiyomi.presentation.core.i18n.stringResource
 
 @Composable
@@ -26,6 +29,8 @@ fun ReaderBottomBar(
     onClickOrientation: () -> Unit,
     cropEnabled: Boolean,
     onClickCropBorder: () -> Unit,
+    translationsShown: Boolean,
+    onClickTranslations: (() -> Unit)?,
     onClickSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -56,6 +61,17 @@ fun ReaderBottomBar(
             )
         }
 
+        if (onClickTranslations != null) {
+            IconButton(onClick = onClickTranslations) {
+                Icon(
+                    imageVector = MaterialSymbols.Rounded.Translate,
+                    contentDescription = stringResource(WTMR.strings.pref_show_translations),
+                    // Dimmed like a disabled icon, as there's no crossed out version of this one
+                    tint = LocalContentColor.current.copy(alpha = if (translationsShown) 1f else DISABLED_ALPHA),
+                )
+            }
+        }
+
         IconButton(onClick = onClickSettings) {
             Icon(
                 imageVector = MaterialSymbols.Rounded.Settings,
@@ -64,3 +80,5 @@ fun ReaderBottomBar(
         }
     }
 }
+
+private const val DISABLED_ALPHA = 0.38f

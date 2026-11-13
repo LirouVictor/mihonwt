@@ -113,6 +113,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import logcat.LogPriority
 import mihon.app.di.AppGraph
+import mihon.app.di.appGraph
 import mihon.core.metro.metroGraph
 import tachiyomi.core.common.Constants
 import tachiyomi.core.common.i18n.stringResource
@@ -549,6 +550,11 @@ class ReaderActivity : BaseActivity() {
         val isPagerType = ReadingMode.isPagerType(viewModel.getMangaReadingMode())
         val cropEnabled = if (isPagerType) cropBorderPaged else cropBorderWebtoon
 
+        val showTranslations = appGraph.translationPreferences.showTranslations
+        val translationsShown by showTranslations.collectAsState()
+        // The WebGPU viewers don't draw translations
+        val isWebGpu by settingsViewModel.isWebGpu.collectAsState()
+
         val verticalNavigatorModes by readerPreferences.verticalNavigator.collectAsState()
         val verticalNavigator = verticalNavigatorModes.contains(readingMode)
         val verticalNavigatorOnLeft by readerPreferences.verticalNavigatorOnLeft.collectAsState()
@@ -609,6 +615,13 @@ class ReaderActivity : BaseActivity() {
                 menuToggleToast?.cancel()
                 menuToggleToast = toast(if (enabled) MR.strings.on else MR.strings.off)
             },
+            translationsShown = translationsShown,
+            onClickTranslations = {
+                val shown = !showTranslations.get()
+                showTranslations.set(shown)
+                menuToggleToast?.cancel()
+                menuToggleToast = toast(if (shown) MR.strings.on else MR.strings.off)
+            }.takeIf { !isWebGpu },
             onClickSettings = viewModel::openSettingsDialog,
         )
     }
