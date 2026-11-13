@@ -18,6 +18,9 @@ data class Translation(
     private val _statusFlow = MutableStateFlow(State.NOT_TRANSLATED)
     val statusFlow = _statusFlow.asStateFlow()
 
+    /** Why the last attempt failed, shown when the chapter's status is [State.ERROR]. */
+    var error: String? = null
+
     var status: State
         get() = _statusFlow.value
         set(status) {

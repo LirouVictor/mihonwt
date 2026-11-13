@@ -170,12 +170,18 @@ class ChapterTranslator(
     suspend fun queueChapter(manga: Manga, chapter: Chapter) {
         val source = sourceManager.get(manga.source) as? HttpSource ?: return
         if (provider.findTranslationFile(chapter.name, chapter.scanlator, manga.title, source) != null) return
-        if (queueState.value.any { it.chapter.id == chapter.id }) return
+        val queued = queueState.value.find { it.chapter.id == chapter.id }
+        if (queued != null) {
+            if (queued.status != Translation.State.ERROR) return
+            // Queued again rather than reset, so a running queue notices it
+            removeFromQueue(queued)
+        }
         addToQueue(Translation(source, manga, chapter))
     }
 
     private suspend fun translateChapter(translation: Translation) {
         try {
+            translation.error = null
             translation.status = Translation.State.TRANSLATING
             val apiKey = translationPreferences.geminiApiKey.get()
             if (apiKey.isBlank()) throw IOException(context.stringResource(WTMR.strings.translation_error_no_api_key))
@@ -198,13 +204,11 @@ class ChapterTranslator(
             translation.status = Translation.State.TRANSLATED
         } catch (e: Throwable) {
             if (e is CancellationException) throw e
-            translation.status = Translation.State.ERROR
             logcat(LogPriority.ERROR, e)
-            val message = context.stringResource(
-                WTMR.strings.translation_failed,
-                translation.chapter.name,
-                e.message.orEmpty(),
-            )
+            val error = e.message ?: e.toString()
+            translation.error = error
+            translation.status = Translation.State.ERROR
+            val message = context.stringResource(WTMR.strings.translation_failed, translation.chapter.name, error)
             withContext(Dispatchers.Main) { context.toast(message, Toast.LENGTH_LONG) }
         }
     }

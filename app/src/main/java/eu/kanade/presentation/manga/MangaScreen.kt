@@ -778,6 +778,7 @@ private fun LazyListScope.sharedChapterItems(
                     downloadStateProvider = { item.downloadState },
                     downloadProgressProvider = { downloadProgressProvider(item.id) },
                     translationStateProvider = { item.translationState },
+                    translationErrorProvider = { item.translationError },
                     chapterSwipeStartAction = chapterSwipeStartAction,
                     chapterSwipeEndAction = chapterSwipeEndAction,
                     onLongClick = {

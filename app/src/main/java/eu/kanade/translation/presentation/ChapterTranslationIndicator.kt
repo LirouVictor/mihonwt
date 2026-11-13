@@ -2,7 +2,9 @@ package eu.kanade.translation.presentation
 
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -17,8 +19,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.components.DropdownMenu
@@ -43,11 +43,11 @@ enum class ChapterTranslationAction {
 fun ChapterTranslationIndicator(
     enabled: Boolean,
     state: Translation.State,
+    error: String?,
     onClick: (ChapterTranslationAction) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var isMenuExpanded by remember { mutableStateOf(false) }
-    val haptic = LocalHapticFeedback.current
     Box(
         modifier = modifier
             .size(IconButtonTokens.StateLayerSize)
@@ -56,19 +56,9 @@ fun ChapterTranslationIndicator(
                 interactionSource = null,
                 indication = ripple(bounded = false, radius = IconButtonTokens.StateLayerSize / 2),
                 role = Role.Button,
-                // Tapping a failed chapter retries it, so long pressing is the way to clear it from the queue
-                onLongClick = if (state == Translation.State.ERROR) {
-                    {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        onClick(ChapterTranslationAction.CANCEL)
-                    }
-                } else {
-                    null
-                },
                 onClick = {
                     when (state) {
-                        Translation.State.NOT_TRANSLATED, Translation.State.ERROR ->
-                            onClick(ChapterTranslationAction.START)
+                        Translation.State.NOT_TRANSLATED -> onClick(ChapterTranslationAction.START)
                         else -> isMenuExpanded = true
                     }
                 },
@@ -96,18 +86,35 @@ fun ChapterTranslationIndicator(
             )
         }
         DropdownMenu(expanded = isMenuExpanded, onDismissRequest = { isMenuExpanded = false }) {
-            val (label, action) = if (state == Translation.State.TRANSLATED) {
-                stringResource(WTMR.strings.action_delete_translation) to ChapterTranslationAction.DELETE
-            } else {
-                stringResource(MR.strings.action_cancel) to ChapterTranslationAction.CANCEL
+            val actions = when (state) {
+                Translation.State.TRANSLATED -> listOf(
+                    stringResource(WTMR.strings.action_delete_translation) to ChapterTranslationAction.DELETE,
+                )
+                Translation.State.ERROR -> listOf(
+                    stringResource(MR.strings.action_retry) to ChapterTranslationAction.START,
+                    stringResource(MR.strings.action_remove) to ChapterTranslationAction.CANCEL,
+                )
+                else -> listOf(stringResource(MR.strings.action_cancel) to ChapterTranslationAction.CANCEL)
             }
-            DropdownMenuItem(
-                text = { Text(text = label) },
-                onClick = {
-                    onClick(action)
-                    isMenuExpanded = false
-                },
-            )
+            if (state == Translation.State.ERROR && error != null) {
+                Text(
+                    text = error,
+                    modifier = Modifier
+                        .widthIn(max = 280.dp)
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            actions.forEach { (label, action) ->
+                DropdownMenuItem(
+                    text = { Text(text = label) },
+                    onClick = {
+                        onClick(action)
+                        isMenuExpanded = false
+                    },
+                )
+            }
         }
     }
 }
