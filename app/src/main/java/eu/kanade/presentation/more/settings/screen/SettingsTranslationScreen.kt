@@ -6,6 +6,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import eu.kanade.presentation.more.settings.Preference
+import eu.kanade.translation.data.ApiKeyCipher
 import mihon.app.di.appGraph
 import tachiyomi.domain.translation.TranslationService
 import tachiyomi.i18n.wt.WTMR
@@ -23,7 +24,7 @@ object SettingsTranslationScreen : SearchableSettings {
         val context = LocalContext.current
         val translationPreferences = remember { context.appGraph.translationPreferences }
         val service by translationPreferences.service.collectAsState()
-        val apiKeyPref = remember(service) { translationPreferences.apiKey(service) }
+        val apiKeyPref = remember(service) { ApiKeyCipher.wrap(translationPreferences.apiKey(service)) }
         val apiKey by apiKeyPref.collectAsState()
         return listOf(
             Preference.PreferenceItem.ListPreference(

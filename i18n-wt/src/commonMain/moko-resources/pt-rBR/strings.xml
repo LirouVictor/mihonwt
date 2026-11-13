@@ -14,7 +14,7 @@
     <string name="translation_error_no_model">Escolha um modelo em Configurações › Tradução</string>
     <string name="pref_translation_service">Serviço de tradução</string>
     <string name="pref_api_key">Chave da API</string>
-    <string name="pref_api_key_summary">Salva só neste aparelho e fora dos backups</string>
+    <string name="pref_api_key_summary">Salva criptografada neste aparelho e fora dos backups</string>
     <string name="pref_api_key_missing">Nenhuma chave</string>
     <string name="pref_model">Modelo</string>
     <string name="pref_custom_base_url">Endereço da API</string>

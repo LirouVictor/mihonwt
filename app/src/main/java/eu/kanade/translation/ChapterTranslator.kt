@@ -17,6 +17,7 @@ import eu.kanade.tachiyomi.data.download.DownloadProvider
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.lang.compareToCaseInsensitiveNaturalOrder
 import eu.kanade.tachiyomi.util.system.toast
+import eu.kanade.translation.data.ApiKeyCipher
 import eu.kanade.translation.data.TranslationProvider
 import eu.kanade.translation.model.PageTranslation
 import eu.kanade.translation.model.Translation
@@ -226,7 +227,7 @@ class ChapterTranslator(
     private fun createTranslator(): TextTranslator {
         val prefs = translationPreferences
         val service = prefs.service.get()
-        val apiKey = prefs.apiKey(service).get()
+        val apiKey = ApiKeyCipher.decrypt(prefs.apiKey(service).get())
         val model = prefs.model(service).get()
         val customBaseUrl = prefs.customBaseUrl.get()
         if (service == TranslationService.CUSTOM && customBaseUrl.isBlank()) {

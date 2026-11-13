@@ -18,7 +18,10 @@ class TranslationPreferences(
         TranslationService.GEMINI,
     )
 
-    /** Each service keeps its own key, so switching between them doesn't lose it. Private to stay out of backups. */
+    /**
+     * Each service keeps its own key, so switching between them doesn't lose it. Stored encrypted by the app, and
+     * private to stay out of backups.
+     */
     fun apiKey(service: TranslationService): Preference<String> = preferenceStore.getString(
         Preference.privateKey("translation_${service.key}_api_key"),
         "",
