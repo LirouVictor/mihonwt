@@ -22,8 +22,6 @@ import eu.kanade.translation.model.PageTranslation
 import eu.kanade.translation.model.Translation
 import eu.kanade.translation.model.TranslationBlock
 import eu.kanade.translation.recognizer.TextRecognizer
-import eu.kanade.translation.translator.GeminiTranslator
-import eu.kanade.translation.translator.OpenAiCompatibleTranslator
 import eu.kanade.translation.translator.TextTranslator
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -228,17 +226,15 @@ class ChapterTranslator(
     private fun createTranslator(): TextTranslator {
         val prefs = translationPreferences
         val service = prefs.service.get()
-        val (apiKey, model) = when (service) {
-            TranslationService.GEMINI -> prefs.geminiApiKey.get() to prefs.geminiModel.get()
-            TranslationService.OPENAI_COMPATIBLE -> prefs.openAiApiKey.get() to prefs.openAiModel.get()
+        val apiKey = prefs.apiKey(service).get()
+        val model = prefs.model(service).get()
+        val customBaseUrl = prefs.customBaseUrl.get()
+        if (service == TranslationService.CUSTOM && customBaseUrl.isBlank()) {
+            throw IOException(context.stringResource(WTMR.strings.translation_error_no_base_url))
         }
         if (apiKey.isBlank()) throw IOException(context.stringResource(WTMR.strings.translation_error_no_api_key))
         if (model.isBlank()) throw IOException(context.stringResource(WTMR.strings.translation_error_no_model))
-        return when (service) {
-            TranslationService.GEMINI -> GeminiTranslator(apiKey = apiKey, model = model)
-            TranslationService.OPENAI_COMPATIBLE ->
-                OpenAiCompatibleTranslator(baseUrl = prefs.openAiBaseUrl.get(), apiKey = apiKey, model = model)
-        }
+        return TextTranslator.create(service, apiKey, model, customBaseUrl)
     }
 
     /** Returns the text blocks of each page that has any, keyed by the page's file name. */

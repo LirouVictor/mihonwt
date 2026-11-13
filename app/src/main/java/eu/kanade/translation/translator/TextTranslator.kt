@@ -17,6 +17,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import tachiyomi.domain.translation.TranslationService
 import java.io.IOException
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
@@ -93,6 +94,16 @@ abstract class TextTranslator {
     class ApiException(message: String, val code: String?) : IOException(message)
 
     companion object {
+        /** Returns the translator for [service]. [customBaseUrl] is only used by [TranslationService.CUSTOM]. */
+        fun create(service: TranslationService, apiKey: String, model: String, customBaseUrl: String): TextTranslator {
+            val baseUrl = when (service) {
+                TranslationService.GEMINI -> return GeminiTranslator(apiKey = apiKey, model = model)
+                TranslationService.CUSTOM -> customBaseUrl
+                else -> service.baseUrl!!
+            }
+            return OpenAiCompatibleTranslator(baseUrl = baseUrl, apiKey = apiKey, model = model)
+        }
+
         private const val WATERMARK_PLACEHOLDER = "RTMTH"
 
         private val RETRY_CODES = setOf(429, 500, 502, 503)
