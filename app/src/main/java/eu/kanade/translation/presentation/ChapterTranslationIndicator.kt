@@ -128,6 +128,8 @@ fun ChapterTranslationIndicator(
                         current == null -> stringResource(WTMR.strings.translation_queued)
                         current.page < current.pages ->
                             stringResource(WTMR.strings.translation_progress_ocr, current.page + 1, current.pages)
+                        current.retries > 0 ->
+                            stringResource(WTMR.strings.translation_progress_gemini_retry, current.retries)
                         else -> stringResource(WTMR.strings.translation_progress_gemini)
                     },
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

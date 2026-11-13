@@ -23,6 +23,8 @@ import eu.kanade.translation.model.Translation
 import eu.kanade.translation.model.TranslationBlock
 import eu.kanade.translation.recognizer.TextRecognizer
 import eu.kanade.translation.translator.GeminiTranslator
+import eu.kanade.translation.translator.OpenAiCompatibleTranslator
+import eu.kanade.translation.translator.TextTranslator
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -52,9 +54,11 @@ import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.translation.TranslationPreferences
+import tachiyomi.domain.translation.TranslationService
 import tachiyomi.i18n.wt.WTMR
 import java.io.IOException
 import java.io.InputStream
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -81,6 +85,8 @@ class ChapterTranslator(
         get() = translationJob?.isActive == true
 
     private val textRecognizer by lazy { TextRecognizer() }
+
+    private val recognizedChapters = ConcurrentHashMap<Long, Map<String, PageTranslation>>()
 
     fun start(): Boolean {
         if (isRunning || queueState.value.isEmpty()) {
@@ -183,9 +189,7 @@ class ChapterTranslator(
         try {
             translation.error = null
             translation.status = Translation.State.TRANSLATING
-            val apiKey = translationPreferences.geminiApiKey.get()
-            if (apiKey.isBlank()) throw IOException(context.stringResource(WTMR.strings.translation_error_no_api_key))
-            val translator = GeminiTranslator(apiKey = apiKey, model = translationPreferences.geminiModel.get())
+            val translator = createTranslator()
             val mangaDir = provider.getMangaDir(translation.manga.title, translation.source)
             val chapterDir = downloadProvider.findChapterDir(
                 translation.chapter.name,
@@ -195,8 +199,14 @@ class ChapterTranslator(
                 translation.source,
             ) ?: throw IOException(context.stringResource(WTMR.strings.translation_error_not_downloaded))
 
-            val pages = recognizeChapter(chapterDir, translation)
-            translator.translate(pages)
+            // A retry usually follows a translator error, so it reuses the OCR instead of reading every page again
+            val pages = recognizedChapters[translation.chapter.id] ?: recognizeChapter(chapterDir, translation)
+                .also { recognizedChapters[translation.chapter.id] = it }
+            translation.progress = Translation.Progress(pages.size, pages.size)
+            translator.translate(pages) { attempt ->
+                translation.progress = Translation.Progress(pages.size, pages.size, retries = attempt)
+            }
+            recognizedChapters.remove(translation.chapter.id)
 
             mangaDir.createFile(
                 provider.getTranslationFileName(translation.chapter.name, translation.chapter.scanlator),
@@ -212,6 +222,22 @@ class ChapterTranslator(
             translation.status = Translation.State.ERROR
             val message = context.stringResource(WTMR.strings.translation_failed, translation.chapter.name, error)
             withContext(Dispatchers.Main) { context.toast(message, Toast.LENGTH_LONG) }
+        }
+    }
+
+    private fun createTranslator(): TextTranslator {
+        val prefs = translationPreferences
+        val service = prefs.service.get()
+        val (apiKey, model) = when (service) {
+            TranslationService.GEMINI -> prefs.geminiApiKey.get() to prefs.geminiModel.get()
+            TranslationService.OPENAI_COMPATIBLE -> prefs.openAiApiKey.get() to prefs.openAiModel.get()
+        }
+        if (apiKey.isBlank()) throw IOException(context.stringResource(WTMR.strings.translation_error_no_api_key))
+        if (model.isBlank()) throw IOException(context.stringResource(WTMR.strings.translation_error_no_model))
+        return when (service) {
+            TranslationService.GEMINI -> GeminiTranslator(apiKey = apiKey, model = model)
+            TranslationService.OPENAI_COMPATIBLE ->
+                OpenAiCompatibleTranslator(baseUrl = prefs.openAiBaseUrl.get(), apiKey = apiKey, model = model)
         }
     }
 
@@ -356,6 +382,7 @@ class ChapterTranslator(
     }
 
     fun removeFromQueue(chapter: Chapter) {
+        recognizedChapters.remove(chapter.id)
         removeFromQueueIf { it.chapter.id == chapter.id }
     }
 

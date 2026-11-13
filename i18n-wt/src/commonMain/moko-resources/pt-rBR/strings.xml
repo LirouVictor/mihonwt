@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="pref_category_translation">Tradução</string>
-    <string name="pref_translation_summary">Tradução de balões com o Gemini</string>
+    <string name="pref_translation_summary">Tradução de balões com IA</string>
     <string name="pref_gemini_api_key">Chave da API do Gemini</string>
     <string name="pref_gemini_api_key_summary">Fica só neste aparelho e não entra nos backups</string>
     <string name="pref_gemini_model">Modelo do Gemini</string>
@@ -9,10 +9,17 @@
     <string name="action_translate_chapter">Traduzir capítulo</string>
     <string name="action_delete_translation">Excluir tradução</string>
     <string name="translation_failed">Não foi possível traduzir %1$s: %2$s</string>
-    <string name="translation_error_no_api_key">Coloque uma chave da API do Gemini em Configurações › Tradução</string>
+    <string name="translation_error_no_api_key">Adicione uma chave de API em Configurações › Tradução</string>
     <string name="translation_error_not_downloaded">Baixe o capítulo antes de traduzir</string>
     <string name="action_retranslate">Traduzir de novo</string>
     <string name="translation_queued">Esperando na fila</string>
     <string name="translation_progress_ocr">Lendo a página %1$d de %2$d</string>
     <string name="translation_progress_gemini">Traduzindo com o Gemini</string>
+    <string name="translation_progress_gemini_retry">Gemini ocupado, tentativa %1$d de 3</string>
+    <string name="translation_error_no_model">Escolha um modelo em Configurações › Tradução</string>
+    <string name="pref_translation_service">Serviço de tradução</string>
+    <string name="translation_service_openai">Compatível com OpenAI (Groq, OpenRouter…)</string>
+    <string name="pref_openai_base_url">Endereço da API</string>
+    <string name="pref_openai_api_key">Chave da API</string>
+    <string name="pref_openai_model">Modelo</string>
 </resources>
