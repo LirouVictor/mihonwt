@@ -35,9 +35,7 @@ class OpenAiCompatibleTranslator(
 
         val choice = (json["choices"] as? JsonArray)?.firstOrNull()?.jsonObject
             ?: throw IOException("$name returned no choices")
-        if (choice["finish_reason"]?.jsonPrimitive?.contentOrNull == "length") {
-            throw IOException("$name cut the reply short: the model's output limit is too small for this chapter")
-        }
+        if (choice["finish_reason"]?.jsonPrimitive?.contentOrNull == "length") throw TruncatedReplyException(name)
         return choice["message"]?.jsonObject?.get("content")?.jsonPrimitive?.contentOrNull
             ?.ifEmpty { null }
             ?: throw IOException("$name returned no text, finish reason ${choice["finish_reason"]}")
