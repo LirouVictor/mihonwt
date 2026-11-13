@@ -6,4 +6,9 @@
     <string name="pref_gemini_api_key_summary">Stored on this device only and left out of backups</string>
     <string name="pref_gemini_model">Gemini model</string>
     <string name="pref_show_translations">Show translations</string>
+    <string name="action_translate_chapter">Translate chapter</string>
+    <string name="action_delete_translation">Delete translation</string>
+    <string name="translation_failed">Couldn\'t translate %1$s: %2$s</string>
+    <string name="translation_error_no_api_key">Add a Gemini API key in Settings › Translation</string>
+    <string name="translation_error_not_downloaded">Download the chapter before translating it</string>
 </resources>
