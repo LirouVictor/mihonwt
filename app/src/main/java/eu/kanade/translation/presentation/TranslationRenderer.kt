@@ -56,10 +56,10 @@ class TranslationRenderer(context: Context, translation: PageTranslation) {
         val symWidth = if (isSideways) block.symHeight else block.symWidth
         val symHeight = if (isSideways) block.symWidth else block.symHeight
 
-        // The text may spill a little past the box, over the rest of the speech bubble
+        // Text wider than its box ran into the art and the next speech bubble
         val box = RectF(0f, 0f, width + symWidth / 2, height + symHeight / 2)
-        val textWidth = (width + symWidth * 2).toInt()
-        val textHeight = height + symHeight
+        val textWidth = box.width().toInt()
+        val textHeight = box.height()
         return Block(
             centerX = block.x + block.width / 2,
             centerY = block.y + block.height / 2,
