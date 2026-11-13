@@ -37,8 +37,9 @@ android {
     defaultConfig {
         applicationId = "app.mihonwt"
 
-        versionCode = 39
-        versionName = "0.21.3"
+        // Release builds take the version from the tag, so Obtainium sees the tag as the installed version
+        versionCode = providers.gradleProperty("mihonwt.versionCode").orNull?.toInt() ?: 39
+        versionName = providers.gradleProperty("mihonwt.versionName").orNull ?: "0.21.3"
 
         buildConfigField("boolean", "TELEMETRY_INCLUDED", "${Config.includeTelemetry}")
         // MihonWT updates through Obtainium, and the built-in checker compares against upstream version names
