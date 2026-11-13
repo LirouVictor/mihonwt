@@ -7,6 +7,8 @@ import eu.kanade.tachiyomi.data.download.DownloadProvider
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.ui.reader.model.ReaderChapter
+import eu.kanade.translation.TranslationManager
+import eu.kanade.translation.model.PageTranslation
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -29,6 +31,7 @@ class ChapterLoader(
     private val downloadManager: DownloadManager,
     private val downloadProvider: DownloadProvider,
     private val chapterCache: ChapterCache,
+    private val translationManager: TranslationManager,
     private val appScope: CoroutineScope,
     private val canLoadAhead: () -> Boolean,
     private val manga: Manga,
@@ -99,11 +102,12 @@ class ChapterLoader(
                 source,
                 downloadManager,
                 downloadProvider,
+                getTranslations(chapter),
             )
             source is LocalSource -> source.getFormat(chapter.chapter.toSChapter()).let { format ->
                 when (format) {
-                    is Format.Directory -> DirectoryPageLoader(format.file)
-                    is Format.Archive -> ArchivePageLoader(format.file.archiveReader(context))
+                    is Format.Directory -> DirectoryPageLoader(format.file, getTranslations(chapter))
+                    is Format.Archive -> ArchivePageLoader(format.file.archiveReader(context), getTranslations(chapter))
                     is Format.Epub -> EpubPageLoader(format.file.epubReader(context))
                 }
             }
@@ -111,5 +115,10 @@ class ChapterLoader(
             source is StubSource -> error(context.stringResource(MR.strings.source_not_installed, source.toString()))
             else -> error(context.stringResource(MR.strings.loader_not_implemented_error))
         }
+    }
+
+    private fun getTranslations(chapter: ReaderChapter): Map<String, PageTranslation> {
+        val dbChapter = chapter.chapter
+        return translationManager.getChapterTranslation(dbChapter.name, dbChapter.scanlator, manga.title, source)
     }
 }

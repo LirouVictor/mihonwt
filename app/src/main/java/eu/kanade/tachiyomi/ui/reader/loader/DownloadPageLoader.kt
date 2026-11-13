@@ -9,11 +9,13 @@ import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.ui.reader.model.ReaderChapter
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
+import eu.kanade.translation.model.PageTranslation
 import mihon.core.archive.archiveReader
 import tachiyomi.domain.manga.model.Manga
 
 /**
- * Loader used to load a chapter from the downloaded chapters.
+ * Loader used to load a chapter from the downloaded chapters, with the [translations] of its pages keyed by file or
+ * archive entry name.
  */
 internal class DownloadPageLoader(
     private val context: Context,
@@ -22,6 +24,7 @@ internal class DownloadPageLoader(
     private val source: Source,
     private val downloadManager: DownloadManager,
     private val downloadProvider: DownloadProvider,
+    private val translations: Map<String, PageTranslation>,
 ) : PageLoader() {
 
     private var archivePageLoader: ArchivePageLoader? = null
@@ -50,7 +53,7 @@ internal class DownloadPageLoader(
     }
 
     private suspend fun getPagesFromArchive(file: UniFile): List<ReaderPage> {
-        val loader = ArchivePageLoader(file.archiveReader(context)).also { archivePageLoader = it }
+        val loader = ArchivePageLoader(file.archiveReader(context), translations).also { archivePageLoader = it }
         return loader.getPages()
     }
 
@@ -61,6 +64,9 @@ internal class DownloadPageLoader(
                 context.contentResolver.openInputStream(page.uri ?: Uri.EMPTY)!!
             }.apply {
                 status = Page.State.Ready
+                if (translations.isNotEmpty()) {
+                    translation = page.uri?.let { UniFile.fromUri(context, it)?.name }?.let(translations::get)
+                }
             }
         }
     }

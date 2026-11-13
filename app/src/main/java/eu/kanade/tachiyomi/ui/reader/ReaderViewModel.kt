@@ -52,6 +52,7 @@ import eu.kanade.tachiyomi.util.lang.byteSize
 import eu.kanade.tachiyomi.util.storage.DiskUtil
 import eu.kanade.tachiyomi.util.storage.cacheImageDir
 import eu.kanade.tachiyomi.util.system.activeNetworkState
+import eu.kanade.translation.TranslationManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -127,6 +128,7 @@ class ReaderViewModel(
     private val coverCache: CoverCache,
     private val chapterCache: ChapterCache,
     private val downloadCache: DownloadCache,
+    private val translationManager: TranslationManager,
 ) : ViewModel() {
 
     @AssistedFactory
@@ -356,6 +358,7 @@ class ReaderViewModel(
                     downloadManager,
                     downloadProvider,
                     chapterCache,
+                    translationManager,
                     appScope,
                     ::canLoadAhead,
                     manga,
