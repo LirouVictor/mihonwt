@@ -4,8 +4,9 @@
 package eu.kanade.translation
 
 import android.content.Context
-import android.net.Uri
+import android.graphics.Bitmap
 import android.widget.Toast
+import ca.mpreg.imagedecoder.ImageDecoder
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import com.hippo.unifile.UniFile
@@ -52,7 +53,6 @@ import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.translation.TranslationPreferences
 import tachiyomi.i18n.wt.WTMR
-import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import kotlin.math.abs
@@ -216,22 +216,27 @@ class ChapterTranslator(
     /** Returns the text blocks of each page that has any, keyed by the page's file name. */
     private suspend fun recognizeChapter(chapterDir: UniFile): Map<String, PageTranslation> {
         val pages = mutableMapOf<String, PageTranslation>()
-        // ML Kit can't decode the image straight from an archive stream, so each page goes through a file
-        val tmpFile = File.createTempFile("translation", null, context.cacheDir)
-        try {
-            withChapterPages(chapterDir) { fileName, openStream ->
-                currentCoroutineContext().ensureActive()
-                openStream().use { input -> tmpFile.outputStream().use { input.copyTo(it) } }
-                val image = InputImage.fromFilePath(context, Uri.fromFile(tmpFile))
-                val blocks = textRecognizer.recognize(image).textBlocks
+        withChapterPages(chapterDir) { fileName, openStream ->
+            currentCoroutineContext().ensureActive()
+            val bitmap = decodePage(openStream)
+            try {
+                val blocks = textRecognizer.recognize(InputImage.fromBitmap(bitmap, 0)).textBlocks
                     .filter { it.boundingBox != null && it.text.length > 1 }
-                val page = toPageTranslation(blocks, image.width, image.height)
+                val page = toPageTranslation(blocks, bitmap.width, bitmap.height)
                 if (page.blocks.isNotEmpty()) pages[fileName] = page
+            } finally {
+                bitmap.recycle()
             }
-        } finally {
-            tmpFile.delete()
         }
         return pages
+    }
+
+    // ML Kit decodes with Android's own decoders, which return nothing for formats like AVIF or JPEG XL on many
+    // devices, so pages go through the reader's decoder instead
+    private fun decodePage(openStream: () -> InputStream): Bitmap {
+        val bitmap = openStream().use { input -> ImageDecoder.open(input).use { it.decodeToBitmap(null) } }
+        if (bitmap.config == Bitmap.Config.ARGB_8888) return bitmap
+        return bitmap.copy(Bitmap.Config.ARGB_8888, false).also { bitmap.recycle() }
     }
 
     private suspend fun withChapterPages(
@@ -261,7 +266,8 @@ class ChapterTranslator(
         val page = PageTranslation(imgWidth = width.toFloat(), imgHeight = height.toFloat())
         for (block in blocks) {
             val bounds = block.boundingBox!!
-            val symBounds = block.lines.first().elements.first().symbols.first().boundingBox!!
+            val element = block.lines.first().elements.first()
+            val symBounds = element.symbols.firstOrNull()?.boundingBox ?: element.boundingBox ?: bounds
             page.blocks.add(
                 TranslationBlock(
                     text = block.text,
