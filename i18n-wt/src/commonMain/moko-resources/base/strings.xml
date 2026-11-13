@@ -5,4 +5,5 @@
     <string name="pref_gemini_api_key">Gemini API key</string>
     <string name="pref_gemini_api_key_summary">Stored on this device only and left out of backups</string>
     <string name="pref_gemini_model">Gemini model</string>
+    <string name="pref_show_translations">Show translations</string>
 </resources>
