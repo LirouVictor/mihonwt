@@ -13,11 +13,14 @@ import eu.kanade.translation.model.PageTranslation
 import eu.kanade.translation.model.Translation
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.onStart
@@ -42,6 +45,31 @@ class TranslationManager(
 
     val queueState: StateFlow<List<Translation>>
         get() = translator.queueState
+
+    private val deletions = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+
+    /** Emits whenever the saved translations may have changed: a queued one finished, or one was deleted. */
+    val changes: Flow<Unit> = merge(queueState.map {}, deletions)
+
+    /** The status of each queued chapter, by chapter id. */
+    val queuedStates: Flow<Map<Long, Translation.State>> = queueState.flatMapLatest { queue ->
+        if (queue.isEmpty()) {
+            flowOf(emptyMap())
+        } else {
+            combine(queue.map { translation -> translation.statusFlow.map { translation.chapter.id to it } }) {
+                it.toMap()
+            }
+        }
+    }
+
+    /** Returns the ids of the [chapters] that have a saved translation. */
+    fun getTranslatedChapterIds(chapters: List<Chapter>, manga: Manga, source: Source): Set<Long> {
+        val fileNames = provider.getTranslationFileNames(manga.title, source)
+        if (fileNames.isEmpty()) return emptySet()
+        return chapters
+            .filter { provider.getTranslationFileName(it.name, it.scanlator) in fileNames }
+            .mapTo(HashSet()) { it.id }
+    }
 
     fun translateChapter(manga: Manga, chapter: Chapter) {
         scope.launch {
@@ -102,6 +130,7 @@ class TranslationManager(
         scope.launch {
             removeFromTranslationQueue(chapter)
             provider.findTranslationFile(chapter.name, chapter.scanlator, manga.title, source)?.delete()
+            deletions.emit(Unit)
         }
     }
 

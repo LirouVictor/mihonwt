@@ -5,6 +5,7 @@ package eu.kanade.translation
 
 import android.content.Context
 import android.net.Uri
+import android.widget.Toast
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import com.hippo.unifile.UniFile
@@ -14,6 +15,7 @@ import dev.zacsweers.metro.SingleIn
 import eu.kanade.tachiyomi.data.download.DownloadProvider
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.lang.compareToCaseInsensitiveNaturalOrder
+import eu.kanade.tachiyomi.util.system.toast
 import eu.kanade.translation.data.TranslationProvider
 import eu.kanade.translation.model.PageTranslation
 import eu.kanade.translation.model.Translation
@@ -38,15 +40,18 @@ import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import logcat.LogPriority
 import mihon.core.archive.archiveReader
+import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.util.system.ImageUtil
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.translation.TranslationPreferences
+import tachiyomi.i18n.wt.WTMR
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -172,10 +177,9 @@ class ChapterTranslator(
     private suspend fun translateChapter(translation: Translation) {
         try {
             translation.status = Translation.State.TRANSLATING
-            val translator = GeminiTranslator(
-                apiKey = translationPreferences.geminiApiKey.get(),
-                model = translationPreferences.geminiModel.get(),
-            )
+            val apiKey = translationPreferences.geminiApiKey.get()
+            if (apiKey.isBlank()) throw IOException(context.stringResource(WTMR.strings.translation_error_no_api_key))
+            val translator = GeminiTranslator(apiKey = apiKey, model = translationPreferences.geminiModel.get())
             val mangaDir = provider.getMangaDir(translation.manga.title, translation.source)
             val chapterDir = downloadProvider.findChapterDir(
                 translation.chapter.name,
@@ -183,7 +187,7 @@ class ChapterTranslator(
                 translation.chapter.url,
                 translation.manga.title,
                 translation.source,
-            ) ?: throw IOException("Chapter ${translation.chapter.name} is not downloaded")
+            ) ?: throw IOException(context.stringResource(WTMR.strings.translation_error_not_downloaded))
 
             val pages = recognizeChapter(chapterDir)
             translator.translate(pages)
@@ -196,6 +200,12 @@ class ChapterTranslator(
             if (e is CancellationException) throw e
             translation.status = Translation.State.ERROR
             logcat(LogPriority.ERROR, e)
+            val message = context.stringResource(
+                WTMR.strings.translation_failed,
+                translation.chapter.name,
+                e.message.orEmpty(),
+            )
+            withContext(Dispatchers.Main) { context.toast(message, Toast.LENGTH_LONG) }
         }
     }
 

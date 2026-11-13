@@ -6,4 +6,9 @@
     <string name="pref_gemini_api_key_summary">Fica só neste aparelho e não entra nos backups</string>
     <string name="pref_gemini_model">Modelo do Gemini</string>
     <string name="pref_show_translations">Mostrar traduções</string>
+    <string name="action_translate_chapter">Traduzir capítulo</string>
+    <string name="action_delete_translation">Excluir tradução</string>
+    <string name="translation_failed">Não foi possível traduzir %1$s: %2$s</string>
+    <string name="translation_error_no_api_key">Coloque uma chave da API do Gemini em Configurações › Tradução</string>
+    <string name="translation_error_not_downloaded">Baixe o capítulo antes de traduzir</string>
 </resources>

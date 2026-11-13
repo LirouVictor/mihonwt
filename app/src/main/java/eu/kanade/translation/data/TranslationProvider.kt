@@ -63,6 +63,11 @@ class TranslationProvider(
         return findMangaDir(mangaTitle, source)?.findFile(getTranslationFileName(chapterName, chapterScanlator))
     }
 
+    /** Returns the names of a manga's translation files, read in one listing. */
+    fun getTranslationFileNames(mangaTitle: String, source: Source): Set<String> {
+        return findMangaDir(mangaTitle, source)?.listFiles().orEmpty().mapNotNullTo(HashSet()) { it.name }
+    }
+
     private fun getSourceDirName(source: Source): String {
         return DiskUtil.buildValidFilename(source.toString())
     }
