@@ -321,6 +321,9 @@ dependencies {
     // String similarity
     implementation(libs.stringSimilarity)
 
+    // Bubble translation OCR
+    implementation(libs.mlkit.textRecognition)
+
     // GraphQL generation
     implementation(libs.apollo)
     implementation(libs.apollo.adapters)
