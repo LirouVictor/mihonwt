@@ -44,8 +44,10 @@ abstract class TextTranslator {
             }
         }
         val reply = complete(SYSTEM_PROMPT, input.toString(), onRetry)
-        // Models without a JSON mode may still wrap the answer in a code block
-        val output = Json.parseToJsonElement(reply.trim().removePrefix("```json").removeSuffix("```")).jsonObject
+        // Without a JSON mode, models may wrap the object in a code block or a sentence
+        val output = runCatching {
+            Json.parseToJsonElement(reply.substring(reply.indexOf('{'), reply.lastIndexOf('}') + 1)).jsonObject
+        }.getOrElse { throw IOException("$name returned invalid JSON: ${reply.take(200)}") }
 
         pages.forEach { (name, page) ->
             val translations = output[name] as? JsonObject
@@ -77,12 +79,18 @@ abstract class TextTranslator {
         val body = response.use { it.body.string() }
         val json = runCatching { Json.parseToJsonElement(body).jsonObject }.getOrNull()
         if (!response.isSuccessful || json == null) {
-            val message = (json?.get("error") as? JsonObject)?.get("message")?.jsonPrimitive?.contentOrNull
-                ?: body.take(200)
-            throw IOException("$name HTTP ${response.code}: $message")
+            val error = json?.get("error") as? JsonObject
+            throw ApiException(
+                message = "$name HTTP ${response.code}: " +
+                    (error?.get("message")?.jsonPrimitive?.contentOrNull ?: body.take(200)),
+                code = (error?.get("code") as? JsonPrimitive)?.contentOrNull,
+            )
         }
         return json
     }
+
+    /** An error response, with the API's own error [code] when it gives one. */
+    class ApiException(message: String, val code: String?) : IOException(message)
 
     companion object {
         private const val WATERMARK_PLACEHOLDER = "RTMTH"
