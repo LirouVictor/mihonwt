@@ -10,7 +10,7 @@ import tachiyomi.core.common.preference.getEnum
 @Inject
 @SingleIn(AppScope::class)
 class TranslationPreferences(
-    preferenceStore: PreferenceStore,
+    private val preferenceStore: PreferenceStore,
 ) {
 
     val service: Preference<TranslationService> = preferenceStore.getEnum(
@@ -18,32 +18,36 @@ class TranslationPreferences(
         TranslationService.GEMINI,
     )
 
-    // Private so the keys stay out of backups
-    val geminiApiKey: Preference<String> = preferenceStore.getString(
-        Preference.privateKey("translation_gemini_api_key"),
+    /**
+     * Each service keeps its own key, so switching between them doesn't lose it. Stored encrypted by the app, and
+     * private to stay out of backups.
+     */
+    fun apiKey(service: TranslationService): Preference<String> = preferenceStore.getString(
+        Preference.privateKey("translation_${service.key}_api_key"),
         "",
     )
 
-    val geminiModel: Preference<String> = preferenceStore.getString("translation_gemini_model", "gemini-3.8-flash")
-
-    val openAiBaseUrl: Preference<String> = preferenceStore.getString(
-        "translation_openai_base_url",
-        "https://api.groq.com/openai/v1",
+    fun model(service: TranslationService): Preference<String> = preferenceStore.getString(
+        "translation_${service.key}_model",
+        service.defaultModel,
     )
 
-    val openAiApiKey: Preference<String> = preferenceStore.getString(
-        Preference.privateKey("translation_openai_api_key"),
-        "",
-    )
-
-    val openAiModel: Preference<String> = preferenceStore.getString("translation_openai_model", "")
+    /** Address of the API used by [TranslationService.CUSTOM]. */
+    val customBaseUrl: Preference<String> = preferenceStore.getString("translation_custom_base_url", "")
 
     val showTranslations: Preference<Boolean> = preferenceStore.getBoolean("translation_show_in_reader", true)
 }
 
-enum class TranslationService {
-    GEMINI,
+/** A language model API. All but [GEMINI] follow OpenAI's chat completions. */
+enum class TranslationService(val baseUrl: String?, val defaultModel: String = "") {
+    GEMINI(baseUrl = null, defaultModel = "gemini-3.8-flash"),
+    GROQ(baseUrl = "https://api.groq.com/openai/v1"),
+    OPENROUTER(baseUrl = "https://openrouter.ai/api/v1"),
+    CEREBRAS(baseUrl = "https://api.cerebras.ai/v1"),
 
-    /** Any API following OpenAI's chat completions, such as Groq or OpenRouter. */
-    OPENAI_COMPATIBLE,
+    /** Any other OpenAI-compatible API, at [TranslationPreferences.customBaseUrl]. */
+    CUSTOM(baseUrl = null),
+    ;
+
+    val key = name.lowercase()
 }

@@ -2,9 +2,6 @@
 <resources>
     <string name="pref_category_translation">Translation</string>
     <string name="pref_translation_summary">Speech bubble translation with AI</string>
-    <string name="pref_gemini_api_key">Gemini API key</string>
-    <string name="pref_gemini_api_key_summary">Stored on this device only and left out of backups</string>
-    <string name="pref_gemini_model">Gemini model</string>
     <string name="pref_show_translations">Show translations</string>
     <string name="action_translate_chapter">Translate chapter</string>
     <string name="action_delete_translation">Delete translation</string>
@@ -14,12 +11,18 @@
     <string name="action_retranslate">Translate again</string>
     <string name="translation_queued">Waiting in the queue</string>
     <string name="translation_progress_ocr">Reading page %1$d of %2$d</string>
-    <string name="translation_progress_gemini">Translating with Gemini</string>
-    <string name="translation_progress_gemini_retry">Gemini is busy, retry %1$d of 3</string>
     <string name="translation_error_no_model">Choose a model in Settings › Translation</string>
     <string name="pref_translation_service">Translation service</string>
-    <string name="translation_service_openai">OpenAI-compatible (Groq, OpenRouter…)</string>
-    <string name="pref_openai_base_url">API address</string>
-    <string name="pref_openai_api_key">API key</string>
-    <string name="pref_openai_model">Model</string>
+    <string name="pref_api_key">API key</string>
+    <string name="pref_api_key_summary">Encrypted on this device and left out of backups</string>
+    <string name="pref_api_key_missing">Not set</string>
+    <string name="pref_model">Model</string>
+    <string name="pref_custom_base_url">API address</string>
+    <string name="translation_service_custom">Other OpenAI-compatible address</string>
+    <string name="translation_error_no_base_url">Add the API address in Settings › Translation</string>
+    <string name="translation_progress_ai">Translating with AI</string>
+    <string name="translation_progress_ai_retry">The service is busy, retry %1$d of 3</string>
+    <string name="pref_model_choose">Tap to choose</string>
+    <string name="pref_model_search">Search or type a name</string>
+    <string name="pref_model_list_error">Couldn\'t load the models: %1$s</string>
 </resources>

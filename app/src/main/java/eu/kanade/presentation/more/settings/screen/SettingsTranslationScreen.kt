@@ -3,9 +3,14 @@ package eu.kanade.presentation.more.settings.screen
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import eu.kanade.presentation.more.settings.Preference
+import eu.kanade.translation.data.ApiKeyCipher
+import eu.kanade.translation.presentation.ModelPickerDialog
+import eu.kanade.translation.translator.TextTranslator
 import mihon.app.di.appGraph
 import tachiyomi.domain.translation.TranslationService
 import tachiyomi.i18n.wt.WTMR
@@ -23,41 +28,56 @@ object SettingsTranslationScreen : SearchableSettings {
         val context = LocalContext.current
         val translationPreferences = remember { context.appGraph.translationPreferences }
         val service by translationPreferences.service.collectAsState()
+        val apiKeyPref = remember(service) { ApiKeyCipher.wrap(translationPreferences.apiKey(service)) }
+        val apiKey by apiKeyPref.collectAsState()
+        val modelPref = remember(service) { translationPreferences.model(service) }
+        val model by modelPref.collectAsState()
+
+        var isModelPickerShown by remember { mutableStateOf(false) }
+        if (isModelPickerShown) {
+            ModelPickerDialog(
+                title = stringResource(WTMR.strings.pref_model),
+                value = model,
+                loadModels = {
+                    TextTranslator.create(service, apiKey, "", translationPreferences.customBaseUrl.get()).models()
+                },
+                onConfirm = modelPref::set,
+                onDismissRequest = { isModelPickerShown = false },
+            )
+        }
+
         return listOf(
             Preference.PreferenceItem.ListPreference(
                 preference = translationPreferences.service,
-                entries = mapOf(
-                    TranslationService.GEMINI to "Gemini",
-                    TranslationService.OPENAI_COMPATIBLE to stringResource(WTMR.strings.translation_service_openai),
-                ),
+                entries = TranslationService.entries.associateWith {
+                    when (it) {
+                        TranslationService.GEMINI -> "Gemini"
+                        TranslationService.GROQ -> "Groq"
+                        TranslationService.OPENROUTER -> "OpenRouter"
+                        TranslationService.CEREBRAS -> "Cerebras"
+                        TranslationService.CUSTOM -> stringResource(WTMR.strings.translation_service_custom)
+                    }
+                },
                 title = stringResource(WTMR.strings.pref_translation_service),
             ),
             Preference.PreferenceItem.EditTextPreference(
-                preference = translationPreferences.geminiApiKey,
-                title = stringResource(WTMR.strings.pref_gemini_api_key),
-                subtitle = stringResource(WTMR.strings.pref_gemini_api_key_summary),
-                visible = service == TranslationService.GEMINI,
+                preference = translationPreferences.customBaseUrl,
+                title = stringResource(WTMR.strings.pref_custom_base_url),
+                visible = service == TranslationService.CUSTOM,
             ),
             Preference.PreferenceItem.EditTextPreference(
-                preference = translationPreferences.geminiModel,
-                title = stringResource(WTMR.strings.pref_gemini_model),
-                visible = service == TranslationService.GEMINI,
+                preference = apiKeyPref,
+                title = stringResource(WTMR.strings.pref_api_key),
+                subtitle = if (apiKey.isBlank()) {
+                    stringResource(WTMR.strings.pref_api_key_missing)
+                } else {
+                    stringResource(WTMR.strings.pref_api_key_summary)
+                },
             ),
-            Preference.PreferenceItem.EditTextPreference(
-                preference = translationPreferences.openAiBaseUrl,
-                title = stringResource(WTMR.strings.pref_openai_base_url),
-                visible = service == TranslationService.OPENAI_COMPATIBLE,
-            ),
-            Preference.PreferenceItem.EditTextPreference(
-                preference = translationPreferences.openAiApiKey,
-                title = stringResource(WTMR.strings.pref_openai_api_key),
-                subtitle = stringResource(WTMR.strings.pref_gemini_api_key_summary),
-                visible = service == TranslationService.OPENAI_COMPATIBLE,
-            ),
-            Preference.PreferenceItem.EditTextPreference(
-                preference = translationPreferences.openAiModel,
-                title = stringResource(WTMR.strings.pref_openai_model),
-                visible = service == TranslationService.OPENAI_COMPATIBLE,
+            Preference.PreferenceItem.TextPreference(
+                title = stringResource(WTMR.strings.pref_model),
+                subtitle = model.ifBlank { stringResource(WTMR.strings.pref_model_choose) },
+                onClick = { isModelPickerShown = true },
             ),
         )
     }

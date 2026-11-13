@@ -25,6 +25,35 @@ class OpenAiCompatibleTranslator(
     override val name = baseUrl.toHttpUrlOrNull()?.host ?: baseUrl
 
     override suspend fun complete(systemPrompt: String, userText: String, onRetry: (attempt: Int) -> Unit): String {
+        val json = try {
+            send(request(systemPrompt, userText, jsonMode = true), onRetry)
+        } catch (e: ApiException) {
+            // Groq rejects the whole reply when the model's JSON has a flaw, which translate() can often parse anyway
+            if (e.code != "json_validate_failed") throw e
+            send(request(systemPrompt, userText, jsonMode = false), onRetry)
+        }
+
+        val choice = (json["choices"] as? JsonArray)?.firstOrNull()?.jsonObject
+            ?: throw IOException("$name returned no choices")
+        if (choice["finish_reason"]?.jsonPrimitive?.contentOrNull == "length") {
+            throw IOException("$name cut the reply short: the model's output limit is too small for this chapter")
+        }
+        return choice["message"]?.jsonObject?.get("content")?.jsonPrimitive?.contentOrNull
+            ?.ifEmpty { null }
+            ?: throw IOException("$name returned no text, finish reason ${choice["finish_reason"]}")
+    }
+
+    override suspend fun models(): List<String> {
+        val request = Request.Builder()
+            .url("${baseUrl.trimEnd('/')}/models")
+            .header("Authorization", "Bearer $apiKey")
+            .build()
+        return (send(request) {}["data"] as? JsonArray).orEmpty()
+            .mapNotNull { it.jsonObject["id"]?.jsonPrimitive?.contentOrNull }
+            .sorted()
+    }
+
+    private fun request(systemPrompt: String, userText: String, jsonMode: Boolean): Request {
         val body = buildJsonObject {
             put("model", model)
             putJsonArray("messages") {
@@ -37,19 +66,12 @@ class OpenAiCompatibleTranslator(
                     put("content", userText)
                 }
             }
-            putJsonObject("response_format") { put("type", "json_object") }
+            if (jsonMode) putJsonObject("response_format") { put("type", "json_object") }
         }
-        val request = Request.Builder()
+        return Request.Builder()
             .url("${baseUrl.trimEnd('/')}/chat/completions")
             .header("Authorization", "Bearer $apiKey")
             .post(body.toString().toRequestBody("application/json".toMediaType()))
             .build()
-        val json = send(request, onRetry)
-
-        val choice = (json["choices"] as? JsonArray)?.firstOrNull()?.jsonObject
-            ?: throw IOException("$name returned no choices")
-        return choice["message"]?.jsonObject?.get("content")?.jsonPrimitive?.contentOrNull
-            ?.ifEmpty { null }
-            ?: throw IOException("$name returned no text, finish reason ${choice["finish_reason"]}")
     }
 }

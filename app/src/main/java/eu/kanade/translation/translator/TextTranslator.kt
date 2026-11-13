@@ -5,7 +5,9 @@ package eu.kanade.translation.translator
 
 import eu.kanade.tachiyomi.network.await
 import eu.kanade.translation.model.PageTranslation
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -17,6 +19,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import tachiyomi.domain.translation.TranslationService
 import java.io.IOException
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
@@ -44,8 +47,10 @@ abstract class TextTranslator {
             }
         }
         val reply = complete(SYSTEM_PROMPT, input.toString(), onRetry)
-        // Models without a JSON mode may still wrap the answer in a code block
-        val output = Json.parseToJsonElement(reply.trim().removePrefix("```json").removeSuffix("```")).jsonObject
+        // Without a JSON mode, models may wrap the object in a code block or a sentence
+        val output = runCatching {
+            Json.parseToJsonElement(reply.substring(reply.indexOf('{'), reply.lastIndexOf('}') + 1)).jsonObject
+        }.getOrElse { throw IOException("$name returned invalid JSON: ${reply.take(200)}") }
 
         pages.forEach { (name, page) ->
             val translations = output[name] as? JsonObject
@@ -56,6 +61,9 @@ abstract class TextTranslator {
         }
     }
 
+    /** Returns the names of the models this API key can use, to pick one from. */
+    abstract suspend fun models(): List<String>
+
     /** Returns the model's reply to [userText], which should be a JSON object. */
     protected abstract suspend fun complete(
         systemPrompt: String,
@@ -64,7 +72,10 @@ abstract class TextTranslator {
     ): String
 
     /** Sends [request], retrying rate limits and overloads, and returns the response's JSON body. */
-    protected suspend fun send(request: Request, onRetry: (attempt: Int) -> Unit): JsonObject {
+    protected suspend fun send(
+        request: Request,
+        onRetry: (attempt: Int) -> Unit,
+    ): JsonObject = withContext(Dispatchers.IO) {
         var attempt = 0
         var response = client.newCall(request).await()
         // Rate limits and "model overloaded" errors usually clear within seconds
@@ -77,14 +88,30 @@ abstract class TextTranslator {
         val body = response.use { it.body.string() }
         val json = runCatching { Json.parseToJsonElement(body).jsonObject }.getOrNull()
         if (!response.isSuccessful || json == null) {
-            val message = (json?.get("error") as? JsonObject)?.get("message")?.jsonPrimitive?.contentOrNull
-                ?: body.take(200)
-            throw IOException("$name HTTP ${response.code}: $message")
+            val error = json?.get("error") as? JsonObject
+            throw ApiException(
+                message = "$name HTTP ${response.code}: " +
+                    (error?.get("message")?.jsonPrimitive?.contentOrNull ?: body.take(200)),
+                code = (error?.get("code") as? JsonPrimitive)?.contentOrNull,
+            )
         }
-        return json
+        json
     }
 
+    /** An error response, with the API's own error [code] when it gives one. */
+    class ApiException(message: String, val code: String?) : IOException(message)
+
     companion object {
+        /** Returns the translator for [service]. [customBaseUrl] is only used by [TranslationService.CUSTOM]. */
+        fun create(service: TranslationService, apiKey: String, model: String, customBaseUrl: String): TextTranslator {
+            val baseUrl = when (service) {
+                TranslationService.GEMINI -> return GeminiTranslator(apiKey = apiKey, model = model)
+                TranslationService.CUSTOM -> customBaseUrl
+                else -> service.baseUrl!!
+            }
+            return OpenAiCompatibleTranslator(baseUrl = baseUrl, apiKey = apiKey, model = model)
+        }
+
         private const val WATERMARK_PLACEHOLDER = "RTMTH"
 
         private val RETRY_CODES = setOf(429, 500, 502, 503)
