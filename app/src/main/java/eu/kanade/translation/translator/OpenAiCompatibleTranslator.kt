@@ -65,6 +65,9 @@ class OpenAiCompatibleTranslator(
                 }
             }
             if (jsonMode) putJsonObject("response_format") { put("type", "json_object") }
+            // gpt-oss reasons at medium effort by default, which takes long and eats into the output limit, and
+            // translation doesn't need it
+            if (model.contains("gpt-oss")) put("reasoning_effort", "low")
         }
         return Request.Builder()
             .url("${baseUrl.trimEnd('/')}/chat/completions")
