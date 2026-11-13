@@ -79,6 +79,11 @@ object SettingsTranslationScreen : SearchableSettings {
                 subtitle = model.ifBlank { stringResource(WTMR.strings.pref_model_choose) },
                 onClick = { isModelPickerShown = true },
             ),
+            Preference.PreferenceItem.SwitchPreference(
+                preference = translationPreferences.translateOnDownload,
+                title = stringResource(WTMR.strings.pref_translate_on_download),
+                subtitle = stringResource(WTMR.strings.pref_translate_on_download_summary),
+            ),
         )
     }
 }
