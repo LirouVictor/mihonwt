@@ -20,7 +20,7 @@
     <string name="pref_custom_base_url">API address</string>
     <string name="translation_service_custom">Other OpenAI-compatible address</string>
     <string name="translation_error_no_base_url">Add the API address in Settings › Translation</string>
-    <string name="translation_progress_ai">Translating with AI</string>
+    <string name="translation_progress_ai">Translating with AI: %1$d of %2$d pages done</string>
     <string name="translation_progress_ai_retry">The service is busy, retry %1$d of 3</string>
     <string name="pref_model_choose">Tap to choose</string>
     <string name="pref_model_search">Search or type a name</string>

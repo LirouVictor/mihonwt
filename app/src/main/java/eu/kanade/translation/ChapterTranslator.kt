@@ -87,6 +87,14 @@ class ChapterTranslator(
 
     private val recognizedChapters = ConcurrentHashMap<Long, Map<String, PageTranslation>>()
 
+    private val _partialTranslations = MutableStateFlow<Map<Long, Map<String, PageTranslation>>>(emptyMap())
+
+    /**
+     * Pages translated so far of each chapter still in the queue, by chapter id, so the reader can show them before
+     * the chapter's file is saved. A failed chapter keeps them, and a retry only translates the rest.
+     */
+    val partialTranslations = _partialTranslations.asStateFlow()
+
     fun start(): Boolean {
         if (isRunning || queueState.value.isEmpty()) {
             return false
@@ -201,15 +209,25 @@ class ChapterTranslator(
             // A retry usually follows a translator error, so it reuses the OCR instead of reading every page again
             val pages = recognizedChapters[translation.chapter.id] ?: recognizeChapter(chapterDir, translation)
                 .also { recognizedChapters[translation.chapter.id] = it }
-            translation.progress = Translation.Progress(pages.size, pages.size)
-            translator.translate(pages) { attempt ->
-                translation.progress = Translation.Progress(pages.size, pages.size, retries = attempt)
+            val chapterId = translation.chapter.id
+            val done = partialTranslations.value[chapterId].orEmpty().toMutableMap()
+            // Small batches keep each reply within the model's output limit, and let the reader show the first
+            // pages while the rest are translated
+            pages.keys.filterNot { it in done }.chunked(BATCH_SIZE).forEach { names ->
+                val progress = Translation.Progress(pages.size, pages.size, done.size, pages.size)
+                translation.progress = progress
+                translator.translate(names.associateWith { pages.getValue(it) }) { attempt ->
+                    translation.progress = progress.copy(retries = attempt)
+                }
+                names.forEach { done[it] = pages.getValue(it) }
+                _partialTranslations.update { it + (chapterId to done.toMap()) }
             }
-            recognizedChapters.remove(translation.chapter.id)
 
             mangaDir.createFile(
                 provider.getTranslationFileName(translation.chapter.name, translation.chapter.scanlator),
             )!!.openOutputStream().use { it.write(Json.encodeToString(pages).toByteArray()) }
+            recognizedChapters.remove(chapterId)
+            _partialTranslations.update { it - chapterId }
             translation.progress = null
             translation.status = Translation.State.TRANSLATED
         } catch (e: Throwable) {
@@ -365,6 +383,10 @@ class ChapterTranslator(
         )
     }
 
+    private companion object {
+        const val BATCH_SIZE = 5
+    }
+
     private fun areAllTranslationsFinished(): Boolean {
         return queueState.value.none { it.status.value <= Translation.State.TRANSLATING.value }
     }
@@ -380,6 +402,7 @@ class ChapterTranslator(
 
     fun removeFromQueue(chapter: Chapter) {
         recognizedChapters.remove(chapter.id)
+        _partialTranslations.update { it - chapter.id }
         removeFromQueueIf { it.chapter.id == chapter.id }
     }
 
