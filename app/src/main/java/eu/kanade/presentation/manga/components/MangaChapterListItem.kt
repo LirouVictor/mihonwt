@@ -177,10 +177,9 @@ fun MangaChapterListItem(
             }
 
             val translationState = translationStateProvider()
-            if (onTranslateClick != null &&
-                (downloadStateProvider() == Download.State.DOWNLOADED ||
-                    translationState != Translation.State.NOT_TRANSLATED)
-            ) {
+            val hasTranslationInput = downloadStateProvider() == Download.State.DOWNLOADED ||
+                translationState != Translation.State.NOT_TRANSLATED
+            if (onTranslateClick != null && hasTranslationInput) {
                 ChapterTranslationIndicator(
                     enabled = downloadIndicatorEnabled,
                     state = translationState,
