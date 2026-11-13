@@ -58,7 +58,6 @@ import tachiyomi.i18n.wt.WTMR
 import java.io.IOException
 import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
-import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
@@ -326,50 +325,42 @@ class ChapterTranslator(
                 ),
             )
         }
-        page.blocks = smartMergeBlocks(page.blocks, widthThreshold = 50, xThreshold = 30, yThreshold = 30)
+        page.blocks = mergeBubbleBlocks(page.blocks)
         return page
     }
 
-    /** Joins consecutive blocks that look like lines of the same speech bubble. */
-    private fun smartMergeBlocks(
-        blocks: List<TranslationBlock>,
-        widthThreshold: Int,
-        xThreshold: Int,
-        yThreshold: Int,
-    ): MutableList<TranslationBlock> {
-        if (blocks.isEmpty()) return mutableListOf()
-
-        val merged = mutableListOf<TranslationBlock>()
-        var current = blocks[0]
-        for (i in 1 until blocks.size) {
-            val next = blocks[i]
-            if (shouldMergeTextBlock(current, next, widthThreshold, xThreshold, yThreshold)) {
-                current = mergeTextBlock(current, next)
+    /**
+     * Joins blocks that look like parts of the same speech bubble. ML Kit doesn't return a bubble's blocks one after
+     * the other, so every pair is compared.
+     */
+    private fun mergeBubbleBlocks(blocks: List<TranslationBlock>): MutableList<TranslationBlock> {
+        val merged = blocks.sortedBy { it.y }.toMutableList()
+        var i = 0
+        while (i < merged.size) {
+            val j = (i + 1..<merged.size).firstOrNull { isSameBubble(merged[i], merged[it]) }
+            if (j == null) {
+                i++
             } else {
-                merged.add(current)
-                current = next
+                merged[i] = mergeTextBlock(merged[i], merged.removeAt(j))
             }
         }
-        merged.add(current)
         return merged
     }
 
-    private fun shouldMergeTextBlock(
-        a: TranslationBlock,
-        b: TranslationBlock,
-        widthThreshold: Int,
-        xThreshold: Int,
-        yThreshold: Int,
-    ): Boolean {
-        val isWidthSimilar = (b.width < a.width) || (abs(a.width - b.width) < widthThreshold)
-        val isXClose = abs(a.x - b.x) < xThreshold
-        val isYClose = (b.y - (a.y + a.height)) < yThreshold
-        return isWidthSimilar && isXClose && isYClose
+    /**
+     * Whether [below] continues [above]: stacked less than about a line apart and overlapping horizontally. Distances
+     * are measured in letter heights, so they hold at any page resolution.
+     */
+    private fun isSameBubble(above: TranslationBlock, below: TranslationBlock): Boolean {
+        val lineHeight = max(above.symHeight, below.symHeight)
+        val gap = below.y - (above.y + above.height)
+        val overlap = min(above.x + above.width, below.x + below.width) - max(above.x, below.x)
+        return gap > -lineHeight && gap < lineHeight * 1.2f && overlap > min(above.width, below.width) / 2
     }
 
     private fun mergeTextBlock(a: TranslationBlock, b: TranslationBlock): TranslationBlock {
         val newX = min(a.x, b.x)
-        val newY = a.y
+        val newY = min(a.y, b.y)
         return TranslationBlock(
             text = a.text + " " + b.text,
             translation = a.translation + " " + b.translation,
