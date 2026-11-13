@@ -3,6 +3,12 @@ on:
   push:
     tags:
       - v*
+  # Lets a release be started from the Actions tab or the API, where pushing a tag isn't possible
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to create on the chosen branch, like v1.2.3
+        required: true
 
 env:
   MIHON_GITHUB_RELEASE: true
@@ -27,7 +33,7 @@ jobs:
         id: version
         run: |
           set -e
-          tag="${GITHUB_REF_NAME}"
+          tag="${INPUT_TAG:-$GITHUB_REF_NAME}"
           if [[ ! "$tag" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
             echo "::error::Tag $tag must look like v1.2.3"
             exit 1
@@ -37,6 +43,8 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "name=${tag#v}" >> "$GITHUB_OUTPUT"
           echo "code=$code" >> "$GITHUB_OUTPUT"
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
 
       - name: Set up JDK
         uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
@@ -72,5 +80,6 @@ jobs:
         uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           tag_name: ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
           name: MihonWT ${{ steps.version.outputs.tag }}
           files: MihonWT-${{ steps.version.outputs.tag }}.apk
