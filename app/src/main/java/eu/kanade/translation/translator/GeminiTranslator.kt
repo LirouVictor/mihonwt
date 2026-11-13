@@ -8,6 +8,7 @@ import eu.kanade.translation.model.PageTranslation
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.booleanOrNull
@@ -46,17 +47,19 @@ class GeminiTranslator(
 
     /** Fills [eu.kanade.translation.model.TranslationBlock.translation] and drops blocks marked as watermarks. */
     suspend fun translate(pages: Map<String, PageTranslation>, onRetry: (attempt: Int) -> Unit = {}) {
+        // Blocks are numbered rather than listed: with a list, the model sometimes merges two fragments of a sentence
+        // and every later block on the page gets the translation of the one after it
         val input = buildJsonObject {
             pages.forEach { (name, page) ->
-                putJsonArray(name) { page.blocks.forEach { add(JsonPrimitive(it.text)) } }
+                putJsonObject(name) { page.blocks.forEachIndexed { i, block -> put(i.toString(), block.text) } }
             }
         }
         val output = Json.parseToJsonElement(generate(input.toString(), onRetry)).jsonObject
 
         pages.forEach { (name, page) ->
-            val translations = output[name] as? JsonArray
+            val translations = output[name] as? JsonObject
             page.blocks.forEachIndexed { i, block ->
-                block.translation = translations?.getOrNull(i)?.jsonPrimitive?.contentOrNull ?: block.text
+                block.translation = (translations?.get(i.toString()) as? JsonPrimitive)?.contentOrNull ?: block.text
             }
             page.blocks = page.blocks.filterNot { it.translation.contains(WATERMARK_PLACEHOLDER) }.toMutableList()
         }
@@ -139,34 +142,31 @@ class GeminiTranslator(
 
             **Here's how you should operate:**
 
-            1. **Input:** You'll receive a JSON object where keys are image filenames (e.g., "001.jpg") and values are lists of text strings extracted from those images.
+            1. **Input:** You'll receive a JSON object where keys are image filenames (e.g., "001.jpg") and values are objects mapping a block number to the text extracted from one speech bubble or caption.
 
-            2. **Translation:** Translate all text strings to the target language `Brazilian Portuguese`. Ensure the translation is natural and fluent, adapting idioms and expressions to fit the target language's cultural context.
+            2. **Translation:** Translate every block to the target language `Brazilian Portuguese`. Ensure the translation is natural and fluent, adapting idioms and expressions to fit the target language's cultural context.
 
-            3. **Watermark/Site Link Removal:** Replace any watermarks or site links (e.g., "colamanga.com") with the placeholder "$WATERMARK_PLACEHOLDER".
+            3. **One block, one translation:** The text was read by OCR, so a sentence may be split across consecutive blocks. Translate each block on its own, keeping each part of the sentence in its own block. Never merge blocks or move text from one block to another. Fix obvious OCR mistakes using the context.
 
-            4. **Structure Preservation:** Maintain the exact same structure as the input JSON. The output JSON should have the same number of keys (image filenames) and the same number of text strings within each list.
+            4. **Watermark and noise removal:** Replace any watermarks or site links (e.g., "colamanga.com"), and any block that isn't readable text (OCR noise from the artwork), with the placeholder "$WATERMARK_PLACEHOLDER".
+
+            5. **Structure Preservation:** Return the same image filenames and, for each, exactly the same block numbers as the input.
 
             **Example:**
 
             **Input:**
 
             ```json
-            {"001.jpg":["english1","english2"],"002.jpg":["english3","colamanga.com"]}
+            {"001.jpg":{"0":"IF IT","1":"ISN'T MISS VAMOLA!","2":"COULD I GET YOUR HELP?"},"002.jpg":{"0":"english3","1":"colamanga.com","2":"Rp aouariun"}}
             ```
 
             **Output:**
 
             ```json
-            {"001.jpg":["portuguese1","portuguese2"],"002.jpg":["portuguese3","$WATERMARK_PLACEHOLDER"]}
+            {"001.jpg":{"0":"OLHA SÓ","1":"SE NÃO É A SRTA. VAMOLA!","2":"PODERIA ME AJUDAR?"},"002.jpg":{"0":"portuguese3","1":"$WATERMARK_PLACEHOLDER","2":"$WATERMARK_PLACEHOLDER"}}
             ```
 
-            **Key Points:**
-
-            * Prioritize accurate and natural-sounding translations.
-            * Be meticulous in removing all watermarks and site links.
-            * Ensure the output JSON structure perfectly mirrors the input structure.
-            Return {[key:string]:Array<String>}
+            Return {[filename:string]:{[block:string]:string}}
         """.trimIndent()
     }
 }
