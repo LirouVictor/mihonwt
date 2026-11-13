@@ -46,6 +46,10 @@ class TranslationManager(
     val queueState: StateFlow<List<Translation>>
         get() = translator.queueState
 
+    /** See [ChapterTranslator.partialTranslations]. */
+    val partialTranslations: StateFlow<Map<Long, Map<String, PageTranslation>>>
+        get() = translator.partialTranslations
+
     private val deletions = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
 
     /** Emits whenever the saved translations may have changed: a queued one finished, or one was deleted. */

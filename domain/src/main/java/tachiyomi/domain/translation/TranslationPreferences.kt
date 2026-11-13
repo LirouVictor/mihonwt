@@ -35,6 +35,8 @@ class TranslationPreferences(
     /** Address of the API used by [TranslationService.CUSTOM]. */
     val customBaseUrl: Preference<String> = preferenceStore.getString("translation_custom_base_url", "")
 
+    val translateOnDownload: Preference<Boolean> = preferenceStore.getBoolean("translation_on_download", false)
+
     val showTranslations: Preference<Boolean> = preferenceStore.getBoolean("translation_show_in_reader", true)
 }
 

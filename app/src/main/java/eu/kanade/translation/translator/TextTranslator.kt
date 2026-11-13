@@ -58,11 +58,12 @@ abstract class TextTranslator {
                 putJsonObject(name) { page.blocks.forEachIndexed { i, block -> put(i.toString(), block.text) } }
             }
         }
-        val reply = complete(SYSTEM_PROMPT, input.toString(), onRetry)
-        // Without a JSON mode, models may wrap the object in a code block or a sentence
-        val output = runCatching {
-            Json.parseToJsonElement(reply.substring(reply.indexOf('{'), reply.lastIndexOf('}') + 1)).jsonObject
-        }.getOrElse { throw IOException("$name returned invalid JSON: ${reply.take(200)}") }
+        var output = request(input.toString(), onRetry)
+        // Models now and then skip a block, which would stay in English; a second answer is usually complete
+        if (countMissing(pages, output) > 0) {
+            val retry = request(input.toString(), onRetry)
+            if (countMissing(pages, retry) < countMissing(pages, output)) output = retry
+        }
 
         pages.forEach { (name, page) ->
             val translations = output[name] as? JsonObject
@@ -70,6 +71,21 @@ abstract class TextTranslator {
                 block.translation = (translations?.get(i.toString()) as? JsonPrimitive)?.contentOrNull ?: block.text
             }
             page.blocks = page.blocks.filterNot { it.translation.contains(WATERMARK_PLACEHOLDER) }.toMutableList()
+        }
+    }
+
+    private suspend fun request(input: String, onRetry: (attempt: Int) -> Unit): JsonObject {
+        val reply = complete(SYSTEM_PROMPT, input, onRetry)
+        // Without a JSON mode, models may wrap the object in a code block or a sentence
+        return runCatching {
+            Json.parseToJsonElement(reply.substring(reply.indexOf('{'), reply.lastIndexOf('}') + 1)).jsonObject
+        }.getOrElse { throw IOException("$name returned invalid JSON: ${reply.take(200)}") }
+    }
+
+    private fun countMissing(pages: Map<String, PageTranslation>, output: JsonObject): Int {
+        return pages.entries.sumOf { (name, page) ->
+            val translations = output[name] as? JsonObject
+            page.blocks.indices.count { (translations?.get(it.toString()) as? JsonPrimitive)?.contentOrNull == null }
         }
     }
 

@@ -17,6 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
@@ -98,7 +99,8 @@ class PagerPageHolder(
             launch {
                 context.appGraph.translationPreferences.showTranslations.changes().collect { isTranslationShown = it }
             }
-            page.statusFlow.collectLatest { state ->
+            // A translation that lands while the chapter is open redraws the page
+            combine(page.statusFlow, page.translationFlow) { state, _ -> state }.collectLatest { state ->
                 when (state) {
                     Page.State.Queue -> setQueued()
                     Page.State.LoadPage -> setLoading()

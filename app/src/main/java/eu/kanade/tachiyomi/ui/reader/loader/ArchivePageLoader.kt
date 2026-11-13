@@ -23,6 +23,7 @@ internal class ArchivePageLoader(
             .mapIndexed { i, entry ->
                 ReaderPage(i).apply {
                     stream = { reader.getInputStream(entry.name)!! }
+                    translationKey = entry.name
                     translation = translations[entry.name]
                     status = Page.State.Ready
                 }

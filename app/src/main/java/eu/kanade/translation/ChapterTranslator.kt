@@ -58,7 +58,6 @@ import tachiyomi.i18n.wt.WTMR
 import java.io.IOException
 import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
-import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
@@ -86,6 +85,14 @@ class ChapterTranslator(
     private val textRecognizer by lazy { TextRecognizer() }
 
     private val recognizedChapters = ConcurrentHashMap<Long, Map<String, PageTranslation>>()
+
+    private val _partialTranslations = MutableStateFlow<Map<Long, Map<String, PageTranslation>>>(emptyMap())
+
+    /**
+     * Pages translated so far of each chapter still in the queue, by chapter id, so the reader can show them before
+     * the chapter's file is saved. A failed chapter keeps them, and a retry only translates the rest.
+     */
+    val partialTranslations = _partialTranslations.asStateFlow()
 
     fun start(): Boolean {
         if (isRunning || queueState.value.isEmpty()) {
@@ -201,15 +208,25 @@ class ChapterTranslator(
             // A retry usually follows a translator error, so it reuses the OCR instead of reading every page again
             val pages = recognizedChapters[translation.chapter.id] ?: recognizeChapter(chapterDir, translation)
                 .also { recognizedChapters[translation.chapter.id] = it }
-            translation.progress = Translation.Progress(pages.size, pages.size)
-            translator.translate(pages) { attempt ->
-                translation.progress = Translation.Progress(pages.size, pages.size, retries = attempt)
+            val chapterId = translation.chapter.id
+            val done = partialTranslations.value[chapterId].orEmpty().toMutableMap()
+            // Small batches keep each reply within the model's output limit, and let the reader show the first
+            // pages while the rest are translated
+            pages.keys.filterNot { it in done }.chunked(BATCH_SIZE).forEach { names ->
+                val progress = Translation.Progress(pages.size, pages.size, done.size, pages.size)
+                translation.progress = progress
+                translator.translate(names.associateWith { pages.getValue(it) }) { attempt ->
+                    translation.progress = progress.copy(retries = attempt)
+                }
+                names.forEach { done[it] = pages.getValue(it) }
+                _partialTranslations.update { it + (chapterId to done.toMap()) }
             }
-            recognizedChapters.remove(translation.chapter.id)
 
             mangaDir.createFile(
                 provider.getTranslationFileName(translation.chapter.name, translation.chapter.scanlator),
             )!!.openOutputStream().use { it.write(Json.encodeToString(pages).toByteArray()) }
+            recognizedChapters.remove(chapterId)
+            _partialTranslations.update { it - chapterId }
             translation.progress = null
             translation.status = Translation.State.TRANSLATED
         } catch (e: Throwable) {
@@ -308,50 +325,42 @@ class ChapterTranslator(
                 ),
             )
         }
-        page.blocks = smartMergeBlocks(page.blocks, widthThreshold = 50, xThreshold = 30, yThreshold = 30)
+        page.blocks = mergeBubbleBlocks(page.blocks)
         return page
     }
 
-    /** Joins consecutive blocks that look like lines of the same speech bubble. */
-    private fun smartMergeBlocks(
-        blocks: List<TranslationBlock>,
-        widthThreshold: Int,
-        xThreshold: Int,
-        yThreshold: Int,
-    ): MutableList<TranslationBlock> {
-        if (blocks.isEmpty()) return mutableListOf()
-
-        val merged = mutableListOf<TranslationBlock>()
-        var current = blocks[0]
-        for (i in 1 until blocks.size) {
-            val next = blocks[i]
-            if (shouldMergeTextBlock(current, next, widthThreshold, xThreshold, yThreshold)) {
-                current = mergeTextBlock(current, next)
+    /**
+     * Joins blocks that look like parts of the same speech bubble. ML Kit doesn't return a bubble's blocks one after
+     * the other, so every pair is compared.
+     */
+    private fun mergeBubbleBlocks(blocks: List<TranslationBlock>): MutableList<TranslationBlock> {
+        val merged = blocks.sortedBy { it.y }.toMutableList()
+        var i = 0
+        while (i < merged.size) {
+            val j = (i + 1..<merged.size).firstOrNull { isSameBubble(merged[i], merged[it]) }
+            if (j == null) {
+                i++
             } else {
-                merged.add(current)
-                current = next
+                merged[i] = mergeTextBlock(merged[i], merged.removeAt(j))
             }
         }
-        merged.add(current)
         return merged
     }
 
-    private fun shouldMergeTextBlock(
-        a: TranslationBlock,
-        b: TranslationBlock,
-        widthThreshold: Int,
-        xThreshold: Int,
-        yThreshold: Int,
-    ): Boolean {
-        val isWidthSimilar = (b.width < a.width) || (abs(a.width - b.width) < widthThreshold)
-        val isXClose = abs(a.x - b.x) < xThreshold
-        val isYClose = (b.y - (a.y + a.height)) < yThreshold
-        return isWidthSimilar && isXClose && isYClose
+    /**
+     * Whether [below] continues [above]: stacked less than about a line apart and overlapping horizontally. Distances
+     * are measured in letter heights, so they hold at any page resolution.
+     */
+    private fun isSameBubble(above: TranslationBlock, below: TranslationBlock): Boolean {
+        val lineHeight = max(above.symHeight, below.symHeight)
+        val gap = below.y - (above.y + above.height)
+        val overlap = min(above.x + above.width, below.x + below.width) - max(above.x, below.x)
+        return gap > -lineHeight && gap < lineHeight * 1.2f && overlap > min(above.width, below.width) / 2
     }
 
     private fun mergeTextBlock(a: TranslationBlock, b: TranslationBlock): TranslationBlock {
         val newX = min(a.x, b.x)
-        val newY = a.y
+        val newY = min(a.y, b.y)
         return TranslationBlock(
             text = a.text + " " + b.text,
             translation = a.translation + " " + b.translation,
@@ -363,6 +372,10 @@ class ChapterTranslator(
             symWidth = a.symWidth,
             angle = a.angle,
         )
+    }
+
+    private companion object {
+        const val BATCH_SIZE = 5
     }
 
     private fun areAllTranslationsFinished(): Boolean {
@@ -380,6 +393,7 @@ class ChapterTranslator(
 
     fun removeFromQueue(chapter: Chapter) {
         recognizedChapters.remove(chapter.id)
+        _partialTranslations.update { it - chapter.id }
         removeFromQueueIf { it.chapter.id == chapter.id }
     }
 

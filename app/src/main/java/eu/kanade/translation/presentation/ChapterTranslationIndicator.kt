@@ -81,13 +81,16 @@ fun ChapterTranslationIndicator(
             )
             Translation.State.QUEUE, Translation.State.TRANSLATING -> {
                 val current = progress
-                if (current == null || current.page == current.pages) {
+                val fraction = when {
+                    current == null -> null
+                    current.page < current.pages -> current.page.toFloat() / current.pages
+                    current.toTranslate > 0 -> current.translated.toFloat() / current.toTranslate
+                    else -> null
+                }
+                if (fraction == null) {
                     CircularWavyProgressIndicator(modifier = Modifier.size(IndicatorSize))
                 } else {
-                    CircularWavyProgressIndicator(
-                        progress = { current.page.toFloat() / current.pages },
-                        modifier = Modifier.size(IndicatorSize),
-                    )
+                    CircularWavyProgressIndicator(progress = { fraction }, modifier = Modifier.size(IndicatorSize))
                 }
             }
             Translation.State.TRANSLATED -> TranslateIcon(
@@ -130,7 +133,12 @@ fun ChapterTranslationIndicator(
                             stringResource(WTMR.strings.translation_progress_ocr, current.page + 1, current.pages)
                         current.retries > 0 ->
                             stringResource(WTMR.strings.translation_progress_ai_retry, current.retries)
-                        else -> stringResource(WTMR.strings.translation_progress_ai)
+                        else ->
+                            stringResource(
+                                WTMR.strings.translation_progress_ai,
+                                current.translated,
+                                current.toTranslate,
+                            )
                     },
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

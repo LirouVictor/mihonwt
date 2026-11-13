@@ -62,6 +62,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
@@ -313,6 +314,20 @@ class ReaderViewModel(
                 }
                 chapterId = currentChapter.chapter.id
             }
+            .launchIn(viewModelScope)
+
+        // Shows each batch of a chapter still being translated as soon as it's done
+        combine(translationManager.partialTranslations, state.map { it.viewerChapters }.distinctUntilChanged()) {
+                partial,
+                chapters,
+            ->
+            listOfNotNull(chapters?.prevChapter, chapters?.currChapter, chapters?.nextChapter).forEach { chapter ->
+                val translations = partial[chapter.chapter.id] ?: return@forEach
+                chapter.pages?.forEach { page ->
+                    page.translationKey?.let(translations::get)?.let { page.translation = it }
+                }
+            }
+        }
             .launchIn(viewModelScope)
 
         if (hasValidArgs) {

@@ -64,9 +64,8 @@ internal class DownloadPageLoader(
                 context.contentResolver.openInputStream(page.uri ?: Uri.EMPTY)!!
             }.apply {
                 status = Page.State.Ready
-                if (translations.isNotEmpty()) {
-                    translation = page.uri?.let { UniFile.fromUri(context, it)?.name }?.let(translations::get)
-                }
+                translationKey = page.uri?.let { UniFile.fromUri(context, it)?.name }
+                translation = translationKey?.let(translations::get)
             }
         }
     }
