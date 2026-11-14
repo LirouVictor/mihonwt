@@ -24,7 +24,8 @@ import eu.kanade.translation.model.PageTranslation
 import eu.kanade.translation.model.Translation
 import eu.kanade.translation.model.TranslationBlock
 import eu.kanade.translation.recognizer.TextRecognizer
-import eu.kanade.translation.recognizer.fixLetteringMistakes
+import eu.kanade.translation.recognizer.Word
+import eu.kanade.translation.recognizer.bubbleBlocks
 import eu.kanade.translation.recognizer.grownIntoBubble
 import eu.kanade.translation.recognizer.inBubble
 import eu.kanade.translation.recognizer.lightPixels
@@ -423,70 +424,30 @@ class ChapterTranslator(
         height: Int,
         scale: Float,
     ): PageTranslation {
-        val page = PageTranslation(imgWidth = width.toFloat(), imgHeight = height.toFloat())
-        for (block in blocks) {
-            val bounds = block.boundingBox!!
-            val element = block.lines.first().elements.first()
-            val symBounds = element.symbols.firstOrNull()?.boundingBox ?: element.boundingBox ?: bounds
-            page.blocks.add(
-                TranslationBlock(
-                    text = block.text.fixLetteringMistakes(),
-                    width = bounds.width() / scale,
-                    height = bounds.height() / scale,
-                    symWidth = symBounds.width() / scale,
-                    symHeight = symBounds.height() / scale,
-                    angle = block.lines.first().angle,
-                    x = bounds.left / scale,
-                    y = bounds.top / scale,
-                ),
-            )
-        }
-        page.blocks = mergeBubbleBlocks(page.blocks)
-        return page
-    }
-
-    /**
-     * Joins blocks that look like parts of the same speech bubble. ML Kit doesn't return a bubble's blocks one after
-     * the other, so every pair is compared.
-     */
-    private fun mergeBubbleBlocks(blocks: List<TranslationBlock>): MutableList<TranslationBlock> {
-        val merged = blocks.sortedBy { it.y }.toMutableList()
-        var i = 0
-        while (i < merged.size) {
-            val j = (i + 1..<merged.size).firstOrNull { isSameBubble(merged[i], merged[it]) }
-            if (j == null) {
-                i++
-            } else {
-                merged[i] = mergeTextBlock(merged[i], merged.removeAt(j))
+        var lineNumber = 0
+        val words = blocks.flatMap { block ->
+            block.lines.flatMap { line ->
+                val number = lineNumber++
+                line.elements.mapNotNull { element ->
+                    val bounds = element.boundingBox ?: return@mapNotNull null
+                    val letter = element.symbols.firstOrNull()?.boundingBox ?: bounds
+                    Word(
+                        text = element.text,
+                        x = bounds.left / scale,
+                        y = bounds.top / scale,
+                        width = bounds.width() / scale,
+                        height = bounds.height() / scale,
+                        letterHeight = letter.height() / scale,
+                        line = number,
+                        angle = line.angle,
+                    )
+                }
             }
         }
-        return merged
-    }
-
-    /**
-     * Whether [below] continues [above]: stacked less than about a line apart and overlapping horizontally. Distances
-     * are measured in letter heights, so they hold at any page resolution.
-     */
-    private fun isSameBubble(above: TranslationBlock, below: TranslationBlock): Boolean {
-        val lineHeight = max(above.symHeight, below.symHeight)
-        val gap = below.y - (above.y + above.height)
-        val overlap = min(above.x + above.width, below.x + below.width) - max(above.x, below.x)
-        return gap > -lineHeight && gap < lineHeight * 1.2f && overlap > min(above.width, below.width) / 2
-    }
-
-    private fun mergeTextBlock(a: TranslationBlock, b: TranslationBlock): TranslationBlock {
-        val newX = min(a.x, b.x)
-        val newY = min(a.y, b.y)
-        return TranslationBlock(
-            text = a.text + " " + b.text,
-            translation = a.translation + " " + b.translation,
-            width = max(a.x + a.width, b.x + b.width) - newX,
-            height = max(a.y + a.height, b.y + b.height) - newY,
-            x = newX,
-            y = newY,
-            symHeight = a.symHeight,
-            symWidth = a.symWidth,
-            angle = a.angle,
+        return PageTranslation(
+            blocks = bubbleBlocks(words).toMutableList(),
+            imgWidth = width.toFloat(),
+            imgHeight = height.toFloat(),
         )
     }
 
