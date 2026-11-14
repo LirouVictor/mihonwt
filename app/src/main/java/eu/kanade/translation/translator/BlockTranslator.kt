@@ -6,7 +6,7 @@ import java.util.Locale
 
 /**
  * Translates with a machine translation service, which is faster than a language model and doesn't make up words,
- * but can't fix OCR mistakes, drop watermarks or keep a glossary.
+ * but can't fix OCR mistakes, drop watermarks or add to the glossary.
  */
 abstract class BlockTranslator : PageTranslator() {
 
@@ -18,14 +18,22 @@ abstract class BlockTranslator : PageTranslator() {
         onRetry: (attempt: Int) -> Unit,
     ): Map<String, String> {
         pages.values.forEach { page ->
-            val translations = translatePage(page.blocks.map { it.text.joinLines().toSentenceCase() }, onRetry)
+            val translations =
+                translatePage(page.blocks.map { it.text.joinLines().toSentenceCase() }, glossary, onRetry)
             page.blocks.forEachIndexed { i, block -> block.translation = translations[i] }
         }
         return emptyMap()
     }
 
-    /** Returns the translation of each of [texts], the blocks of one page in reading order. */
-    protected abstract suspend fun translatePage(texts: List<String>, onRetry: (attempt: Int) -> Unit): List<String>
+    /**
+     * Returns the translation of each of [texts], the blocks of one page in reading order, keeping the terms of the
+     * series' [glossary] as it gives them when the service can.
+     */
+    protected abstract suspend fun translatePage(
+        texts: List<String>,
+        glossary: Map<String, String>,
+        onRetry: (attempt: Int) -> Unit,
+    ): List<String>
 }
 
 /**
