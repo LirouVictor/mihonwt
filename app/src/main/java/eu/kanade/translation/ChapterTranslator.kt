@@ -450,6 +450,7 @@ class ChapterTranslator(
             blocks = bubbleBlocks(words, pixels).toMutableList(),
             imgWidth = width.toFloat(),
             imgHeight = height.toFloat(),
+            words = words,
         )
     }
 

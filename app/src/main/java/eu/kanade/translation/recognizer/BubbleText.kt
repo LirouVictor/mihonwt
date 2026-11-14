@@ -1,12 +1,14 @@
 package eu.kanade.translation.recognizer
 
 import eu.kanade.translation.model.TranslationBlock
+import kotlinx.serialization.Serializable
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
 
 /** A word read by OCR, at page coordinates, on the line numbered [line]. */
-class Word(
+@Serializable
+data class Word(
     val text: String,
     val x: Float,
     val y: Float,

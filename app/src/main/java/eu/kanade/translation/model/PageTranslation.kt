@@ -3,6 +3,7 @@
 
 package eu.kanade.translation.model
 
+import eu.kanade.translation.recognizer.Word
 import kotlinx.serialization.Serializable
 
 /** Text blocks found on one page, in the coordinates of the image they were recognized on. */
@@ -11,6 +12,8 @@ data class PageTranslation(
     var blocks: MutableList<TranslationBlock> = mutableListOf(),
     var imgWidth: Float = 0f,
     var imgHeight: Float = 0f,
+    /** The words OCR read, from which [blocks] were grouped, kept so that grouping can be checked on real pages. */
+    val words: List<Word> = emptyList(),
 )
 
 @Serializable
