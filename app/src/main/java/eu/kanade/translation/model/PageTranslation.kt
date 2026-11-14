@@ -40,3 +40,13 @@ private val LINE_BREAK = Regex("""\s*\n\s*""")
 
 /** Joins text broken over lines, including words hyphenated across them, so it can be wrapped anew. */
 fun String.joinLines(): String = replace(HYPHEN_BREAK, "").replace(LINE_BREAK, " ")
+
+/** Text a language model found on a page image, in a box at page coordinates, with its translation. */
+data class FoundText(
+    val left: Float,
+    val top: Float,
+    val right: Float,
+    val bottom: Float,
+    val text: String,
+    val translation: String,
+)

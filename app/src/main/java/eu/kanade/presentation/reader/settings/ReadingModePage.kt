@@ -71,6 +71,10 @@ internal fun ColumnScope.ReadingModePage(viewModel: ReaderSettingsViewModel) {
         label = stringResource(WTMR.strings.pref_show_translations),
         pref = LocalContext.current.appGraph.translationPreferences.showTranslations,
     )
+    CheckboxItem(
+        label = stringResource(WTMR.strings.pref_tap_to_reveal),
+        pref = LocalContext.current.appGraph.translationPreferences.tapToReveal,
+    )
 }
 
 @Composable

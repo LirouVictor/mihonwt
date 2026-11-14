@@ -171,7 +171,7 @@ class PagerPageHolder(
                 withContext(Dispatchers.Default) {
                     var shown = viewer.simplePaged.processPagedTranslation(item, translation, viewer is L2RPagerViewer)
                     if (viewer.paged.page.cropBorders) findBorderCrop(source)?.let { shown = shown.cropped(it) }
-                    TranslationRenderer(context, shown)
+                    TranslationRenderer(context, shown, context.appGraph.translationPreferences.tapToReveal.get())
                 }
             }
             withContext(Dispatchers.Main) {

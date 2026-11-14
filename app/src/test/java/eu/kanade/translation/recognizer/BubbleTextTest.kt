@@ -1,5 +1,6 @@
 package eu.kanade.translation.recognizer
 
+import eu.kanade.translation.model.FoundText
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 
@@ -69,5 +70,27 @@ class BubbleTextTest {
         }
         val words = line(0f, "VIRUSES..." to 0f, "SUBJECT!" to 12f) + line(100f, "OF" to 0f, "US" to 6f)
         assertEquals(listOf("VIRUSES...", "SUBJECT!", "OF US"), bubbleBlocks(words, pixels).map { it.text })
+    }
+
+    @Test
+    fun `found text is laid over the OCR words in its box, and words outside every box are dropped`() {
+        val words =
+            line(0f, "DONT" to 0f, "GOT" to 40f) + line(16f, "WAN-" to 0f, "IT!" to 40f) + line(200f, "260" to 0f)
+        val found = listOf(
+            FoundText(0f, 0f, 30f, 28f, "DON'T WAN-NA!", "Não quero!"),
+            FoundText(74f, 2f, 100f, 30f, "GOT IT!", "Entendi!"),
+            FoundText(300f, 300f, 330f, 340f, "WHAT?!", "Quê?!"),
+        )
+        val blocks = blocksOfFoundText(found, words)
+        assertEquals(listOf("Não quero!", "Entendi!", "Quê?!"), blocks.map { it.translation })
+        // From the words: DONT and WAN- span 0..32 across, 0..29 down
+        assertEquals(listOf(0f, 0f, 32f, 29f), blocks[0].let { listOf(it.x, it.y, it.width, it.height) })
+        // Without words, the box itself with the page's letter height
+        assertEquals(
+            listOf(300f, 300f, 30f, 40f, 13f),
+            blocks[2].let {
+                listOf(it.x, it.y, it.width, it.height, it.symHeight)
+            },
+        )
     }
 }
