@@ -24,7 +24,13 @@ data class TranslationBlock(
     var symHeight: Float,
     var symWidth: Float,
     val angle: Float,
+    /** The inside of the speech bubble around the text, painted over before the translation is drawn. */
+    val bubble: List<Area> = emptyList(),
 )
+
+/** A rectangle on the page. */
+@Serializable
+data class Area(val x: Float, val y: Float, val width: Float, val height: Float)
 
 private val HYPHEN_BREAK = Regex("""(?<=\p{L})-\s*\n\s*(?=\p{L})""")
 private val LINE_BREAK = Regex("""\s*\n\s*""")

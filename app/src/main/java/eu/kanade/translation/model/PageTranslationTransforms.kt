@@ -10,7 +10,7 @@ fun PageTranslation.half(side: ImageUtil.Side): PageTranslation {
     return PageTranslation(
         blocks = blocks
             .filter { it.centerX >= left && it.centerX < left + halfWidth }
-            .mapTo(mutableListOf()) { it.copy(x = it.x - left) },
+            .mapTo(mutableListOf()) { it.shifted(-left, 0f) },
         imgWidth = halfWidth,
         imgHeight = imgHeight,
     )
@@ -22,7 +22,7 @@ fun PageTranslation.stackedHalves(upperSide: ImageUtil.Side): PageTranslation {
     val lowerSide = if (upperSide == ImageUtil.Side.LEFT) ImageUtil.Side.RIGHT else ImageUtil.Side.LEFT
     val lower = half(lowerSide)
     return PageTranslation(
-        blocks = (upper.blocks + lower.blocks.map { it.copy(y = it.y + imgHeight) }).toMutableList(),
+        blocks = (upper.blocks + lower.blocks.map { it.shifted(0f, imgHeight) }).toMutableList(),
         imgWidth = upper.imgWidth,
         imgHeight = imgHeight * 2,
     )
@@ -41,6 +41,14 @@ fun PageTranslation.rotated(degrees: Float): PageTranslation {
                 symWidth = it.symHeight,
                 symHeight = it.symWidth,
                 angle = it.angle + degrees,
+                bubble = it.bubble.map { area ->
+                    Area(
+                        x = if (clockwise) imgHeight - area.y - area.height else area.y,
+                        y = if (clockwise) area.x else imgWidth - area.x - area.width,
+                        width = area.height,
+                        height = area.width,
+                    )
+                },
             )
         },
         imgWidth = imgHeight,
@@ -51,7 +59,7 @@ fun PageTranslation.rotated(degrees: Float): PageTranslation {
 /** The blocks of the image cut down to [rect]. */
 fun PageTranslation.cropped(rect: Rect): PageTranslation {
     return PageTranslation(
-        blocks = blocks.mapTo(mutableListOf()) { it.copy(x = it.x - rect.left, y = it.y - rect.top) },
+        blocks = blocks.mapTo(mutableListOf()) { it.shifted(-rect.left.toFloat(), -rect.top.toFloat()) },
         imgWidth = rect.width().toFloat(),
         imgHeight = rect.height().toFloat(),
     )
@@ -64,6 +72,12 @@ private fun PageTranslation.halfLeft(side: ImageUtil.Side): Float {
         ImageUtil.Side.RIGHT -> (width - width / 2).toFloat()
     }
 }
+
+private fun TranslationBlock.shifted(dx: Float, dy: Float) = copy(
+    x = x + dx,
+    y = y + dy,
+    bubble = bubble.map { it.copy(x = it.x + dx, y = it.y + dy) },
+)
 
 private val TranslationBlock.centerX: Float
     get() = x + width / 2

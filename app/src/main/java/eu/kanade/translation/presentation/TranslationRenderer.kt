@@ -23,8 +23,8 @@ import kotlin.math.abs
 import kotlin.math.min
 
 /**
- * Draws the translation of a page over its image: a white box over each block of text and the translated text in
- * the largest size that fits. Lays the text out once, in the coordinates of [translation]'s image, so drawing it at
+ * Draws the translation of a page over its image: each speech bubble painted white, or a white box over blocks found
+ * outside one, and the translated text in the largest size that fits. Lays the text out once, in the coordinates of [translation]'s image, so drawing it at
  * any zoom only scales the canvas.
  */
 class TranslationRenderer(context: Context, translation: PageTranslation) {
@@ -57,7 +57,9 @@ class TranslationRenderer(context: Context, translation: PageTranslation) {
         canvas.withSave {
             translate(left, top)
             scale(scale, scale)
-            blocks.forEach { it.draw(this) }
+            // Bubbles first, as blocks sharing one would otherwise paint over each other's text
+            blocks.forEach { it.drawBackground(this) }
+            blocks.forEach { it.drawText(this) }
         }
     }
 
@@ -69,8 +71,10 @@ class TranslationRenderer(context: Context, translation: PageTranslation) {
         val symWidth = if (isSideways) block.symHeight else block.symWidth
         val symHeight = if (isSideways) block.symWidth else block.symHeight
 
-        // Text wider than its box ran into the art and the next speech bubble
-        val box = RectF(0f, 0f, width + symWidth / 2, height + symHeight / 2)
+        // Text wider than its box ran into the art and the next speech bubble. A box found in a bubble is already
+        // clear of its outline
+        val padding = if (block.bubble.isEmpty()) 1f else 0f
+        val box = RectF(0f, 0f, width + padding * symWidth / 2, height + padding * symHeight / 2)
         val textWidth = box.width().toInt()
         val textHeight = box.height()
         return Block(
@@ -78,6 +82,7 @@ class TranslationRenderer(context: Context, translation: PageTranslation) {
             centerY = block.y + block.height / 2,
             angle = block.angle,
             box = box.apply { offset(-centerX(), -centerY()) },
+            bubble = block.bubble.map { RectF(it.x, it.y, it.x + it.width, it.y + it.height) },
             cornerRadius = symHeight / 4,
             // Translations of chapters saved before line breaks were dropped still carry the English ones, and a
             // longer Portuguese line kept whole forced a tiny text size
@@ -143,13 +148,22 @@ class TranslationRenderer(context: Context, translation: PageTranslation) {
         val centerY: Float,
         val angle: Float,
         val box: RectF,
+        val bubble: List<RectF>,
         val cornerRadius: Float,
         val text: StaticLayout,
     ) {
-        fun draw(canvas: Canvas) = canvas.withSave {
+        fun drawBackground(canvas: Canvas) = canvas.withSave {
+            bubble.forEach { drawRect(it, boxPaint) }
+            if (bubble.isEmpty()) {
+                translate(centerX, centerY)
+                rotate(angle)
+                drawRoundRect(box, cornerRadius, cornerRadius, boxPaint)
+            }
+        }
+
+        fun drawText(canvas: Canvas) = canvas.withSave {
             translate(centerX, centerY)
             rotate(angle)
-            drawRoundRect(box, cornerRadius, cornerRadius, boxPaint)
             translate(-text.width / 2f, -text.height / 2f)
             text.draw(this)
         }
