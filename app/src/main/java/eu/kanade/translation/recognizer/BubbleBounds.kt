@@ -69,5 +69,6 @@ private const val MAX_ANGLE = 10f
 private const val MAX_GROWTH_LINES = 4
 private const val LIGHT_LUMINANCE = 200f
 
-// Tolerates specks and screentone dots that scans leave inside bubbles
-private const val MIN_LIGHT_SHARE = 0.97f
+// Grows past specks, screentone dots and stray letters OCR missed, like an "I" alone on its line, so the box covers
+// them, but stops at the bubble's outline, which fills a strip as soon as the box reaches it
+private const val MIN_LIGHT_SHARE = 0.9f
