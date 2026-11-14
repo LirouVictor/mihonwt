@@ -220,6 +220,7 @@ class ChapterTranslator(
             val chapterId = translation.chapter.id
             val done = partialTranslations.value[chapterId].orEmpty().toMutableMap()
             val images = recognizedImages.getOrPut(chapterId) { ConcurrentHashMap() }
+            val glossary = provider.getGlossary(mangaDir).toMutableMap()
             val pages = coroutineScope {
                 val recognized = Channel<Pair<String, PageTranslation>>(Channel.UNLIMITED)
                 val ocr = async {
@@ -241,8 +242,11 @@ class ChapterTranslator(
                 // rest are still being read. Small batches also keep each reply within the model's output limit
                 val batch = mutableMapOf<String, PageTranslation>()
                 suspend fun translateBatch() {
-                    translator.translate(batch.toMap(), translation.manga.title, images) {
+                    val terms = translator.translate(batch.toMap(), translation.manga.title, images, glossary.toMap()) {
                         translation.updateProgress { progress -> progress.copy(retries = it) }
+                    }
+                    terms.forEach { (term, translated) ->
+                        if (glossary.size < MAX_GLOSSARY_TERMS) glossary.putIfAbsent(term, translated)
                     }
                     done.putAll(batch)
                     batch.clear()
@@ -262,6 +266,7 @@ class ChapterTranslator(
             mangaDir.createFile(
                 provider.getTranslationFileName(translation.chapter.name, translation.chapter.scanlator),
             )!!.openOutputStream().use { it.write(Json.encodeToString(pages).toByteArray()) }
+            provider.saveGlossary(mangaDir, glossary)
             recognizedChapters.remove(chapterId)
             recognizedImages.remove(chapterId)
             _partialTranslations.update { it - chapterId }
@@ -445,6 +450,7 @@ class ChapterTranslator(
         const val BATCH_SIZE = 5
         const val MODEL_IMAGE_SIZE = 1024
         const val MODEL_IMAGE_QUALITY = 75
+        const val MAX_GLOSSARY_TERMS = 300
     }
 
     private fun areAllTranslationsFinished(): Boolean {
