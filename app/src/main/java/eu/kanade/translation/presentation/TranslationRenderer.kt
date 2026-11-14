@@ -87,8 +87,19 @@ class TranslationRenderer(context: Context, translation: PageTranslation) {
             // Translations of chapters saved before line breaks were dropped still carry the English ones, and a
             // longer Portuguese line kept whole forced a tiny text size
             // Never larger than the original lettering, which a short reply in a big bubble would otherwise dwarf
-            text = fitText(block.translation.joinLines(), textWidth, textHeight, symHeight / capHeightRatio),
+            text = fitText(block.displayedTranslation(), textWidth, textHeight, symHeight / capHeightRatio),
         )
+    }
+
+    /**
+     * The translation as drawn: in capitals when the original lettering was, as models often answer in sentence case,
+     * or with a single word in capitals.
+     */
+    private fun TranslationBlock.displayedTranslation(): String {
+        val text = translation.joinLines()
+        val letters = this.text.filter(Char::isLetter)
+        val isCapitals = letters.isNotEmpty() && letters.count(Char::isUpperCase) >= letters.length * MIN_CAPITALS
+        return if (isCapitals) text.uppercase(textPaint.textLocale) else text
     }
 
     /**
@@ -175,5 +186,8 @@ class TranslationRenderer(context: Context, translation: PageTranslation) {
 
         /** Whole words are kept when they allow at least this share of the size hyphenation would. */
         const val MIN_WHOLE_WORD_SIZE = 0.8f
+
+        /** Share of capital letters above which the original counts as lettered in capitals, despite OCR misreads. */
+        const val MIN_CAPITALS = 0.8f
     }
 }
