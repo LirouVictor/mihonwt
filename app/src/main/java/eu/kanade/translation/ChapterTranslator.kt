@@ -265,7 +265,8 @@ class ChapterTranslator(
             val bitmap = decodePage(openStream)
             try {
                 val blocks = textRecognizer.recognize(InputImage.fromBitmap(bitmap, 0)).textBlocks
-                    .filter { it.boundingBox != null && it.text.length > 1 }
+                    // Single letters are kept: an "I" alone on its line would stay in English beside the translation
+                    .filter { it.boundingBox != null && it.text.isNotBlank() }
                 val page = toPageTranslation(blocks, bitmap.width, bitmap.height)
                 page.blocks = page.blocks.mapTo(mutableListOf()) { it.grownIntoBubble(bitmap) }
                 if (page.blocks.isNotEmpty()) pages[fileName] = page
