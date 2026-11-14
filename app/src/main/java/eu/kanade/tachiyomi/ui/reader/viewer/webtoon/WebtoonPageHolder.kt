@@ -203,7 +203,11 @@ class WebtoonPageHolder(
             // Strips don't crop borders, so the translation only follows the splitting and merging
             val translation = page.translation?.takeIf { !isAnimated }?.let { translation ->
                 withContext(Dispatchers.Default) {
-                    TranslationRenderer(context, viewer.simpleLongStrip.page.processStripTranslation(translation))
+                    TranslationRenderer(
+                        context,
+                        viewer.simpleLongStrip.page.processStripTranslation(translation),
+                        context.appGraph.translationPreferences.tapToReveal.get(),
+                    )
                 }
             }
             withContext(Dispatchers.Main) {

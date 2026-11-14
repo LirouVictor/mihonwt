@@ -367,6 +367,33 @@ open class ReaderPageImageView @JvmOverloads constructor(
         }
     }
 
+    /**
+     * Shows or hides the translation of the bubble at [screenX], [screenY] when translations are shown on tap.
+     * Returns whether there was one there, so the tap isn't also taken as navigation.
+     */
+    fun toggleTranslationAt(screenX: Float, screenY: Float): Boolean {
+        val translation = translation?.takeIf { isTranslationShown } ?: return false
+        val view = pageView ?: return false
+        val location = IntArray(2).also { view.getLocationOnScreen(it) }
+        val x = screenX - location[0]
+        val y = screenY - location[1]
+        if (x < 0 || y < 0 || x > view.width || y > view.height) return false
+        val toggled = when (view) {
+            is SubsamplingScaleImageView -> {
+                val source = view.takeIf { it.isReady }?.viewToSourceCoord(x, y) ?: return false
+                val scale = translation.imageWidth / view.sWidth
+                translation.toggleAt(source.x * scale, source.y * scale)
+            }
+            is WebtoonStripImageView -> {
+                val scale = translation.imageWidth / view.width
+                translation.toggleAt(x * scale, y * scale)
+            }
+            else -> false
+        }
+        if (toggled) view.invalidate()
+        return toggled
+    }
+
     // Drawn with the page so it moves with every zoom and pan step
     private fun SubsamplingScaleImageView.drawTranslation(canvas: Canvas) {
         val translation = translation?.takeIf { isTranslationShown && isReady } ?: return

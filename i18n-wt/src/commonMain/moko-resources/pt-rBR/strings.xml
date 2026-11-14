@@ -28,6 +28,8 @@
     <string name="pref_model_list_error">Não foi possível buscar os modelos: %1$s</string>
     <string name="pref_find_text_on_images">Achar balões com a IA</string>
     <string name="pref_find_text_on_images_summary">O modelo acha sozinho os balões e legendas de cada página, deixando de fora onomatopeias e placas. Desligue para traduzir o texto agrupado pelo OCR do app.</string>
+    <string name="pref_tap_to_reveal">Traduzir só o balão tocado</string>
+    <string name="pref_tap_to_reveal_summary">As páginas ficam com o texto original, e tocar num balão mostra a tradução dele, ou esconde de novo. Vale para as páginas abertas depois da mudança.</string>
     <string name="pref_translate_on_download">Traduzir ao baixar</string>
     <string name="pref_translate_on_download_summary">Coloca cada capítulo na fila de tradução assim que o download termina. Combina com o download automático durante a leitura.</string>
 </resources>

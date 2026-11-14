@@ -44,6 +44,9 @@ class TranslationPreferences(
     val translateOnDownload: Preference<Boolean> = preferenceStore.getBoolean("translation_on_download", false)
 
     val showTranslations: Preference<Boolean> = preferenceStore.getBoolean("translation_show_in_reader", true)
+
+    /** Whether the reader keeps the original lettering and shows a bubble's translation only when it is tapped. */
+    val tapToReveal: Preference<Boolean> = preferenceStore.getBoolean("translation_tap_to_reveal", false)
 }
 
 /**

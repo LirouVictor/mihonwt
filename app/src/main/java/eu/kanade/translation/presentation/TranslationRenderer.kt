@@ -26,10 +26,11 @@ import kotlin.math.min
 
 /**
  * Draws the translation of a page over its image: each speech bubble painted white, or a white box over blocks found
- * outside one, and the translated text in the largest size that fits. Lays the text out once, in the coordinates of [translation]'s image, so drawing it at
- * any zoom only scales the canvas.
+ * outside one, and the translated text in the largest size that fits. Lays the text out once, in the coordinates of
+ * [translation]'s image, so drawing it at any zoom only scales the canvas. With [tapToReveal], each block is only drawn
+ * once tapped, leaving the original lettering to read until then.
  */
-class TranslationRenderer(context: Context, translation: PageTranslation) {
+class TranslationRenderer(context: Context, translation: PageTranslation, private val tapToReveal: Boolean = false) {
 
     /** Width of the image the blocks are placed on. */
     val imageWidth = translation.imgWidth
@@ -60,9 +61,23 @@ class TranslationRenderer(context: Context, translation: PageTranslation) {
             translate(left, top)
             scale(scale, scale)
             // Bubbles first, as blocks sharing one would otherwise paint over each other's text
-            blocks.forEach { it.drawBackground(this) }
-            blocks.forEach { it.drawText(this) }
+            val shown = if (tapToReveal) blocks.filter { it in revealed } else blocks
+            shown.forEach { it.drawBackground(this) }
+            shown.forEach { it.drawText(this) }
         }
+    }
+
+    private val revealed = mutableSetOf<Block>()
+
+    /**
+     * Shows or hides again the translation of the block at [x], [y] on the image, when drawn only on tap. Returns
+     * whether there was one.
+     */
+    fun toggleAt(x: Float, y: Float): Boolean {
+        if (!tapToReveal) return false
+        val block = blocks.firstOrNull { it.contains(x, y) } ?: return false
+        if (!revealed.remove(block)) revealed.add(block)
+        return true
     }
 
     private fun layOut(block: TranslationBlock): Block {
@@ -191,6 +206,11 @@ class TranslationRenderer(context: Context, translation: PageTranslation) {
         val cornerRadius: Float,
         val text: StaticLayout,
     ) {
+        fun contains(x: Float, y: Float): Boolean {
+            return bubble.any { it.contains(x, y) } ||
+                (abs(x - centerX) <= box.width() / 2 && abs(y - centerY) <= box.height() / 2)
+        }
+
         fun drawBackground(canvas: Canvas) = canvas.withSave {
             bubble.forEach { drawRect(it, boxPaint) }
             if (bubble.isEmpty()) {
