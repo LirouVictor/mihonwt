@@ -67,9 +67,9 @@ import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
-import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.sqrt
 
 /** Queue that runs OCR and translation on downloaded chapters and saves the result next to the downloads. */
 @Inject
@@ -320,11 +320,20 @@ class ChapterTranslator(
             translation.updateProgress { it.copy(page = index, pages = count) }
             val bitmap = decodePage(openStream)
             try {
-                val blocks = textRecognizer.recognize(InputImage.fromBitmap(bitmap, 0)).textBlocks
+                val ocrScale = bitmap.ocrScale()
+                val ocrBitmap = if (ocrScale > 1f) {
+                    bitmap.scale((bitmap.width * ocrScale).toInt(), (bitmap.height * ocrScale).toInt())
+                } else {
+                    bitmap
+                }
+                val blocks = try {
+                    textRecognizer.recognize(InputImage.fromBitmap(ocrBitmap, 0)).textBlocks
+                } finally {
+                    if (ocrBitmap !== bitmap) ocrBitmap.recycle()
+                }
                     // Single letters are kept: an "I" alone on its line would stay in English beside the translation
                     .filter { it.boundingBox != null && it.text.isNotBlank() }
-                val page = toPageTranslation(blocks, bitmap.width, bitmap.height)
-                page.blocks.forEach { block -> rereadEnlarged(bitmap, block)?.let { block.text = it } }
+                val page = toPageTranslation(blocks, bitmap.width, bitmap.height, ocrScale)
                 val pixels = bitmap.lightPixels()
                 val found = page.blocks
                 page.blocks = found.mapTo(mutableListOf()) {
@@ -344,32 +353,15 @@ class ChapterTranslator(
     }
 
     /**
-     * Returns the text of [block] read again from an enlarged crop of [bitmap] when its letters are small, as ML Kit
-     * misreads small comic lettering far more often. Returns null when they aren't, or when the second reading finds
-     * much more or less text, as when the crop takes in part of a neighbouring bubble.
+     * Returns how much to enlarge this page for OCR. ML Kit misses or misreads lettering under about 20 px tall, which
+     * pages around 800 px wide have, so they are read at about twice the size. Spreads count as two pages, and long
+     * strips are enlarged less to keep the bitmap's memory in bounds.
      */
-    private fun rereadEnlarged(bitmap: Bitmap, block: TranslationBlock): String? {
-        val scale = min(MAX_REREAD_SCALE, REREAD_LETTER_HEIGHT / max(block.symHeight, 1f))
-        if (scale < MIN_REREAD_SCALE || abs(block.angle) > MAX_REREAD_ANGLE) return null
-        val padding = block.symHeight / 2
-        val left = (block.x - padding).toInt().coerceIn(0, bitmap.width - 1)
-        val top = (block.y - padding).toInt().coerceIn(0, bitmap.height - 1)
-        val right = (block.x + block.width + padding).toInt().coerceIn(left + 1, bitmap.width)
-        val bottom = (block.y + block.height + padding).toInt().coerceIn(top + 1, bitmap.height)
-        val crop = Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top)
-        val enlarged = crop.scale(((right - left) * scale).toInt(), ((bottom - top) * scale).toInt())
-        try {
-            val text = textRecognizer.recognize(InputImage.fromBitmap(enlarged, 0)).textBlocks
-                .sortedBy { it.boundingBox?.top ?: 0 }
-                .joinToString(" ") { it.text }
-                .fixLetteringMistakes()
-            val before = block.text.count(Char::isLetterOrDigit)
-            val after = text.count(Char::isLetterOrDigit)
-            return text.takeIf { after >= before * MIN_REREAD_TEXT && after <= before / MIN_REREAD_TEXT }
-        } finally {
-            if (enlarged !== crop) enlarged.recycle()
-            if (crop !== bitmap) crop.recycle()
-        }
+    private fun Bitmap.ocrScale(): Float {
+        val pageWidth = if (width > height) width / 2 else width
+        val byWidth = OCR_PAGE_WIDTH.toFloat() / pageWidth
+        val byMemory = sqrt(MAX_OCR_PIXELS.toFloat() / (width.toLong() * height))
+        return min(min(byWidth, byMemory), MAX_OCR_SCALE).coerceAtLeast(1f)
     }
 
     /** Returns this page shrunk to a size the model reads the lettering at, without many image tokens. */
@@ -414,7 +406,13 @@ class ChapterTranslator(
         }
     }
 
-    private fun toPageTranslation(blocks: List<Text.TextBlock>, width: Int, height: Int): PageTranslation {
+    /** Returns the [blocks] read on a page enlarged [scale] times, at the size of the page itself. */
+    private fun toPageTranslation(
+        blocks: List<Text.TextBlock>,
+        width: Int,
+        height: Int,
+        scale: Float,
+    ): PageTranslation {
         val page = PageTranslation(imgWidth = width.toFloat(), imgHeight = height.toFloat())
         for (block in blocks) {
             val bounds = block.boundingBox!!
@@ -423,13 +421,13 @@ class ChapterTranslator(
             page.blocks.add(
                 TranslationBlock(
                     text = block.text.fixLetteringMistakes(),
-                    width = bounds.width().toFloat(),
-                    height = bounds.height().toFloat(),
-                    symWidth = symBounds.width().toFloat(),
-                    symHeight = symBounds.height().toFloat(),
+                    width = bounds.width() / scale,
+                    height = bounds.height() / scale,
+                    symWidth = symBounds.width() / scale,
+                    symHeight = symBounds.height() / scale,
                     angle = block.lines.first().angle,
-                    x = bounds.left.toFloat(),
-                    y = bounds.top.toFloat(),
+                    x = bounds.left / scale,
+                    y = bounds.top / scale,
                 ),
             )
         }
@@ -487,12 +485,9 @@ class ChapterTranslator(
         const val MODEL_IMAGE_SIZE = 1024
         const val MODEL_IMAGE_QUALITY = 75
 
-        // ML Kit reads letters best at about this height in pixels
-        const val REREAD_LETTER_HEIGHT = 32f
-        const val MIN_REREAD_SCALE = 1.5f
-        const val MAX_REREAD_SCALE = 3f
-        const val MAX_REREAD_ANGLE = 10f
-        const val MIN_REREAD_TEXT = 0.8f
+        const val OCR_PAGE_WIDTH = 1600
+        const val MAX_OCR_SCALE = 2.5f
+        const val MAX_OCR_PIXELS = 16_000_000
         const val MAX_GLOSSARY_TERMS = 300
     }
 
