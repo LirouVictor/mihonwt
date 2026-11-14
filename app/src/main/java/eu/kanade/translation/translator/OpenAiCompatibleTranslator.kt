@@ -24,7 +24,12 @@ class OpenAiCompatibleTranslator(
 
     override val name = baseUrl.toHttpUrlOrNull()?.host ?: baseUrl
 
-    override suspend fun complete(systemPrompt: String, userText: String, onRetry: (attempt: Int) -> Unit): String {
+    override suspend fun complete(
+        systemPrompt: String,
+        userText: String,
+        images: Map<String, ByteArray>,
+        onRetry: (attempt: Int) -> Unit,
+    ): String {
         val json = try {
             send(request(systemPrompt, userText, jsonMode = true), onRetry)
         } catch (e: ApiException) {

@@ -18,6 +18,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
+import java.util.Base64
 
 /**
  * Translates with the Gemini REST API.
@@ -31,7 +32,14 @@ class GeminiTranslator(
 
     override val name = "Gemini"
 
-    override suspend fun complete(systemPrompt: String, userText: String, onRetry: (attempt: Int) -> Unit): String {
+    override val readsImages = true
+
+    override suspend fun complete(
+        systemPrompt: String,
+        userText: String,
+        images: Map<String, ByteArray>,
+        onRetry: (attempt: Int) -> Unit,
+    ): String {
         val body = buildJsonObject {
             putJsonObject("systemInstruction") {
                 putJsonArray("parts") { addJsonObject { put("text", systemPrompt) } }
@@ -39,7 +47,18 @@ class GeminiTranslator(
             putJsonArray("contents") {
                 addJsonObject {
                     put("role", "user")
-                    putJsonArray("parts") { addJsonObject { put("text", userText) } }
+                    putJsonArray("parts") {
+                        addJsonObject { put("text", userText) }
+                        images.forEach { (name, image) ->
+                            addJsonObject { put("text", name) }
+                            addJsonObject {
+                                putJsonObject("inlineData") {
+                                    put("mimeType", "image/jpeg")
+                                    put("data", Base64.getEncoder().encodeToString(image))
+                                }
+                            }
+                        }
+                    }
                 }
             }
             putJsonObject("generationConfig") {

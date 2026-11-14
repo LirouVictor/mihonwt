@@ -38,18 +38,29 @@ abstract class TextTranslator {
         .callTimeout(5.minutes)
         .build()
 
+    /** Whether [complete] sends the page images, so they are worth preparing. */
+    open val readsImages = false
+
     /**
-     * Fills [eu.kanade.translation.model.TranslationBlock.translation] and drops blocks marked as watermarks. The
-     * [series] title lets the model use the names and tone it knows from it.
+     * Fills [eu.kanade.translation.model.TranslationBlock.translation] and drops blocks marked as watermarks, and
+     * returns how the names and recurring terms on these pages were translated. The [series] title lets the model use
+     * the names and tone it knows from it, [images] of the pages, by name, let it read the text in context, and
+     * [glossary] keeps the terms of earlier chapters translated the same way.
      */
-    suspend fun translate(pages: Map<String, PageTranslation>, series: String, onRetry: (attempt: Int) -> Unit = {}) {
-        try {
-            translateBatch(pages, series, onRetry)
+    suspend fun translate(
+        pages: Map<String, PageTranslation>,
+        series: String,
+        images: Map<String, ByteArray> = emptyMap(),
+        glossary: Map<String, String> = emptyMap(),
+        onRetry: (attempt: Int) -> Unit = {},
+    ): Map<String, String> {
+        return try {
+            translateBatch(pages, series, images, glossary, onRetry)
         } catch (e: TruncatedReplyException) {
             // A whole chapter can exceed the model's output limit, above all when its reasoning counts against it
             if (pages.size < 2) throw e
-            pages.entries.chunked((pages.size + 1) / 2).forEach { half ->
-                translate(half.associate { it.key to it.value }, series, onRetry)
+            pages.entries.chunked((pages.size + 1) / 2).fold(emptyMap()) { terms, half ->
+                terms + translate(half.associate { it.key to it.value }, series, images, glossary, onRetry)
             }
         }
     }
@@ -57,8 +68,10 @@ abstract class TextTranslator {
     private suspend fun translateBatch(
         pages: Map<String, PageTranslation>,
         series: String,
+        images: Map<String, ByteArray>,
+        glossary: Map<String, String>,
         onRetry: (attempt: Int) -> Unit,
-    ) {
+    ): Map<String, String> {
         // Blocks are numbered rather than listed: with a list, the model sometimes merges two fragments of a sentence
         // and every later block on the page gets the translation of the one after it. Their text goes without line
         // breaks, which the model would copy into translations that need longer lines.
@@ -69,11 +82,19 @@ abstract class TextTranslator {
                 }
             }
         }
-        val systemPrompt = "$SYSTEM_PROMPT\n\nThe pages are from \"$series\"."
-        var output = request(systemPrompt, input.toString(), onRetry)
+        val systemPrompt = buildString {
+            append(SYSTEM_PROMPT)
+            append("\n\nThe pages are from \"$series\".")
+            if (glossary.isNotEmpty()) {
+                append("\n\nEarlier chapters translated these names and terms like this; keep them: ")
+                append(JsonObject(glossary.mapValues { JsonPrimitive(it.value) }))
+            }
+        }
+        val pageImages = images.filterKeys { it in pages }
+        var output = request(systemPrompt, input.toString(), pageImages, onRetry)
         // Models now and then skip a block, which would stay in English; a second answer is usually complete
         if (countMissing(pages, output) > 0) {
-            val retry = request(systemPrompt, input.toString(), onRetry)
+            val retry = request(systemPrompt, input.toString(), pageImages, onRetry)
             if (countMissing(pages, retry) < countMissing(pages, output)) output = retry
         }
 
@@ -84,10 +105,18 @@ abstract class TextTranslator {
             }
             page.blocks = page.blocks.filterNot { it.translation.contains(WATERMARK_PLACEHOLDER) }.toMutableList()
         }
+        return (output[GLOSSARY_KEY] as? JsonObject).orEmpty()
+            .mapNotNull { (term, translation) -> (translation as? JsonPrimitive)?.contentOrNull?.let { term to it } }
+            .toMap()
     }
 
-    private suspend fun request(systemPrompt: String, input: String, onRetry: (attempt: Int) -> Unit): JsonObject {
-        val reply = complete(systemPrompt, input, onRetry)
+    private suspend fun request(
+        systemPrompt: String,
+        input: String,
+        images: Map<String, ByteArray>,
+        onRetry: (attempt: Int) -> Unit,
+    ): JsonObject {
+        val reply = complete(systemPrompt, input, images, onRetry)
         // Without a JSON mode, models may wrap the object in a code block or a sentence
         return runCatching {
             Json.parseToJsonElement(reply.substring(reply.indexOf('{'), reply.lastIndexOf('}') + 1)).jsonObject
@@ -104,10 +133,11 @@ abstract class TextTranslator {
     /** Returns the names of the models this API key can use, to pick one from. */
     abstract suspend fun models(): List<String>
 
-    /** Returns the model's reply to [userText], which should be a JSON object. */
+    /** Returns the model's reply to [userText], which should be a JSON object, with [images] if it [readsImages]. */
     protected abstract suspend fun complete(
         systemPrompt: String,
         userText: String,
+        images: Map<String, ByteArray>,
         onRetry: (attempt: Int) -> Unit,
     ): String
 
@@ -158,6 +188,9 @@ abstract class TextTranslator {
 
         private const val WATERMARK_PLACEHOLDER = "RTMTH"
 
+        // Page names are file names, which never start with an underscore
+        private const val GLOSSARY_KEY = "_glossary"
+
         private val RETRY_CODES = setOf(429, 500, 502, 503)
         private val RETRY_DELAYS = listOf(15.seconds, 30.seconds, 60.seconds)
 
@@ -180,6 +213,10 @@ abstract class TextTranslator {
 
             6. **Structure Preservation:** Return the same image filenames and, for each, exactly the same block numbers as the input.
 
+            7. **Page images:** When an image of a page follows the text, use it to fix OCR mistakes and to tell who is speaking and in what tone. Still translate only the given blocks.
+
+            8. **Glossary:** Also return, under the key "$GLOSSARY_KEY", an object mapping each name and recurring term on these pages (characters, places, attacks, powers, invented words) to how you translated it.
+
             **Example:**
 
             **Input:**
@@ -191,10 +228,10 @@ abstract class TextTranslator {
             **Output:**
 
             ```json
-            {"001.jpg":{"0":"OLHA SÓ","1":"SE NÃO É A SRTA. VAMOLA!","2":"PODERIA ME AJUDAR?"},"002.jpg":{"0":"portuguese3","1":"$WATERMARK_PLACEHOLDER","2":"$WATERMARK_PLACEHOLDER"}}
+            {"001.jpg":{"0":"OLHA SÓ","1":"SE NÃO É A SRTA. VAMOLA!","2":"PODERIA ME AJUDAR?"},"002.jpg":{"0":"portuguese3","1":"$WATERMARK_PLACEHOLDER","2":"$WATERMARK_PLACEHOLDER"},"$GLOSSARY_KEY":{"Vamola":"Vamola"}}
             ```
 
-            Return {[filename:string]:{[block:string]:string}}
+            Return {[filename:string]:{[block:string]:string}, "$GLOSSARY_KEY":{[term:string]:string}}
         """.trimIndent()
     }
 }

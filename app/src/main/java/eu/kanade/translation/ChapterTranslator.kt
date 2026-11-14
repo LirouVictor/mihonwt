@@ -6,6 +6,7 @@ package eu.kanade.translation
 import android.content.Context
 import android.graphics.Bitmap
 import android.widget.Toast
+import androidx.core.graphics.scale
 import ca.mpreg.imagedecoder.ImageDecoder
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
@@ -61,6 +62,7 @@ import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.translation.TranslationPreferences
 import tachiyomi.domain.translation.TranslationService
 import tachiyomi.i18n.wt.WTMR
+import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
@@ -91,6 +93,9 @@ class ChapterTranslator(
     private val textRecognizer by lazy { TextRecognizer() }
 
     private val recognizedChapters = ConcurrentHashMap<Long, Map<String, PageTranslation>>()
+
+    /** Small JPEG copies of the pages of [recognizedChapters], for translators that read them. */
+    private val recognizedImages = ConcurrentHashMap<Long, MutableMap<String, ByteArray>>()
 
     private val _partialTranslations = MutableStateFlow<Map<Long, Map<String, PageTranslation>>>(emptyMap())
 
@@ -214,6 +219,8 @@ class ChapterTranslator(
 
             val chapterId = translation.chapter.id
             val done = partialTranslations.value[chapterId].orEmpty().toMutableMap()
+            val images = recognizedImages.getOrPut(chapterId) { ConcurrentHashMap() }
+            val glossary = provider.getGlossary(mangaDir).toMutableMap()
             val pages = coroutineScope {
                 val recognized = Channel<Pair<String, PageTranslation>>(Channel.UNLIMITED)
                 val ocr = async {
@@ -224,7 +231,10 @@ class ChapterTranslator(
                         cached.forEach { recognized.send(it.toPair()) }
                         cached
                     } else {
-                        recognizeChapter(chapterDir, translation) { name, page -> recognized.send(name to page) }
+                        val pageImages = images.takeIf { translator.readsImages }
+                        recognizeChapter(chapterDir, translation, pageImages) { name, page ->
+                            recognized.send(name to page)
+                        }
                             .also { recognizedChapters[chapterId] = it }
                     }.also { recognized.close() }
                 }
@@ -232,8 +242,11 @@ class ChapterTranslator(
                 // rest are still being read. Small batches also keep each reply within the model's output limit
                 val batch = mutableMapOf<String, PageTranslation>()
                 suspend fun translateBatch() {
-                    translator.translate(batch.toMap(), translation.manga.title) { attempt ->
-                        translation.updateProgress { it.copy(retries = attempt) }
+                    val terms = translator.translate(batch.toMap(), translation.manga.title, images, glossary.toMap()) {
+                        translation.updateProgress { progress -> progress.copy(retries = it) }
+                    }
+                    terms.forEach { (term, translated) ->
+                        if (glossary.size < MAX_GLOSSARY_TERMS) glossary.putIfAbsent(term, translated)
                     }
                     done.putAll(batch)
                     batch.clear()
@@ -253,7 +266,9 @@ class ChapterTranslator(
             mangaDir.createFile(
                 provider.getTranslationFileName(translation.chapter.name, translation.chapter.scanlator),
             )!!.openOutputStream().use { it.write(Json.encodeToString(pages).toByteArray()) }
+            provider.saveGlossary(mangaDir, glossary)
             recognizedChapters.remove(chapterId)
+            recognizedImages.remove(chapterId)
             _partialTranslations.update { it - chapterId }
             translation.progress = null
             translation.status = Translation.State.TRANSLATED
@@ -285,11 +300,12 @@ class ChapterTranslator(
 
     /**
      * Returns the text blocks of each page that has any, keyed by the page's file name, passing each such page to
-     * [onPage] as soon as it is read.
+     * [onPage] as soon as it is read. Puts a small image of each such page in [images] when given.
      */
     private suspend fun recognizeChapter(
         chapterDir: UniFile,
         translation: Translation,
+        images: MutableMap<String, ByteArray>?,
         onPage: suspend (String, PageTranslation) -> Unit,
     ): Map<String, PageTranslation> {
         val pages = mutableMapOf<String, PageTranslation>()
@@ -307,7 +323,10 @@ class ChapterTranslator(
                 page.blocks = found.mapTo(mutableListOf()) {
                     it.inBubble(bitmap.width, bitmap.height, found, pixels) ?: it.grownIntoBubble(bitmap)
                 }
-                if (page.blocks.isNotEmpty()) pages[fileName] = page
+                if (page.blocks.isNotEmpty()) {
+                    pages[fileName] = page
+                    images?.put(fileName, bitmap.toSmallJpeg())
+                }
             } finally {
                 bitmap.recycle()
             }
@@ -315,6 +334,17 @@ class ChapterTranslator(
             translation.updateProgress { it.copy(page = index + 1, pages = count) }
         }
         return pages
+    }
+
+    /** Returns this page shrunk to a size the model reads the lettering at, without many image tokens. */
+    private fun Bitmap.toSmallJpeg(): ByteArray {
+        val scale = min(1f, MODEL_IMAGE_SIZE.toFloat() / max(width, height))
+        val small = scale((width * scale).toInt().coerceAtLeast(1), (height * scale).toInt().coerceAtLeast(1))
+        return ByteArrayOutputStream().use { out ->
+            small.compress(Bitmap.CompressFormat.JPEG, MODEL_IMAGE_QUALITY, out)
+            if (small !== this) small.recycle()
+            out.toByteArray()
+        }
     }
 
     // ML Kit decodes with Android's own decoders, which return nothing for formats like AVIF or JPEG XL on many
@@ -418,6 +448,9 @@ class ChapterTranslator(
 
     private companion object {
         const val BATCH_SIZE = 5
+        const val MODEL_IMAGE_SIZE = 1024
+        const val MODEL_IMAGE_QUALITY = 75
+        const val MAX_GLOSSARY_TERMS = 300
     }
 
     private fun areAllTranslationsFinished(): Boolean {

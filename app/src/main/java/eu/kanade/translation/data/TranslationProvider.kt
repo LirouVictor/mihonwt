@@ -10,6 +10,7 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.util.storage.DiskUtil
+import kotlinx.serialization.json.Json
 import logcat.LogPriority
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.storage.displayablePath
@@ -68,6 +69,24 @@ class TranslationProvider(
         return findMangaDir(mangaTitle, source)?.listFiles().orEmpty().mapNotNullTo(HashSet()) { it.name }
     }
 
+    /** Returns how a manga's names and recurring terms were translated, so later chapters keep them. */
+    fun getGlossary(mangaDir: UniFile): Map<String, String> {
+        val file = mangaDir.findFile(GLOSSARY_FILE_NAME) ?: return emptyMap()
+        return runCatching {
+            file.openInputStream().use { Json.decodeFromString<Map<String, String>>(it.reader().readText()) }
+        }.getOrElse {
+            logcat(LogPriority.WARN, it) { "Unreadable glossary" }
+            emptyMap()
+        }
+    }
+
+    fun saveGlossary(mangaDir: UniFile, glossary: Map<String, String>) {
+        mangaDir.findFile(GLOSSARY_FILE_NAME)?.delete()
+        mangaDir.createFile(GLOSSARY_FILE_NAME)!!.openOutputStream().use {
+            it.write(Json.encodeToString(glossary).toByteArray())
+        }
+    }
+
     private fun getSourceDirName(source: Source): String {
         return DiskUtil.buildValidFilename(source.toString())
     }
@@ -81,5 +100,10 @@ class TranslationProvider(
         return DiskUtil.buildValidFilename(
             if (chapterScanlator.isNullOrBlank()) "$name.json" else "${chapterScanlator}_$name.json",
         )
+    }
+
+    private companion object {
+        // Hidden, and named unlike any chapter's translation file
+        const val GLOSSARY_FILE_NAME = ".glossary.json"
     }
 }
