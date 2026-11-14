@@ -27,7 +27,7 @@ import eu.kanade.translation.recognizer.TextRecognizer
 import eu.kanade.translation.recognizer.grownIntoBubble
 import eu.kanade.translation.recognizer.inBubble
 import eu.kanade.translation.recognizer.lightPixels
-import eu.kanade.translation.translator.TextTranslator
+import eu.kanade.translation.translator.PageTranslator
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -284,7 +284,7 @@ class ChapterTranslator(
         }
     }
 
-    private fun createTranslator(): TextTranslator {
+    private fun createTranslator(): PageTranslator {
         val prefs = translationPreferences
         val service = prefs.service.get()
         val apiKey = ApiKeyCipher.decrypt(prefs.apiKey(service).get())
@@ -294,8 +294,10 @@ class ChapterTranslator(
             throw IOException(context.stringResource(WTMR.strings.translation_error_no_base_url))
         }
         if (apiKey.isBlank()) throw IOException(context.stringResource(WTMR.strings.translation_error_no_api_key))
-        if (model.isBlank()) throw IOException(context.stringResource(WTMR.strings.translation_error_no_model))
-        return TextTranslator.create(service, apiKey, model, customBaseUrl)
+        if (service.hasModels && model.isBlank()) {
+            throw IOException(context.stringResource(WTMR.strings.translation_error_no_model))
+        }
+        return PageTranslator.create(service, apiKey, model, customBaseUrl)
     }
 
     /**

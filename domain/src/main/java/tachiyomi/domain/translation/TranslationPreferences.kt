@@ -40,12 +40,20 @@ class TranslationPreferences(
     val showTranslations: Preference<Boolean> = preferenceStore.getBoolean("translation_show_in_reader", true)
 }
 
-/** A language model API. All but [GEMINI] follow OpenAI's chat completions. */
-enum class TranslationService(val baseUrl: String?, val defaultModel: String = "") {
+/**
+ * A translation service: a language model API, which all but [GEMINI] reach through OpenAI's chat completions, or a
+ * machine translator, which has no models to choose from.
+ */
+enum class TranslationService(
+    val baseUrl: String?,
+    val defaultModel: String = "",
+    val hasModels: Boolean = true,
+) {
     GEMINI(baseUrl = null, defaultModel = "gemini-3.8-flash"),
     GROQ(baseUrl = "https://api.groq.com/openai/v1"),
     OPENROUTER(baseUrl = "https://openrouter.ai/api/v1"),
     CEREBRAS(baseUrl = "https://api.cerebras.ai/v1"),
+    DEEPL(baseUrl = null, hasModels = false),
 
     /** Any other OpenAI-compatible API, at [TranslationPreferences.customBaseUrl]. */
     CUSTOM(baseUrl = null),
