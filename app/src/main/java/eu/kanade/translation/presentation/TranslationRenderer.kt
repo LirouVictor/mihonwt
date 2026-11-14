@@ -7,6 +7,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Rect
 import android.graphics.RectF
 import android.text.Layout
 import android.text.StaticLayout
@@ -17,7 +18,9 @@ import eu.kanade.tachiyomi.R
 import eu.kanade.translation.model.PageTranslation
 import eu.kanade.translation.model.TranslationBlock
 import eu.kanade.translation.model.joinLines
+import java.util.Locale
 import kotlin.math.abs
+import kotlin.math.min
 
 /**
  * Draws the translation of a page over its image: a white box over each block of text and the translated text in
@@ -34,6 +37,15 @@ class TranslationRenderer(context: Context, translation: PageTranslation) {
     private val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.BLACK
         typeface = ResourcesCompat.getFont(context, R.font.comic_neue_bold)
+        // Translations are in Brazilian Portuguese, and hyphenation follows the locale's rules
+        textLocale = Locale.forLanguageTag("pt-BR")
+    }
+
+    /** Height of a capital letter as a share of the text size, to match the size of the original letters. */
+    private val capHeightRatio = Rect().let { bounds ->
+        textPaint.textSize = 100f
+        textPaint.getTextBounds("H", 0, 1, bounds)
+        bounds.height() / 100f
     }
 
     private val blocks = translation.blocks
@@ -69,21 +81,41 @@ class TranslationRenderer(context: Context, translation: PageTranslation) {
             cornerRadius = symHeight / 4,
             // Translations of chapters saved before line breaks were dropped still carry the English ones, and a
             // longer Portuguese line kept whole forced a tiny text size
-            text = fitText(block.translation.joinLines(), textWidth, textHeight),
+            // Never larger than the original lettering, which a short reply in a big bubble would otherwise dwarf
+            text = fitText(block.translation.joinLines(), textWidth, textHeight, symHeight / capHeightRatio),
         )
     }
 
-    /** Lays [text] out in the largest whole text size that fits [width] by [height] without breaking a word. */
-    private fun fitText(text: String, width: Int, height: Float): StaticLayout {
-        val longestWord = text.split(' ', '\n').maxBy { it.length }
+    /**
+     * Lays [text] out in the largest whole text size that fits [width] by [height], up to [maxSize]. Words are kept
+     * whole unless hyphenating them allows a much larger size, as in a narrow bubble with a long word.
+     */
+    private fun fitText(text: String, width: Int, height: Float, maxSize: Float): StaticLayout {
+        val words = text.split(WORD_BREAK)
+        val whole = largestFitting(text, width, height, maxSize, hyphenate = false) { size ->
+            textPaint.textSize = size
+            words.all { textPaint.measureText(it) <= width }
+        }
+        val hyphenated = largestFitting(text, width, height, maxSize, hyphenate = true) { true }
+        return if (whole.first >= hyphenated.first * MIN_WHOLE_WORD_SIZE) whole.second else hyphenated.second
+    }
+
+    private inline fun largestFitting(
+        text: String,
+        width: Int,
+        height: Float,
+        maxSize: Float,
+        hyphenate: Boolean,
+        fits: (size: Float) -> Boolean,
+    ): Pair<Int, StaticLayout> {
         var low = 1
-        var high = height.toInt().coerceAtLeast(1)
-        var best = layOutText(text, width, low.toFloat())
+        var high = min(height, maxSize).toInt().coerceAtLeast(1)
+        var best = 1 to layOutText(text, width, 1f, hyphenate)
         while (low <= high) {
             val size = (low + high) / 2
-            val layout = layOutText(text, width, size.toFloat())
-            if (layout.height <= height && textPaint.measureText(longestWord) <= width) {
-                best = layout
+            val layout = layOutText(text, width, size.toFloat(), hyphenate)
+            if (layout.height <= height && fits(size.toFloat())) {
+                best = size to layout
                 low = size + 1
             } else {
                 high = size - 1
@@ -92,11 +124,17 @@ class TranslationRenderer(context: Context, translation: PageTranslation) {
         return best
     }
 
-    private fun layOutText(text: String, width: Int, size: Float): StaticLayout {
+    private fun layOutText(text: String, width: Int, size: Float, hyphenate: Boolean): StaticLayout {
         textPaint.textSize = size
         return StaticLayout.Builder.obtain(text, 0, text.length, TextPaint(textPaint), width.coerceAtLeast(1))
             .setAlignment(Layout.Alignment.ALIGN_CENTER)
             .setIncludePad(false)
+            .apply {
+                if (hyphenate) {
+                    setBreakStrategy(Layout.BREAK_STRATEGY_HIGH_QUALITY)
+                    setHyphenationFrequency(Layout.HYPHENATION_FREQUENCY_FULL)
+                }
+            }
             .build()
     }
 
@@ -115,5 +153,13 @@ class TranslationRenderer(context: Context, translation: PageTranslation) {
             translate(-text.width / 2f, -text.height / 2f)
             text.draw(this)
         }
+    }
+
+    private companion object {
+        /** Splits words, and after hyphens, where a line can break without hyphenation. */
+        val WORD_BREAK = Regex("""\s+|(?<=-)""")
+
+        /** Whole words are kept when they allow at least this share of the size hyphenation would. */
+        const val MIN_WHOLE_WORD_SIZE = 0.8f
     }
 }
