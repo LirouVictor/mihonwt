@@ -45,4 +45,10 @@ class BubbleTextTest {
         assertEquals(listOf("I"), bubbleBlocks(words).map { it.text })
     }
 
+    @Test
+    fun `a hyphen or punctuation read apart stays with its word`() {
+        val words = line(0f, "MARVEL" to 0f, "-" to 20f) + line(16f, "OUS" to 0f, "?!" to 20f)
+        assertEquals(listOf("MARVEL-\nOUS?!"), bubbleBlocks(words).map { it.text })
+    }
+
 }

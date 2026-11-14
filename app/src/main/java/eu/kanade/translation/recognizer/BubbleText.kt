@@ -34,9 +34,28 @@ fun bubbleBlocks(words: List<Word>): List<TranslationBlock> {
             }
             if (!isOutline) pieces.last().add(word)
         }
-        pieces.filter { it.isNotEmpty() }
+        pieces.filter { it.isNotEmpty() }.withMarksAttached()
     }
     return mergeBubbleBlocks(pieces.map { it.toBlock() }).filterNot { it.isArt() }
+}
+
+/**
+ * Joins pieces of a line that hold no letters or digits, like a hyphen or "?!" that OCR read as a word of its own,
+ * to the piece before them, or after them at the start of the line, instead of losing them.
+ */
+private fun List<MutableList<Word>>.withMarksAttached(): List<List<Word>> {
+    val pieces = toMutableList()
+    var i = 0
+    while (i < pieces.size && pieces.size > 1) {
+        if (pieces[i].any { word -> word.text.any(Char::isLetterOrDigit) }) {
+            i++
+        } else if (i > 0) {
+            pieces[i - 1].addAll(pieces.removeAt(i))
+        } else {
+            pieces[1].addAll(0, pieces.removeAt(0))
+        }
+    }
+    return pieces
 }
 
 /**
@@ -52,7 +71,7 @@ private fun List<Word>.toBlock(): TranslationBlock {
     val left = minOf { it.x }
     val top = minOf { it.y }
     return TranslationBlock(
-        text = joinToString(" ") { it.text }.fixLetteringMistakes(),
+        text = joinWords().fixLetteringMistakes(),
         width = maxOf { it.x + it.width } - left,
         height = maxOf { it.y + it.height } - top,
         x = left,
@@ -61,6 +80,14 @@ private fun List<Word>.toBlock(): TranslationBlock {
         symWidth = first().letterHeight,
         angle = first().angle,
     )
+}
+
+// A hyphen or "?!" read as a word of its own is written against the word before it, as it was lettered
+private fun List<Word>.joinWords() = buildString {
+    this@joinWords.forEachIndexed { i, word ->
+        if (i > 0 && word.text.any(Char::isLetterOrDigit)) append(' ')
+        append(word.text)
+    }
 }
 
 /**
