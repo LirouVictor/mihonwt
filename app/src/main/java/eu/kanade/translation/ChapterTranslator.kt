@@ -216,7 +216,7 @@ class ChapterTranslator(
             pages.keys.filterNot { it in done }.chunked(BATCH_SIZE).forEach { names ->
                 val progress = Translation.Progress(pages.size, pages.size, done.size, pages.size)
                 translation.progress = progress
-                translator.translate(names.associateWith { pages.getValue(it) }) { attempt ->
+                translator.translate(names.associateWith { pages.getValue(it) }, translation.manga.title) { attempt ->
                     translation.progress = progress.copy(retries = attempt)
                 }
                 names.forEach { done[it] = pages.getValue(it) }

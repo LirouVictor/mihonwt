@@ -38,20 +38,27 @@ abstract class TextTranslator {
         .callTimeout(5.minutes)
         .build()
 
-    /** Fills [eu.kanade.translation.model.TranslationBlock.translation] and drops blocks marked as watermarks. */
-    suspend fun translate(pages: Map<String, PageTranslation>, onRetry: (attempt: Int) -> Unit = {}) {
+    /**
+     * Fills [eu.kanade.translation.model.TranslationBlock.translation] and drops blocks marked as watermarks. The
+     * [series] title lets the model use the names and tone it knows from it.
+     */
+    suspend fun translate(pages: Map<String, PageTranslation>, series: String, onRetry: (attempt: Int) -> Unit = {}) {
         try {
-            translateBatch(pages, onRetry)
+            translateBatch(pages, series, onRetry)
         } catch (e: TruncatedReplyException) {
             // A whole chapter can exceed the model's output limit, above all when its reasoning counts against it
             if (pages.size < 2) throw e
             pages.entries.chunked((pages.size + 1) / 2).forEach { half ->
-                translate(half.associate { it.key to it.value }, onRetry)
+                translate(half.associate { it.key to it.value }, series, onRetry)
             }
         }
     }
 
-    private suspend fun translateBatch(pages: Map<String, PageTranslation>, onRetry: (attempt: Int) -> Unit) {
+    private suspend fun translateBatch(
+        pages: Map<String, PageTranslation>,
+        series: String,
+        onRetry: (attempt: Int) -> Unit,
+    ) {
         // Blocks are numbered rather than listed: with a list, the model sometimes merges two fragments of a sentence
         // and every later block on the page gets the translation of the one after it. Their text goes without line
         // breaks, which the model would copy into translations that need longer lines.
@@ -62,10 +69,11 @@ abstract class TextTranslator {
                 }
             }
         }
-        var output = request(input.toString(), onRetry)
+        val systemPrompt = "$SYSTEM_PROMPT\n\nThe pages are from \"$series\"."
+        var output = request(systemPrompt, input.toString(), onRetry)
         // Models now and then skip a block, which would stay in English; a second answer is usually complete
         if (countMissing(pages, output) > 0) {
-            val retry = request(input.toString(), onRetry)
+            val retry = request(systemPrompt, input.toString(), onRetry)
             if (countMissing(pages, retry) < countMissing(pages, output)) output = retry
         }
 
@@ -78,8 +86,8 @@ abstract class TextTranslator {
         }
     }
 
-    private suspend fun request(input: String, onRetry: (attempt: Int) -> Unit): JsonObject {
-        val reply = complete(SYSTEM_PROMPT, input, onRetry)
+    private suspend fun request(systemPrompt: String, input: String, onRetry: (attempt: Int) -> Unit): JsonObject {
+        val reply = complete(systemPrompt, input, onRetry)
         // Without a JSON mode, models may wrap the object in a code block or a sentence
         return runCatching {
             Json.parseToJsonElement(reply.substring(reply.indexOf('{'), reply.lastIndexOf('}') + 1)).jsonObject
@@ -162,13 +170,15 @@ abstract class TextTranslator {
 
             1. **Input:** You'll receive a JSON object where keys are image filenames (e.g., "001.jpg") and values are objects mapping a block number to the text extracted from one speech bubble or caption.
 
-            2. **Translation:** Translate every block to the target language `Brazilian Portuguese`. Ensure the translation is natural and fluent, adapting idioms and expressions to fit the target language's cultural context.
+            2. **Translation:** Translate every block to the target language `Brazilian Portuguese`, as a good fan translator would today: natural, colloquial speech that suits each character, with current everyday words. Avoid formal, old-fashioned or overly literal wording and false cognates (e.g. "amusing" is "divertido", never "amusante"). Adapt idioms and expressions to fit the target language's cultural context.
 
-            3. **One block, one translation:** The text was read by OCR, so a sentence may be split across consecutive blocks. Translate each block on its own, keeping each part of the sentence in its own block. Never merge blocks or move text from one block to another. Fix obvious OCR mistakes using the context.
+            3. **Names:** Keep the names of characters, places, attacks and powers as in the original (e.g. "Acrobatic Silky" stays "Acrobatic Silky"), unless the series has a well-known Brazilian Portuguese name for them. Keep honorifics such as "-san" and "-sama".
 
-            4. **Watermark and noise removal:** Replace any watermarks or site links (e.g., "colamanga.com"), and any block that isn't readable text (OCR noise from the artwork), with the placeholder "$WATERMARK_PLACEHOLDER".
+            4. **One block, one translation:** The text was read by OCR, so a sentence may be split across consecutive blocks. Translate each block on its own, keeping each part of the sentence in its own block. Never merge blocks or move text from one block to another. Fix obvious OCR mistakes using the context.
 
-            5. **Structure Preservation:** Return the same image filenames and, for each, exactly the same block numbers as the input.
+            5. **Watermark and noise removal:** Replace any watermarks or site links (e.g., "colamanga.com"), and any block that isn't readable text (OCR noise from the artwork), with the placeholder "$WATERMARK_PLACEHOLDER".
+
+            6. **Structure Preservation:** Return the same image filenames and, for each, exactly the same block numbers as the input.
 
             **Example:**
 
