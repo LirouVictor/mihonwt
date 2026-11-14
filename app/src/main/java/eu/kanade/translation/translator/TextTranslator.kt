@@ -38,18 +38,27 @@ abstract class TextTranslator {
         .callTimeout(5.minutes)
         .build()
 
+    /** Whether [complete] sends the page images, so they are worth preparing. */
+    open val readsImages = false
+
     /**
      * Fills [eu.kanade.translation.model.TranslationBlock.translation] and drops blocks marked as watermarks. The
-     * [series] title lets the model use the names and tone it knows from it.
+     * [series] title lets the model use the names and tone it knows from it, and [images] of the pages, by name, let
+     * it read the text in context.
      */
-    suspend fun translate(pages: Map<String, PageTranslation>, series: String, onRetry: (attempt: Int) -> Unit = {}) {
+    suspend fun translate(
+        pages: Map<String, PageTranslation>,
+        series: String,
+        images: Map<String, ByteArray> = emptyMap(),
+        onRetry: (attempt: Int) -> Unit = {},
+    ) {
         try {
-            translateBatch(pages, series, onRetry)
+            translateBatch(pages, series, images, onRetry)
         } catch (e: TruncatedReplyException) {
             // A whole chapter can exceed the model's output limit, above all when its reasoning counts against it
             if (pages.size < 2) throw e
             pages.entries.chunked((pages.size + 1) / 2).forEach { half ->
-                translate(half.associate { it.key to it.value }, series, onRetry)
+                translate(half.associate { it.key to it.value }, series, images, onRetry)
             }
         }
     }
@@ -57,6 +66,7 @@ abstract class TextTranslator {
     private suspend fun translateBatch(
         pages: Map<String, PageTranslation>,
         series: String,
+        images: Map<String, ByteArray>,
         onRetry: (attempt: Int) -> Unit,
     ) {
         // Blocks are numbered rather than listed: with a list, the model sometimes merges two fragments of a sentence
@@ -70,10 +80,11 @@ abstract class TextTranslator {
             }
         }
         val systemPrompt = "$SYSTEM_PROMPT\n\nThe pages are from \"$series\"."
-        var output = request(systemPrompt, input.toString(), onRetry)
+        val pageImages = images.filterKeys { it in pages }
+        var output = request(systemPrompt, input.toString(), pageImages, onRetry)
         // Models now and then skip a block, which would stay in English; a second answer is usually complete
         if (countMissing(pages, output) > 0) {
-            val retry = request(systemPrompt, input.toString(), onRetry)
+            val retry = request(systemPrompt, input.toString(), pageImages, onRetry)
             if (countMissing(pages, retry) < countMissing(pages, output)) output = retry
         }
 
@@ -86,8 +97,13 @@ abstract class TextTranslator {
         }
     }
 
-    private suspend fun request(systemPrompt: String, input: String, onRetry: (attempt: Int) -> Unit): JsonObject {
-        val reply = complete(systemPrompt, input, onRetry)
+    private suspend fun request(
+        systemPrompt: String,
+        input: String,
+        images: Map<String, ByteArray>,
+        onRetry: (attempt: Int) -> Unit,
+    ): JsonObject {
+        val reply = complete(systemPrompt, input, images, onRetry)
         // Without a JSON mode, models may wrap the object in a code block or a sentence
         return runCatching {
             Json.parseToJsonElement(reply.substring(reply.indexOf('{'), reply.lastIndexOf('}') + 1)).jsonObject
@@ -104,10 +120,11 @@ abstract class TextTranslator {
     /** Returns the names of the models this API key can use, to pick one from. */
     abstract suspend fun models(): List<String>
 
-    /** Returns the model's reply to [userText], which should be a JSON object. */
+    /** Returns the model's reply to [userText], which should be a JSON object, with [images] if it [readsImages]. */
     protected abstract suspend fun complete(
         systemPrompt: String,
         userText: String,
+        images: Map<String, ByteArray>,
         onRetry: (attempt: Int) -> Unit,
     ): String
 
@@ -179,6 +196,8 @@ abstract class TextTranslator {
             5. **Watermark and noise removal:** Replace any watermarks or site links (e.g., "colamanga.com"), and any block that isn't readable text (OCR noise from the artwork), with the placeholder "$WATERMARK_PLACEHOLDER".
 
             6. **Structure Preservation:** Return the same image filenames and, for each, exactly the same block numbers as the input.
+
+            7. **Page images:** When an image of a page follows the text, use it to fix OCR mistakes and to tell who is speaking and in what tone. Still translate only the given blocks.
 
             **Example:**
 
