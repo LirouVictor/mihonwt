@@ -3,56 +3,32 @@
 
 package eu.kanade.translation.translator
 
-import eu.kanade.tachiyomi.network.await
 import eu.kanade.translation.model.PageTranslation
 import eu.kanade.translation.model.joinLines
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import tachiyomi.domain.translation.TranslationService
 import java.io.IOException
-import kotlin.time.Duration.Companion.minutes
-import kotlin.time.Duration.Companion.seconds
 
 /** Translates every page of a chapter in a single request to a language model. */
-abstract class TextTranslator {
-
-    /** Shown in error messages. */
-    protected abstract val name: String
-
-    // Not NetworkHelper's client: its verbose logging would print the API key header, and its read timeout is too
-    // short for a whole chapter.
-    private val client = OkHttpClient.Builder()
-        .readTimeout(3.minutes)
-        .callTimeout(5.minutes)
-        .build()
-
-    /** Whether [complete] sends the page images, so they are worth preparing. */
-    open val readsImages = false
+abstract class LanguageModelTranslator : PageTranslator() {
 
     /**
-     * Fills [eu.kanade.translation.model.TranslationBlock.translation] and drops blocks marked as watermarks, and
-     * returns how the names and recurring terms on these pages were translated. The [series] title lets the model use
-     * the names and tone it knows from it, [images] of the pages, by name, let it read the text in context, and
-     * [glossary] keeps the terms of earlier chapters translated the same way.
+     * Also drops blocks the model marks as watermarks. The [series] title lets the model use the names and tone it
+     * knows from it, [images] of the pages let it read the text in context, and [glossary] keeps the terms of earlier
+     * chapters translated the same way.
      */
-    suspend fun translate(
+    override suspend fun translate(
         pages: Map<String, PageTranslation>,
         series: String,
-        images: Map<String, ByteArray> = emptyMap(),
-        glossary: Map<String, String> = emptyMap(),
-        onRetry: (attempt: Int) -> Unit = {},
+        images: Map<String, ByteArray>,
+        glossary: Map<String, String>,
+        onRetry: (attempt: Int) -> Unit,
     ): Map<String, String> {
         return try {
             translateBatch(pages, series, images, glossary, onRetry)
@@ -141,58 +117,15 @@ abstract class TextTranslator {
         onRetry: (attempt: Int) -> Unit,
     ): String
 
-    /** Sends [request], retrying rate limits and overloads, and returns the response's JSON body. */
-    protected suspend fun send(
-        request: Request,
-        onRetry: (attempt: Int) -> Unit,
-    ): JsonObject = withContext(Dispatchers.IO) {
-        var attempt = 0
-        var response = client.newCall(request).await()
-        // Rate limits and "model overloaded" errors usually clear within seconds
-        while (response.code in RETRY_CODES && attempt < RETRY_DELAYS.size) {
-            response.close()
-            onRetry(attempt + 1)
-            delay(RETRY_DELAYS[attempt++])
-            response = client.newCall(request).await()
-        }
-        val body = response.use { it.body.string() }
-        val json = runCatching { Json.parseToJsonElement(body).jsonObject }.getOrNull()
-        if (!response.isSuccessful || json == null) {
-            val error = json?.get("error") as? JsonObject
-            throw ApiException(
-                message = "$name HTTP ${response.code}: " +
-                    (error?.get("message")?.jsonPrimitive?.contentOrNull ?: body.take(200)),
-                code = (error?.get("code") as? JsonPrimitive)?.contentOrNull,
-            )
-        }
-        json
-    }
-
     /** Thrown when the reply hit the model's output limit, so a smaller batch may fit. */
     class TruncatedReplyException(name: String) :
         IOException("$name cut the reply short: the model's output limit is too small even for one page")
 
-    /** An error response, with the API's own error [code] when it gives one. */
-    class ApiException(message: String, val code: String?) : IOException(message)
-
-    companion object {
-        /** Returns the translator for [service]. [customBaseUrl] is only used by [TranslationService.CUSTOM]. */
-        fun create(service: TranslationService, apiKey: String, model: String, customBaseUrl: String): TextTranslator {
-            val baseUrl = when (service) {
-                TranslationService.GEMINI -> return GeminiTranslator(apiKey = apiKey, model = model)
-                TranslationService.CUSTOM -> customBaseUrl
-                else -> service.baseUrl!!
-            }
-            return OpenAiCompatibleTranslator(baseUrl = baseUrl, apiKey = apiKey, model = model)
-        }
-
+    private companion object {
         private const val WATERMARK_PLACEHOLDER = "RTMTH"
 
         // Page names are file names, which never start with an underscore
         private const val GLOSSARY_KEY = "_glossary"
-
-        private val RETRY_CODES = setOf(429, 500, 502, 503)
-        private val RETRY_DELAYS = listOf(15.seconds, 30.seconds, 60.seconds)
 
         private val SYSTEM_PROMPT = """
             ## System Prompt for Manhwa/Manga/Manhua Translation

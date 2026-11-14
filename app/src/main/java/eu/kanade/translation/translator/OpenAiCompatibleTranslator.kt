@@ -20,7 +20,7 @@ class OpenAiCompatibleTranslator(
     private val baseUrl: String,
     private val apiKey: String,
     private val model: String,
-) : TextTranslator() {
+) : LanguageModelTranslator() {
 
     override val name = baseUrl.toHttpUrlOrNull()?.host ?: baseUrl
 

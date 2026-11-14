@@ -28,7 +28,7 @@ import java.util.Base64
 class GeminiTranslator(
     private val apiKey: String,
     private val model: String,
-) : TextTranslator() {
+) : LanguageModelTranslator() {
 
     override val name = "Gemini"
 

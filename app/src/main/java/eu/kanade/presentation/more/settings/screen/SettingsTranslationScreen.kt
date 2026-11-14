@@ -10,7 +10,8 @@ import androidx.compose.ui.platform.LocalContext
 import eu.kanade.presentation.more.settings.Preference
 import eu.kanade.translation.data.ApiKeyCipher
 import eu.kanade.translation.presentation.ModelPickerDialog
-import eu.kanade.translation.translator.TextTranslator
+import eu.kanade.translation.translator.LanguageModelTranslator
+import eu.kanade.translation.translator.PageTranslator
 import mihon.app.di.appGraph
 import tachiyomi.domain.translation.TranslationService
 import tachiyomi.i18n.wt.WTMR
@@ -39,7 +40,8 @@ object SettingsTranslationScreen : SearchableSettings {
                 title = stringResource(WTMR.strings.pref_model),
                 value = model,
                 loadModels = {
-                    TextTranslator.create(service, apiKey, "", translationPreferences.customBaseUrl.get()).models()
+                    val customBaseUrl = translationPreferences.customBaseUrl.get()
+                    (PageTranslator.create(service, apiKey, "", customBaseUrl) as LanguageModelTranslator).models()
                 },
                 onConfirm = modelPref::set,
                 onDismissRequest = { isModelPickerShown = false },
@@ -55,6 +57,8 @@ object SettingsTranslationScreen : SearchableSettings {
                         TranslationService.GROQ -> "Groq"
                         TranslationService.OPENROUTER -> "OpenRouter"
                         TranslationService.CEREBRAS -> "Cerebras"
+                        TranslationService.DEEPL -> "DeepL"
+                        TranslationService.OFFLINE -> stringResource(WTMR.strings.translation_service_offline)
                         TranslationService.CUSTOM -> stringResource(WTMR.strings.translation_service_custom)
                     }
                 },
@@ -73,11 +77,13 @@ object SettingsTranslationScreen : SearchableSettings {
                 } else {
                     stringResource(WTMR.strings.pref_api_key_summary)
                 },
+                visible = service.needsApiKey,
             ),
             Preference.PreferenceItem.TextPreference(
                 title = stringResource(WTMR.strings.pref_model),
                 subtitle = model.ifBlank { stringResource(WTMR.strings.pref_model_choose) },
                 onClick = { isModelPickerShown = true },
+                visible = service.hasModels,
             ),
             Preference.PreferenceItem.SwitchPreference(
                 preference = translationPreferences.translateOnDownload,
