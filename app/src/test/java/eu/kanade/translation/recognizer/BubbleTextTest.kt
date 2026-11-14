@@ -61,4 +61,13 @@ class BubbleTextTest {
         assertEquals(13f, word.letterHeight)
     }
 
+    @Test
+    fun `a line is cut where a bubble outline runs between two words`() {
+        val outlineX = 86
+        val pixels = LightPixels { left, top, right, bottom ->
+            BooleanArray((right - left) * (bottom - top)) { left + it % (right - left) != outlineX }
+        }
+        val words = line(0f, "VIRUSES..." to 0f, "SUBJECT!" to 12f) + line(100f, "OF" to 0f, "US" to 6f)
+        assertEquals(listOf("VIRUSES...", "SUBJECT!", "OF US"), bubbleBlocks(words, pixels).map { it.text })
+    }
 }

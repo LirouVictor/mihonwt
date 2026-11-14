@@ -24,6 +24,7 @@ import eu.kanade.translation.model.PageTranslation
 import eu.kanade.translation.model.Translation
 import eu.kanade.translation.model.TranslationBlock
 import eu.kanade.translation.recognizer.Letter
+import eu.kanade.translation.recognizer.LightPixels
 import eu.kanade.translation.recognizer.TextRecognizer
 import eu.kanade.translation.recognizer.bubbleBlocks
 import eu.kanade.translation.recognizer.grownIntoBubble
@@ -345,8 +346,8 @@ class ChapterTranslator(
                 }
                     // Single letters are kept: an "I" alone on its line would stay in English beside the translation
                     .filter { it.boundingBox != null && it.text.isNotBlank() }
-                val page = toPageTranslation(blocks, bitmap.width, bitmap.height, ocrScale)
                 val pixels = bitmap.lightPixels()
+                val page = toPageTranslation(blocks, bitmap.width, bitmap.height, ocrScale, pixels)
                 val found = page.blocks
                 page.blocks = found.mapTo(mutableListOf()) {
                     it.inBubble(bitmap.width, bitmap.height, found, pixels) ?: it.grownIntoBubble(bitmap)
@@ -424,6 +425,7 @@ class ChapterTranslator(
         width: Int,
         height: Int,
         scale: Float,
+        pixels: LightPixels,
     ): PageTranslation {
         var lineNumber = 0
         val words = blocks.flatMap { block ->
@@ -445,7 +447,7 @@ class ChapterTranslator(
             }
         }
         return PageTranslation(
-            blocks = bubbleBlocks(words).toMutableList(),
+            blocks = bubbleBlocks(words, pixels).toMutableList(),
             imgWidth = width.toFloat(),
             imgHeight = height.toFloat(),
         )

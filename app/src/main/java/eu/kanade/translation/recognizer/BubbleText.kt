@@ -1,6 +1,7 @@
 package eu.kanade.translation.recognizer
 
 import eu.kanade.translation.model.TranslationBlock
+import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
 
@@ -18,10 +19,10 @@ class Word(
 
 /**
  * Groups [words] into one block per speech bubble. ML Kit's own blocks and even its lines can run across bubbles
- * that touch, mixing their text, so each line is first cut where its words are far apart or where it reads a
- * bubble's outline as "|", and the pieces are then joined back by bubble.
+ * that touch, mixing their text, so each line is first cut where its words are far apart or where a bubble's
+ * outline runs between them, read as "|" or seen in [pixels], and the pieces are then joined back by bubble.
  */
-fun bubbleBlocks(words: List<Word>): List<TranslationBlock> {
+fun bubbleBlocks(words: List<Word>, pixels: LightPixels? = null): List<TranslationBlock> {
     val pieces = words.groupBy { it.line }.values.flatMap { line ->
         val sorted = line.sortedBy { it.x }
         val pieces = mutableListOf(mutableListOf<Word>())
@@ -29,7 +30,8 @@ fun bubbleBlocks(words: List<Word>): List<TranslationBlock> {
             val previous = pieces.last().lastOrNull()
             val isOutline = word.text.all { it in OUTLINE_CHARS }
             val gap = previous?.let { word.x - (it.x + it.width) } ?: 0f
-            if (isOutline || gap > max(word.letterHeight, previous?.letterHeight ?: 0f) * MAX_WORD_GAP) {
+            val farApart = gap > max(word.letterHeight, previous?.letterHeight ?: 0f) * MAX_WORD_GAP
+            if (isOutline || farApart || (previous != null && pixels?.outlineBetween(previous, word) == true)) {
                 if (pieces.last().isNotEmpty()) pieces.add(mutableListOf())
             }
             if (!isOutline) pieces.last().add(word)
@@ -37,6 +39,25 @@ fun bubbleBlocks(words: List<Word>): List<TranslationBlock> {
         pieces.filter { it.isNotEmpty() }.withMarksAttached()
     }
     return mergeBubbleBlocks(pieces.map { it.toBlock() }).filterNot { it.isArt() }
+}
+
+/**
+ * Whether a bubble's outline runs between [left] and [right], as where two bubbles touch: a dark stroke across the
+ * height of the words with light space on both sides of it, which lettering never leaves between two words.
+ */
+private fun LightPixels.outlineBetween(left: Word, right: Word): Boolean {
+    val gapLeft = ceil(left.x + left.width).toInt()
+    val gapRight = right.x.toInt()
+    val top = ceil(max(left.y, right.y)).toInt()
+    val bottom = min(left.y + left.height, right.y + right.height).toInt()
+    val width = gapRight - gapLeft
+    val height = bottom - top
+    if (width < 3 || height < 3 || gapLeft < 0 || top < 0) return false
+    val light = read(gapLeft, top, gapRight, bottom)
+    val darkPixels = IntArray(width) { col -> (0..<height).count { row -> !light[row * width + col] } }
+    val firstLight = darkPixels.indexOfFirst { it == 0 }
+    val lastLight = darkPixels.indexOfLast { it == 0 }
+    return (firstLight + 1..<lastLight).any { darkPixels[it] >= height * MIN_OUTLINE_SHARE }
 }
 
 /**
@@ -162,6 +183,8 @@ private fun mergeTextBlock(a: TranslationBlock, b: TranslationBlock): Translatio
 }
 
 private const val OUTLINE_CHARS = "|"
+
+private const val MIN_OUTLINE_SHARE = 0.6f
 
 private const val MIN_LETTERS_TO_TRIM = 3
 private const val MAX_LETTER_HEIGHT = 1.4f
