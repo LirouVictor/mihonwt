@@ -32,6 +32,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -198,6 +201,7 @@ class ChapterTranslator(
         try {
             translation.error = null
             translation.status = Translation.State.TRANSLATING
+            translation.progress = null
             val translator = createTranslator()
             val mangaDir = provider.getMangaDir(translation.manga.title, translation.source)
             val chapterDir = downloadProvider.findChapterDir(
@@ -208,21 +212,42 @@ class ChapterTranslator(
                 translation.source,
             ) ?: throw IOException(context.stringResource(WTMR.strings.translation_error_not_downloaded))
 
-            // A retry usually follows a translator error, so it reuses the OCR instead of reading every page again
-            val pages = recognizedChapters[translation.chapter.id] ?: recognizeChapter(chapterDir, translation)
-                .also { recognizedChapters[translation.chapter.id] = it }
             val chapterId = translation.chapter.id
             val done = partialTranslations.value[chapterId].orEmpty().toMutableMap()
-            // Small batches keep each reply within the model's output limit, and let the reader show the first
-            // pages while the rest are translated
-            pages.keys.filterNot { it in done }.chunked(BATCH_SIZE).forEach { names ->
-                val progress = Translation.Progress(pages.size, pages.size, done.size, pages.size)
-                translation.progress = progress
-                translator.translate(names.associateWith { pages.getValue(it) }, translation.manga.title) { attempt ->
-                    translation.progress = progress.copy(retries = attempt)
+            val pages = coroutineScope {
+                val recognized = Channel<Pair<String, PageTranslation>>(Channel.UNLIMITED)
+                val ocr = async {
+                    // A retry usually follows a translator error, so it reuses the OCR instead of reading every page
+                    // again
+                    val cached = recognizedChapters[chapterId]
+                    if (cached != null) {
+                        cached.forEach { recognized.send(it.toPair()) }
+                        cached
+                    } else {
+                        recognizeChapter(chapterDir, translation) { name, page -> recognized.send(name to page) }
+                            .also { recognizedChapters[chapterId] = it }
+                    }.also { recognized.close() }
                 }
-                names.forEach { done[it] = pages.getValue(it) }
-                _partialTranslations.update { it + (chapterId to done.toMap()) }
+                // Batches go out as soon as OCR has read their pages, so the reader shows the first pages while the
+                // rest are still being read. Small batches also keep each reply within the model's output limit
+                val batch = mutableMapOf<String, PageTranslation>()
+                suspend fun translateBatch() {
+                    translator.translate(batch.toMap(), translation.manga.title) { attempt ->
+                        translation.updateProgress { it.copy(retries = attempt) }
+                    }
+                    done.putAll(batch)
+                    batch.clear()
+                    translation.updateProgress { it.copy(translated = done.size, retries = 0) }
+                    _partialTranslations.update { it + (chapterId to done.toMap()) }
+                }
+                for ((name, page) in recognized) {
+                    translation.updateProgress { it.copy(toTranslate = it.toTranslate + 1) }
+                    if (name in done) continue
+                    batch[name] = page
+                    if (batch.size == BATCH_SIZE) translateBatch()
+                }
+                if (batch.isNotEmpty()) translateBatch()
+                ocr.await()
             }
 
             mangaDir.createFile(
@@ -258,12 +283,19 @@ class ChapterTranslator(
         return TextTranslator.create(service, apiKey, model, customBaseUrl)
     }
 
-    /** Returns the text blocks of each page that has any, keyed by the page's file name. */
-    private suspend fun recognizeChapter(chapterDir: UniFile, translation: Translation): Map<String, PageTranslation> {
+    /**
+     * Returns the text blocks of each page that has any, keyed by the page's file name, passing each such page to
+     * [onPage] as soon as it is read.
+     */
+    private suspend fun recognizeChapter(
+        chapterDir: UniFile,
+        translation: Translation,
+        onPage: suspend (String, PageTranslation) -> Unit,
+    ): Map<String, PageTranslation> {
         val pages = mutableMapOf<String, PageTranslation>()
         withChapterPages(chapterDir) { index, count, fileName, openStream ->
             currentCoroutineContext().ensureActive()
-            translation.progress = Translation.Progress(index, count)
+            translation.updateProgress { it.copy(page = index, pages = count) }
             val bitmap = decodePage(openStream)
             try {
                 val blocks = textRecognizer.recognize(InputImage.fromBitmap(bitmap, 0)).textBlocks
@@ -279,7 +311,8 @@ class ChapterTranslator(
             } finally {
                 bitmap.recycle()
             }
-            translation.progress = Translation.Progress(index + 1, count)
+            pages[fileName]?.let { onPage(fileName, it) }
+            translation.updateProgress { it.copy(page = index + 1, pages = count) }
         }
         return pages
     }
