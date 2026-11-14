@@ -59,6 +59,32 @@ private fun List<MutableList<Word>>.withMarksAttached(): List<List<Word>> {
 }
 
 /**
+ * Returns the word spelled by [letters], OCR's boxes of each of its letters at page coordinates, leaving out a
+ * letter at either end much taller than the rest: a bubble's outline read as "J" or "|", which would otherwise be
+ * taken for the size of the lettering. Returns null when no letters are left.
+ */
+fun wordOf(letters: List<Letter>, line: Int, angle: Float): Word? {
+    val median = letters.map { it.height }.sorted().getOrNull(letters.size / 2) ?: return null
+    fun isOutline(letter: Letter) = letters.size >= MIN_LETTERS_TO_TRIM && letter.height > median * MAX_LETTER_HEIGHT
+    val kept = letters.dropWhile(::isOutline).dropLastWhile(::isOutline).ifEmpty { return null }
+    val left = kept.minOf { it.x }
+    val top = kept.minOf { it.y }
+    return Word(
+        text = kept.joinToString("") { it.text },
+        x = left,
+        y = top,
+        width = kept.maxOf { it.x + it.width } - left,
+        height = kept.maxOf { it.y + it.height } - top,
+        letterHeight = kept.map { it.height }.sorted()[kept.size / 2],
+        line = line,
+        angle = angle,
+    )
+}
+
+/** A letter read by OCR, at page coordinates. */
+class Letter(val text: String, val x: Float, val y: Float, val width: Float, val height: Float)
+
+/**
  * Whether this block is more likely the artwork read as text than lettering, as marks like "--", prices and numbers
  * on signs, or a lone stroke read as "K". Translating it would only blank part of the drawing. A lone "I" is a word.
  */
@@ -136,6 +162,9 @@ private fun mergeTextBlock(a: TranslationBlock, b: TranslationBlock): Translatio
 }
 
 private const val OUTLINE_CHARS = "|"
+
+private const val MIN_LETTERS_TO_TRIM = 3
+private const val MAX_LETTER_HEIGHT = 1.4f
 
 // Words in a bubble are about half a letter apart, while the text of the next bubble is at least a letter away
 private const val MAX_WORD_GAP = 1f

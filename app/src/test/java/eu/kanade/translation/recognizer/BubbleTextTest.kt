@@ -51,4 +51,14 @@ class BubbleTextTest {
         assertEquals(listOf("MARVEL-\nOUS?!"), bubbleBlocks(words).map { it.text })
     }
 
+    @Test
+    fun `a bubble outline read as a tall letter is left out of the word`() {
+        val letters = listOf(Letter("J", 0f, -10f, 4f, 40f)) +
+            "DONT".mapIndexed { i, c -> Letter(c.toString(), 6f + i * 8f, 0f, 8f, 13f) }
+        val word = wordOf(letters, 0, 0f)!!
+        assertEquals("DONT", word.text)
+        assertEquals(6f, word.x)
+        assertEquals(13f, word.letterHeight)
+    }
+
 }

@@ -23,12 +23,13 @@ import eu.kanade.translation.data.TranslationProvider
 import eu.kanade.translation.model.PageTranslation
 import eu.kanade.translation.model.Translation
 import eu.kanade.translation.model.TranslationBlock
+import eu.kanade.translation.recognizer.Letter
 import eu.kanade.translation.recognizer.TextRecognizer
-import eu.kanade.translation.recognizer.Word
 import eu.kanade.translation.recognizer.bubbleBlocks
 import eu.kanade.translation.recognizer.grownIntoBubble
 import eu.kanade.translation.recognizer.inBubble
 import eu.kanade.translation.recognizer.lightPixels
+import eu.kanade.translation.recognizer.wordOf
 import eu.kanade.translation.translator.PageTranslator
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -429,18 +430,17 @@ class ChapterTranslator(
             block.lines.flatMap { line ->
                 val number = lineNumber++
                 line.elements.mapNotNull { element ->
-                    val bounds = element.boundingBox ?: return@mapNotNull null
-                    val letter = element.symbols.firstOrNull()?.boundingBox ?: bounds
-                    Word(
-                        text = element.text,
-                        x = bounds.left / scale,
-                        y = bounds.top / scale,
-                        width = bounds.width() / scale,
-                        height = bounds.height() / scale,
-                        letterHeight = letter.height() / scale,
-                        line = number,
-                        angle = line.angle,
-                    )
+                    val letters = element.symbols.mapNotNull { symbol ->
+                        val bounds = symbol.boundingBox ?: return@mapNotNull null
+                        Letter(
+                            text = symbol.text,
+                            x = bounds.left / scale,
+                            y = bounds.top / scale,
+                            width = bounds.width() / scale,
+                            height = bounds.height() / scale,
+                        )
+                    }
+                    wordOf(letters, number, line.angle)
                 }
             }
         }
