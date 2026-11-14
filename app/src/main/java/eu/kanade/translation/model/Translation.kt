@@ -6,6 +6,7 @@ package eu.kanade.translation.model
 import eu.kanade.tachiyomi.source.online.HttpSource
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.manga.model.Manga
 
@@ -27,6 +28,11 @@ data class Translation(
             _progressFlow.value = progress
         }
 
+    /** Changes the progress atomically, as OCR and translation report it at the same time. */
+    fun updateProgress(transform: (Progress) -> Progress) {
+        _progressFlow.update { transform(it ?: Progress(0, 0)) }
+    }
+
     /** Why the last attempt failed, shown when the chapter's status is [State.ERROR]. */
     var error: String? = null
 
@@ -37,8 +43,8 @@ data class Translation(
         }
 
     /**
-     * OCR has read [page] of [pages]; once they're equal the translator has done [translated] of the [toTranslate]
-     * pages that have text, and is retrying for the [retries] time.
+     * OCR has read [page] of [pages], and the translator, which starts on the first pages while OCR reads the rest,
+     * has done [translated] of the [toTranslate] pages with text found so far and is retrying for the [retries] time.
      */
     data class Progress(
         val page: Int,
