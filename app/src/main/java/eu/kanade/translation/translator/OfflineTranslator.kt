@@ -13,7 +13,11 @@ class OfflineTranslator : BlockTranslator() {
 
     override val name = "ML Kit"
 
-    override suspend fun translatePage(texts: List<String>, onRetry: (attempt: Int) -> Unit): List<String> {
+    override suspend fun translatePage(
+        texts: List<String>,
+        glossary: Map<String, String>,
+        onRetry: (attempt: Int) -> Unit,
+    ): List<String> {
         return withContext(Dispatchers.IO) {
             val options = TranslatorOptions.Builder()
                 .setSourceLanguage(TranslateLanguage.ENGLISH)

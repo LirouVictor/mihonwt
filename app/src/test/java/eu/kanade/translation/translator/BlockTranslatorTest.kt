@@ -14,4 +14,15 @@ class BlockTranslatorTest {
     fun `mixed case is kept`() {
         assertEquals("Miss Vamola, help!", "Miss Vamola, help!".toSentenceCase())
     }
+
+    @Test
+    fun `glossary terms are kept as the glossary has them`() {
+        val glossary = mapOf("Turbo Granny" to "Turbo Granny", "Turbo" to "Turbo", "Okarun" to "Okarun")
+        val text = "The powers of turbo granny & okarun's <3".withTermsKept(
+            glossaryPattern(glossary.keys),
+            glossary.mapKeys { it.key.lowercase() },
+        )
+        assertEquals("The powers of <keep>Turbo Granny</keep> &amp; <keep>Okarun</keep>'s &lt;3", text)
+        assertEquals("The powers of Turbo Granny & Okarun's <3", text.fromXml())
+    }
 }
