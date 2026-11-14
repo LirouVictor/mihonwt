@@ -95,6 +95,14 @@ private fun Bitmap.rowStrip(y: Int, left: Int, right: Int) = BooleanArray(right 
     isLight(getPixel(left + it, y))
 }
 
+/** Reads [LightPixels] off this bitmap. */
+fun Bitmap.lightPixels() = LightPixels { left, top, right, bottom ->
+    val width = right - left
+    val colors = IntArray(width * (bottom - top))
+    getPixels(colors, 0, width, left, top, width, bottom - top)
+    BooleanArray(colors.size) { isLight(colors[it]) }
+}
+
 private fun isLight(color: Int): Boolean =
     Color.red(color) * 0.299f + Color.green(color) * 0.587f + Color.blue(color) * 0.114f >= LIGHT_LUMINANCE
 

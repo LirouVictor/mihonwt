@@ -24,6 +24,8 @@ import eu.kanade.translation.model.Translation
 import eu.kanade.translation.model.TranslationBlock
 import eu.kanade.translation.recognizer.TextRecognizer
 import eu.kanade.translation.recognizer.grownIntoBubble
+import eu.kanade.translation.recognizer.inBubble
+import eu.kanade.translation.recognizer.lightPixels
 import eu.kanade.translation.translator.TextTranslator
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -268,7 +270,11 @@ class ChapterTranslator(
                     // Single letters are kept: an "I" alone on its line would stay in English beside the translation
                     .filter { it.boundingBox != null && it.text.isNotBlank() }
                 val page = toPageTranslation(blocks, bitmap.width, bitmap.height)
-                page.blocks = page.blocks.mapTo(mutableListOf()) { it.grownIntoBubble(bitmap) }
+                val pixels = bitmap.lightPixels()
+                val found = page.blocks
+                page.blocks = found.mapTo(mutableListOf()) {
+                    it.inBubble(bitmap.width, bitmap.height, found, pixels) ?: it.grownIntoBubble(bitmap)
+                }
                 if (page.blocks.isNotEmpty()) pages[fileName] = page
             } finally {
                 bitmap.recycle()
