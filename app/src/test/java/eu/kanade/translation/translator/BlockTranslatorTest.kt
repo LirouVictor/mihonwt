@@ -25,4 +25,13 @@ class BlockTranslatorTest {
         assertEquals("The powers of <keep>Turbo Granny</keep> &amp; <keep>Okarun</keep>'s &lt;3", text)
         assertEquals("The powers of Turbo Granny & Okarun's <3", text.fromXml())
     }
+
+    @Test
+    fun `a contracted de before a kept name is spelled out`() {
+        assertEquals(
+            "Somos a guarda de Vlad, os poderes de Ken e da Turbo Granny.",
+            "Somos a guarda d<keep>Vlad</keep>, os poderes de<keep>Ken</keep> e da <keep>Turbo Granny</keep>."
+                .fromXml(),
+        )
+    }
 }
