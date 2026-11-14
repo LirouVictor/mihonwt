@@ -1,5 +1,6 @@
 package eu.kanade.translation.recognizer
 
+import eu.kanade.translation.model.FoundText
 import eu.kanade.translation.model.TranslationBlock
 import kotlinx.serialization.Serializable
 import kotlin.math.ceil
@@ -42,6 +43,49 @@ fun bubbleBlocks(words: List<Word>, pixels: LightPixels? = null): List<Translati
     }
     return mergeBubbleBlocks(pieces.map { it.toBlock() }).filterNot { it.isArt() }
 }
+
+/**
+ * Returns a block for each text in [found], laid over the OCR [words] inside its box: their union is more exact than
+ * a box guessed from a small page image, and their letters give the lettering's size. Words outside every box, like
+ * sound effects or signs that the model left out, are dropped. A text without words keeps its own box, with letters
+ * as tall as the page's others.
+ */
+fun blocksOfFoundText(found: List<FoundText>, words: List<Word>): List<TranslationBlock> {
+    val pageLetterHeight = words.map { it.letterHeight }.median()
+    val wordsByText = words.groupBy { word ->
+        val cx = word.x + word.width / 2
+        val cy = word.y + word.height / 2
+        found
+            .filter { text ->
+                val margin = word.letterHeight * FOUND_BOX_MARGIN
+                cx in text.left - margin..text.right + margin && cy in text.top - margin..text.bottom + margin
+            }
+            // A word in two boxes belongs to the smaller, as a bubble drawn inside a larger one
+            .minByOrNull { (it.right - it.left) * (it.bottom - it.top) }
+    }
+    return found.mapNotNull { text ->
+        if (text.translation.isBlank()) return@mapNotNull null
+        val inside = wordsByText[text].orEmpty()
+        val letterHeight = inside.map { it.letterHeight }.median()
+            ?: pageLetterHeight
+            ?: ((text.bottom - text.top) / FALLBACK_LINES)
+        val left = inside.minOfOrNull { it.x } ?: text.left
+        val top = inside.minOfOrNull { it.y } ?: text.top
+        TranslationBlock(
+            text = text.text,
+            translation = text.translation,
+            width = (inside.maxOfOrNull { it.x + it.width } ?: text.right) - left,
+            height = (inside.maxOfOrNull { it.y + it.height } ?: text.bottom) - top,
+            x = left,
+            y = top,
+            symHeight = letterHeight,
+            symWidth = letterHeight,
+            angle = inside.map { it.angle }.median() ?: 0f,
+        )
+    }
+}
+
+private fun List<Float>.median(): Float? = sorted().getOrNull(size / 2)
 
 /**
  * Whether a bubble's outline runs between [left] and [right], as where two bubbles touch: a dark stroke across the
@@ -187,6 +231,11 @@ private fun mergeTextBlock(a: TranslationBlock, b: TranslationBlock): Translatio
 private const val OUTLINE_CHARS = "|"
 
 private const val MIN_OUTLINE_SHARE = 0.6f
+
+// Boxes from a model are a little off, by up to about a letter
+private const val FOUND_BOX_MARGIN = 1f
+
+private const val FALLBACK_LINES = 3f
 
 private const val MIN_LETTERS_TO_TRIM = 3
 private const val MAX_LETTER_HEIGHT = 1.4f

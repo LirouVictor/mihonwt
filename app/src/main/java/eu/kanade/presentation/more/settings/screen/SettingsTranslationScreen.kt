@@ -86,6 +86,12 @@ object SettingsTranslationScreen : SearchableSettings {
                 visible = service.hasModels,
             ),
             Preference.PreferenceItem.SwitchPreference(
+                preference = translationPreferences.findTextOnImages,
+                title = stringResource(WTMR.strings.pref_find_text_on_images),
+                subtitle = stringResource(WTMR.strings.pref_find_text_on_images_summary),
+                visible = service == TranslationService.GEMINI,
+            ),
+            Preference.PreferenceItem.SwitchPreference(
                 preference = translationPreferences.translateOnDownload,
                 title = stringResource(WTMR.strings.pref_translate_on_download),
                 subtitle = stringResource(WTMR.strings.pref_translate_on_download_summary),

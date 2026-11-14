@@ -20,17 +20,20 @@ import eu.kanade.tachiyomi.util.lang.compareToCaseInsensitiveNaturalOrder
 import eu.kanade.tachiyomi.util.system.toast
 import eu.kanade.translation.data.ApiKeyCipher
 import eu.kanade.translation.data.TranslationProvider
+import eu.kanade.translation.model.FoundText
 import eu.kanade.translation.model.PageTranslation
 import eu.kanade.translation.model.Translation
 import eu.kanade.translation.model.TranslationBlock
 import eu.kanade.translation.recognizer.Letter
 import eu.kanade.translation.recognizer.LightPixels
 import eu.kanade.translation.recognizer.TextRecognizer
+import eu.kanade.translation.recognizer.blocksOfFoundText
 import eu.kanade.translation.recognizer.bubbleBlocks
 import eu.kanade.translation.recognizer.grownIntoBubble
 import eu.kanade.translation.recognizer.inBubble
 import eu.kanade.translation.recognizer.lightPixels
 import eu.kanade.translation.recognizer.wordOf
+import eu.kanade.translation.translator.LanguageModelTranslator
 import eu.kanade.translation.translator.PageTranslator
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -256,10 +259,26 @@ class ChapterTranslator(
                 // Batches go out as soon as OCR has read their pages, so the reader shows the first pages while the
                 // rest are still being read. Small batches also keep each reply within the model's output limit
                 val batch = mutableMapOf<String, PageTranslation>()
+                val onRetry: (Int) -> Unit = { attempt ->
+                    translation.updateProgress { progress -> progress.copy(retries = attempt) }
+                }
+                val findsText = translator is LanguageModelTranslator &&
+                    translator.readsImages &&
+                    translationPreferences.findTextOnImages.get()
                 suspend fun translateBatch() {
-                    val terms = translator.translate(batch.toMap(), translation.manga.title, images, glossary.toMap()) {
-                        translation.updateProgress { progress -> progress.copy(retries = it) }
+                    val title = translation.manga.title
+                    var terms = emptyMap<String, String>()
+                    var answered = emptySet<String>()
+                    if (findsText) {
+                        val (found, foundTerms) = (translator as LanguageModelTranslator)
+                            .findText(batch, title, images, glossary, onRetry)
+                        found.forEach { (name, texts) -> batch.getValue(name).useText(chapterDir, name, texts) }
+                        terms = foundTerms
+                        answered = found.keys
                     }
+                    // Pages the model skipped still get the text OCR grouped translated
+                    val left = batch.filterKeys { it !in answered }
+                    if (left.isNotEmpty()) terms = terms + translator.translate(left, title, images, glossary, onRetry)
                     terms.forEach { (term, translated) ->
                         if (glossary.size < MAX_GLOSSARY_TERMS) glossary.putIfAbsent(term, translated)
                     }
@@ -363,6 +382,31 @@ class ChapterTranslator(
             translation.updateProgress { it.copy(page = index + 1, pages = count) }
         }
         return pages
+    }
+
+    /**
+     * Replaces the blocks OCR grouped on this page with the [texts] a model found on it, each placed in its speech
+     * bubble.
+     */
+    private fun PageTranslation.useText(chapterDir: UniFile, name: String, texts: List<FoundText>) {
+        val bitmap = withChapterPage(chapterDir, name) { decodePage(it) }
+        try {
+            val pixels = bitmap.lightPixels()
+            val found = blocksOfFoundText(texts, words)
+            blocks = found.mapTo(mutableListOf()) {
+                it.inBubble(bitmap.width, bitmap.height, found, pixels) ?: it.grownIntoBubble(bitmap)
+            }
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    private fun <T> withChapterPage(chapterDir: UniFile, name: String, block: (() -> InputStream) -> T): T {
+        if (chapterDir.isFile) {
+            return chapterDir.archiveReader(context).use { reader -> block { reader.getInputStream(name)!! } }
+        }
+        val file = chapterDir.findFile(name) ?: throw IOException("Page $name not found")
+        return block { file.openInputStream() }
     }
 
     /**

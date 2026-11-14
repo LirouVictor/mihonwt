@@ -3,15 +3,20 @@
 
 package eu.kanade.translation.translator
 
+import eu.kanade.translation.model.FoundText
 import eu.kanade.translation.model.PageTranslation
 import eu.kanade.translation.model.joinLines
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.floatOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import java.io.IOException
 
@@ -58,14 +63,7 @@ abstract class LanguageModelTranslator : PageTranslator() {
                 }
             }
         }
-        val systemPrompt = buildString {
-            append(SYSTEM_PROMPT)
-            append("\n\nThe pages are from \"$series\".")
-            if (glossary.isNotEmpty()) {
-                append("\n\nEarlier chapters translated these names and terms like this; keep them: ")
-                append(JsonObject(glossary.mapValues { JsonPrimitive(it.value) }))
-            }
-        }
+        val systemPrompt = systemPrompt(SYSTEM_PROMPT, series, glossary)
         val pageImages = images.filterKeys { it in pages }
         var output = request(systemPrompt, input.toString(), pageImages, onRetry)
         // Models now and then skip a block, which would stay in English; a second answer is usually complete
@@ -81,9 +79,72 @@ abstract class LanguageModelTranslator : PageTranslator() {
             }
             page.blocks = page.blocks.filterNot { it.translation.contains(WATERMARK_PLACEHOLDER) }.toMutableList()
         }
-        return (output[GLOSSARY_KEY] as? JsonObject).orEmpty()
-            .mapNotNull { (term, translation) -> (translation as? JsonPrimitive)?.contentOrNull?.let { term to it } }
-            .toMap()
+        return output.glossary()
+    }
+
+    /**
+     * Finds the speech bubbles, captions and narration on the [images] of [pages] and translates them, leaving out
+     * text that is part of the artwork, like sound effects and signs, which OCR can't tell apart from lettering. The
+     * pages' OCR text helps the model read small letters. Returns what it found on each page it answered for, and
+     * the terms for the glossary.
+     */
+    suspend fun findText(
+        pages: Map<String, PageTranslation>,
+        series: String,
+        images: Map<String, ByteArray>,
+        glossary: Map<String, String>,
+        onRetry: (attempt: Int) -> Unit,
+    ): Pair<Map<String, List<FoundText>>, Map<String, String>> {
+        val pageImages = images.filterKeys { it in pages }
+        val input = buildJsonObject {
+            pageImages.keys.forEach { name ->
+                putJsonArray(name) { pages.getValue(name).blocks.forEach { add(it.text.joinLines()) } }
+            }
+        }
+        val output = try {
+            request(systemPrompt(FIND_TEXT_PROMPT, series, glossary), input.toString(), pageImages, onRetry)
+        } catch (e: TruncatedReplyException) {
+            if (pageImages.size < 2) throw e
+            val halves = pageImages.keys.chunked((pageImages.size + 1) / 2).map { names ->
+                findText(pages.filterKeys { it in names }, series, images, glossary, onRetry)
+            }
+            return halves.fold(emptyMap<String, List<FoundText>>()) { found, half -> found + half.first } to
+                halves.fold(emptyMap()) { terms, half -> terms + half.second }
+        }
+        val found = pageImages.keys.mapNotNull { name ->
+            val texts = output[name] as? JsonArray ?: return@mapNotNull null
+            val page = pages.getValue(name)
+            name to texts.mapNotNull { (it as? JsonObject)?.toFoundText(page.imgWidth, page.imgHeight) }
+        }.toMap()
+        return found to output.glossary()
+    }
+
+    private fun JsonObject.toFoundText(width: Float, height: Float): FoundText? {
+        val box = (this["box_2d"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.floatOrNull }
+            ?.takeIf { it.size == 4 } ?: return null
+        val (top, left, bottom, right) = box.map { it.coerceIn(0f, BOX_SCALE) / BOX_SCALE }
+        if (bottom <= top || right <= left) return null
+        return FoundText(
+            left = left * width,
+            top = top * height,
+            right = right * width,
+            bottom = bottom * height,
+            text = (this["text"] as? JsonPrimitive)?.contentOrNull.orEmpty(),
+            translation = (this["translation"] as? JsonPrimitive)?.contentOrNull ?: return null,
+        )
+    }
+
+    private fun JsonObject.glossary(): Map<String, String> = (this[GLOSSARY_KEY] as? JsonObject).orEmpty()
+        .mapNotNull { (term, translation) -> (translation as? JsonPrimitive)?.contentOrNull?.let { term to it } }
+        .toMap()
+
+    private fun systemPrompt(prompt: String, series: String, glossary: Map<String, String>) = buildString {
+        append(prompt)
+        append("\n\nThe pages are from \"$series\".")
+        if (glossary.isNotEmpty()) {
+            append("\n\nEarlier chapters translated these names and terms like this; keep them: ")
+            append(JsonObject(glossary.mapValues { JsonPrimitive(it.value) }))
+        }
     }
 
     private suspend fun request(
@@ -126,6 +187,27 @@ abstract class LanguageModelTranslator : PageTranslator() {
 
         // Page names are file names, which never start with an underscore
         private const val GLOSSARY_KEY = "_glossary"
+
+        // Gemini gives boxes as [ymin, xmin, ymax, xmax] scaled to 0-1000, the form it was trained to detect in
+        private const val BOX_SCALE = 1000f
+
+        private val FIND_TEXT_PROMPT = """
+            You translate comics (manga, manhwa, manhua) from their page images.
+
+            You'll receive page images, each after its file name, and a JSON object mapping each file name to the text that OCR read on that page. OCR misreads letters, and splits or joins text across bubbles, so use its text only to help you read small letters; the image is what counts.
+
+            On each page, find every speech bubble, thought bubble, caption box and narration box, and translate its text to `Brazilian Portuguese`, as a good fan translator would today: natural, colloquial speech that suits each character, with current everyday words. Avoid formal, old-fashioned or overly literal wording and false cognates. Keep the names of characters, places, attacks and powers as in the original, unless the series has a well-known Brazilian Portuguese name for them, and keep honorifics such as "-san".
+
+            Leave out text that is part of the artwork rather than lettering for the reader: sound effects, signs, labels, prices, writing on clothes or objects, and also watermarks, site links and credits. Text written vertically one letter per line is still a bubble's text.
+
+            Give each bubble or box once, with all of its text, even when its lines are far apart. Two bubbles that touch are two entries.
+
+            For each, return "box_2d": the box around its letters as [ymin, xmin, ymax, xmax], scaled from 0 to 1000 over the page image; "text": its original text; and "translation".
+
+            Also return, under the key "$GLOSSARY_KEY", an object mapping each name and recurring term on these pages (characters, places, attacks, powers, invented words) to how you translated it.
+
+            Return {[filename:string]:[{"box_2d":[number,number,number,number],"text":string,"translation":string}], "$GLOSSARY_KEY":{[term:string]:string}}
+        """.trimIndent()
 
         private val SYSTEM_PROMPT = """
             ## System Prompt for Manhwa/Manga/Manhua Translation
