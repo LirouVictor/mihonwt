@@ -26,23 +26,24 @@ fun TranslationBlock.grownIntoBubble(bitmap: Bitmap): TranslationBlock {
     val maxRight = min(bitmap.width - 1, right + maxGrowth)
     val maxBottom = min(bitmap.height - 1, bottom + maxGrowth)
 
+    val maxJump = (lineHeight * MAX_JUMP_LINES).toInt()
     var grew = true
     while (grew) {
         grew = false
-        if (left > minLeft && bitmap.isLightColumn(left - 1, top, bottom)) {
-            left--
+        bitmap.grownEdge(left, -1, minLeft, maxJump) { bitmap.columnStrip(it, top, bottom) }?.let {
+            left = it
             grew = true
         }
-        if (right < maxRight && bitmap.isLightColumn(right + 1, top, bottom)) {
-            right++
+        bitmap.grownEdge(right, 1, maxRight, maxJump) { bitmap.columnStrip(it, top, bottom) }?.let {
+            right = it
             grew = true
         }
-        if (top > minTop && bitmap.isLightRow(top - 1, left, right)) {
-            top--
+        bitmap.grownEdge(top, -1, minTop, maxJump) { bitmap.rowStrip(it, left, right) }?.let {
+            top = it
             grew = true
         }
-        if (bottom < maxBottom && bitmap.isLightRow(bottom + 1, left, right)) {
-            bottom++
+        bitmap.grownEdge(bottom, 1, maxBottom, maxJump) { bitmap.rowStrip(it, left, right) }?.let {
+            bottom = it
             grew = true
         }
     }
@@ -56,11 +57,43 @@ fun TranslationBlock.grownIntoBubble(bitmap: Bitmap): TranslationBlock {
     return copy(x = newLeft, y = newTop, width = newRight - newLeft, height = newBottom - newTop)
 }
 
-private fun Bitmap.isLightColumn(x: Int, top: Int, bottom: Int): Boolean =
-    (top..bottom).count { isLight(getPixel(x, it)) } >= (bottom - top + 1) * MIN_LIGHT_SHARE
+/**
+ * Returns where the edge at [edge] can move to in direction [step] without passing [limit], or null if it can't grow.
+ * It moves one strip when that strip is light. Otherwise it jumps up to [maxJump] strips past a small mark in the
+ * middle of the bubble, like the serifs of an "I" OCR missed, when every strip in between has light ends and the strip
+ * after the mark is light; the outline crosses the ends of a strip, so it still stops the box.
+ */
+private inline fun Bitmap.grownEdge(
+    edge: Int,
+    step: Int,
+    limit: Int,
+    maxJump: Int,
+    strip: (Int) -> BooleanArray,
+): Int? {
+    for (k in 1..maxJump) {
+        val position = edge + step * k
+        if ((position - limit) * step > 0) return null
+        val light = strip(position)
+        if (light.count { it } >= light.size * MIN_LIGHT_SHARE) return position
+        if (!light.isPassable()) return null
+    }
+    return null
+}
 
-private fun Bitmap.isLightRow(y: Int, left: Int, right: Int): Boolean =
-    (left..right).count { isLight(getPixel(it, y)) } >= (right - left + 1) * MIN_LIGHT_SHARE
+private fun BooleanArray.isPassable(): Boolean {
+    val end = max(1, (size * LIGHT_END_SHARE).toInt())
+    return count { it } >= size * MIN_PASSABLE_LIGHT_SHARE &&
+        (0..<end).all { this[it] } &&
+        (size - end..<size).all { this[it] }
+}
+
+private fun Bitmap.columnStrip(x: Int, top: Int, bottom: Int) = BooleanArray(bottom - top + 1) {
+    isLight(getPixel(x, top + it))
+}
+
+private fun Bitmap.rowStrip(y: Int, left: Int, right: Int) = BooleanArray(right - left + 1) {
+    isLight(getPixel(left + it, y))
+}
 
 private fun isLight(color: Int): Boolean =
     Color.red(color) * 0.299f + Color.green(color) * 0.587f + Color.blue(color) * 0.114f >= LIGHT_LUMINANCE
@@ -69,6 +102,10 @@ private const val MAX_ANGLE = 10f
 private const val MAX_GROWTH_LINES = 4
 private const val LIGHT_LUMINANCE = 200f
 
-// Grows past specks, screentone dots and stray letters OCR missed, like an "I" alone on its line, so the box covers
-// them, but stops at the bubble's outline, which fills a strip as soon as the box reaches it
+private const val MAX_JUMP_LINES = 1.5f
+
+// Grows past specks and screentone dots, but stops at the bubble's outline, which fills a strip as soon as the box
+// reaches it
 private const val MIN_LIGHT_SHARE = 0.9f
+private const val MIN_PASSABLE_LIGHT_SHARE = 0.5f
+private const val LIGHT_END_SHARE = 0.15f
