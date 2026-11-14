@@ -36,11 +36,16 @@ fun bubbleBlocks(words: List<Word>): List<TranslationBlock> {
         }
         pieces.filter { it.isNotEmpty() }
     }
-    val blocks = pieces
-        .map { it.toBlock() }
-        // Marks of the artwork read as text, like "--", which would only blank part of the drawing
-        .filter { block -> block.text.any(Char::isLetterOrDigit) }
-    return mergeBubbleBlocks(blocks)
+    return mergeBubbleBlocks(pieces.map { it.toBlock() }).filterNot { it.isArt() }
+}
+
+/**
+ * Whether this block is more likely the artwork read as text than lettering, as marks like "--", prices and numbers
+ * on signs, or a lone stroke read as "K". Translating it would only blank part of the drawing. A lone "I" is a word.
+ */
+private fun TranslationBlock.isArt(): Boolean {
+    val letters = text.filter(Char::isLetter)
+    return letters.isEmpty() || (letters.length == 1 && letters != "I")
 }
 
 private fun List<Word>.toBlock(): TranslationBlock {

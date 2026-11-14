@@ -38,4 +38,11 @@ class BubbleTextTest {
     fun `marks without letters are dropped`() {
         assertEquals(emptyList<String>(), bubbleBlocks(line(0f, "--" to 0f)).map { it.text })
     }
+
+    @Test
+    fun `numbers and lone strokes from the art are dropped, a lone I is kept`() {
+        val words = line(0f, "260" to 0f) + line(100f, "K" to 0f) + line(200f, "I" to 0f)
+        assertEquals(listOf("I"), bubbleBlocks(words).map { it.text })
+    }
+
 }
