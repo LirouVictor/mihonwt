@@ -569,8 +569,34 @@ class ReaderViewModel(
         if (inDownloadRange) {
             downloadNextChapters()
         }
+        if (page.number.toDouble() / pages.size > 0.5) {
+            translateNextChapter(pages)
+        }
 
         eventChannel.trySend(Event.PageChanged)
+    }
+
+    private var translatedAheadChapterId: Long? = null
+
+    /** Translates the downloaded next chapter while a translated one is read, so it opens already translated. */
+    private fun translateNextChapter(pages: List<ReaderPage>) {
+        if (pages.none { it.translation != null }) return
+        val manga = manga ?: return
+        val nextChapter = state.value.viewerChapters?.nextChapter?.chapter ?: return
+        if (nextChapter.id == translatedAheadChapterId) return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            val isNextChapterDownloaded = downloadManager.isChapterDownloaded(
+                nextChapter.name,
+                nextChapter.scanlator,
+                nextChapter.url,
+                manga.title,
+                manga.source,
+            )
+            if (!isNextChapterDownloaded) return@launch
+            translatedAheadChapterId = nextChapter.id
+            translationManager.translateChapter(manga, nextChapter)
+        }
     }
 
     private fun downloadNextChapters() {
