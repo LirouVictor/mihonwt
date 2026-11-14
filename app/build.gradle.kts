@@ -331,6 +331,7 @@ dependencies {
 
     // Bubble translation OCR
     implementation(libs.mlkit.textRecognition)
+    implementation(libs.mlkit.translate)
 
     // GraphQL generation
     implementation(libs.apollo)

@@ -47,6 +47,7 @@ class TranslationPreferences(
 enum class TranslationService(
     val baseUrl: String?,
     val defaultModel: String = "",
+    val needsApiKey: Boolean = true,
     val hasModels: Boolean = true,
 ) {
     GEMINI(baseUrl = null, defaultModel = "gemini-3.8-flash"),
@@ -54,6 +55,9 @@ enum class TranslationService(
     OPENROUTER(baseUrl = "https://openrouter.ai/api/v1"),
     CEREBRAS(baseUrl = "https://api.cerebras.ai/v1"),
     DEEPL(baseUrl = null, hasModels = false),
+
+    /** ML Kit's on-device translator. */
+    OFFLINE(baseUrl = null, needsApiKey = false, hasModels = false),
 
     /** Any other OpenAI-compatible API, at [TranslationPreferences.customBaseUrl]. */
     CUSTOM(baseUrl = null),

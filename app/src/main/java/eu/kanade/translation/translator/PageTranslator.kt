@@ -85,6 +85,7 @@ abstract class PageTranslator {
             return when (service) {
                 TranslationService.GEMINI -> GeminiTranslator(apiKey = apiKey, model = model)
                 TranslationService.DEEPL -> DeepLTranslator(apiKey = apiKey)
+                TranslationService.OFFLINE -> OfflineTranslator()
                 TranslationService.CUSTOM -> OpenAiCompatibleTranslator(customBaseUrl, apiKey, model)
                 TranslationService.GROQ, TranslationService.OPENROUTER, TranslationService.CEREBRAS ->
                     OpenAiCompatibleTranslator(service.baseUrl!!, apiKey, model)

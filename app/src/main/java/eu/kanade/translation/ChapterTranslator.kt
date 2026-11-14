@@ -293,7 +293,9 @@ class ChapterTranslator(
         if (service == TranslationService.CUSTOM && customBaseUrl.isBlank()) {
             throw IOException(context.stringResource(WTMR.strings.translation_error_no_base_url))
         }
-        if (apiKey.isBlank()) throw IOException(context.stringResource(WTMR.strings.translation_error_no_api_key))
+        if (service.needsApiKey && apiKey.isBlank()) {
+            throw IOException(context.stringResource(WTMR.strings.translation_error_no_api_key))
+        }
         if (service.hasModels && model.isBlank()) {
             throw IOException(context.stringResource(WTMR.strings.translation_error_no_model))
         }

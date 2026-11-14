@@ -58,6 +58,7 @@ object SettingsTranslationScreen : SearchableSettings {
                         TranslationService.OPENROUTER -> "OpenRouter"
                         TranslationService.CEREBRAS -> "Cerebras"
                         TranslationService.DEEPL -> "DeepL"
+                        TranslationService.OFFLINE -> stringResource(WTMR.strings.translation_service_offline)
                         TranslationService.CUSTOM -> stringResource(WTMR.strings.translation_service_custom)
                     }
                 },
@@ -76,6 +77,7 @@ object SettingsTranslationScreen : SearchableSettings {
                 } else {
                     stringResource(WTMR.strings.pref_api_key_summary)
                 },
+                visible = service.needsApiKey,
             ),
             Preference.PreferenceItem.TextPreference(
                 title = stringResource(WTMR.strings.pref_model),
