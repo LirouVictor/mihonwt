@@ -38,4 +38,36 @@ class BubbleTextTest {
     fun `marks without letters are dropped`() {
         assertEquals(emptyList<String>(), bubbleBlocks(line(0f, "--" to 0f)).map { it.text })
     }
+
+    @Test
+    fun `numbers and lone strokes from the art are dropped, a lone I is kept`() {
+        val words = line(0f, "260" to 0f) + line(100f, "K" to 0f) + line(200f, "I" to 0f)
+        assertEquals(listOf("I"), bubbleBlocks(words).map { it.text })
+    }
+
+    @Test
+    fun `a hyphen or punctuation read apart stays with its word`() {
+        val words = line(0f, "MARVEL" to 0f, "-" to 20f) + line(16f, "OUS" to 0f, "?!" to 20f)
+        assertEquals(listOf("MARVEL-\nOUS?!"), bubbleBlocks(words).map { it.text })
+    }
+
+    @Test
+    fun `a bubble outline read as a tall letter is left out of the word`() {
+        val letters = listOf(Letter("J", 0f, -10f, 4f, 40f)) +
+            "DONT".mapIndexed { i, c -> Letter(c.toString(), 6f + i * 8f, 0f, 8f, 13f) }
+        val word = wordOf(letters, 0, 0f)!!
+        assertEquals("DONT", word.text)
+        assertEquals(6f, word.x)
+        assertEquals(13f, word.letterHeight)
+    }
+
+    @Test
+    fun `a line is cut where a bubble outline runs between two words`() {
+        val outlineX = 86
+        val pixels = LightPixels { left, top, right, bottom ->
+            BooleanArray((right - left) * (bottom - top)) { left + it % (right - left) != outlineX }
+        }
+        val words = line(0f, "VIRUSES..." to 0f, "SUBJECT!" to 12f) + line(100f, "OF" to 0f, "US" to 6f)
+        assertEquals(listOf("VIRUSES...", "SUBJECT!", "OF US"), bubbleBlocks(words, pixels).map { it.text })
+    }
 }

@@ -20,6 +20,8 @@ import eu.kanade.translation.model.TranslationBlock
 import eu.kanade.translation.model.joinLines
 import java.util.Locale
 import kotlin.math.abs
+import kotlin.math.ceil
+import kotlin.math.max
 import kotlin.math.min
 
 /**
@@ -104,33 +106,59 @@ class TranslationRenderer(context: Context, translation: PageTranslation) {
 
     /**
      * Lays [text] out in the largest whole text size that fits [width] by [height], up to [maxSize]. Words are kept
-     * whole unless hyphenating them allows a much larger size, as in a narrow bubble with a long word.
+     * whole unless hyphenating them allows a much larger size, as in a narrow bubble with a long word. Words are never
+     * cut between letters: when the box is too narrow for them at a readable size, the text spills out sideways.
      */
     private fun fitText(text: String, width: Int, height: Float, maxSize: Float): StaticLayout {
         val words = text.split(WORD_BREAK)
-        val whole = largestFitting(text, width, height, maxSize, hyphenate = false) { size ->
+        val whole = largestFitting(text, { width }, height, maxSize, hyphenate = false) { size, _ ->
             textPaint.textSize = size
             words.all { textPaint.measureText(it) <= width }
         }
-        val hyphenated = largestFitting(text, width, height, maxSize, hyphenate = true) { true }
-        return if (whole.first >= hyphenated.first * MIN_WHOLE_WORD_SIZE) whole.second else hyphenated.second
+        val hyphenated = largestFitting(text, { width }, height, maxSize, hyphenate = true) { _, layout ->
+            layout.breaksOnlyBetweenWords()
+        }
+        val best = if (whole.first >= hyphenated.first * MIN_WHOLE_WORD_SIZE) whole else hyphenated
+        if (best.first >= maxSize * MIN_READABLE_SIZE) return best.second
+        val widenedWidth = { size: Float -> max(width, widestWord(words, size)) }
+        val widened = largestFitting(text, widenedWidth, height, maxSize, hyphenate = false) { _, _ -> true }
+        return if (widened.first > best.first) widened.second else best.second
+    }
+
+    private fun widestWord(words: List<String>, size: Float): Int {
+        textPaint.textSize = size
+        return ceil(words.maxOf { textPaint.measureText(it) }).toInt()
+    }
+
+    /**
+     * Whether each line ends between words, or inside one at what is likely a hyphenation point, leaving at least
+     * [MIN_SYLLABLE] letters on each side. A word too long for the width is otherwise cut anywhere, as "AIR A!".
+     */
+    private fun StaticLayout.breaksOnlyBetweenWords(): Boolean {
+        return (0..<lineCount - 1).all { line ->
+            val end = getLineEnd(line)
+            if (!text[end - 1].isLetter() || !text[end].isLetter()) return@all true
+            val before = text.substring(0, end).takeLastWhile(Char::isLetter).length
+            val after = text.substring(end).takeWhile(Char::isLetter).length
+            before >= MIN_SYLLABLE && after >= MIN_SYLLABLE
+        }
     }
 
     private inline fun largestFitting(
         text: String,
-        width: Int,
+        width: (size: Float) -> Int,
         height: Float,
         maxSize: Float,
         hyphenate: Boolean,
-        fits: (size: Float) -> Boolean,
+        fits: (size: Float, layout: StaticLayout) -> Boolean,
     ): Pair<Int, StaticLayout> {
         var low = 1
         var high = min(height, maxSize).toInt().coerceAtLeast(1)
-        var best = 1 to layOutText(text, width, 1f, hyphenate)
+        var best = 1 to layOutText(text, width(1f), 1f, hyphenate)
         while (low <= high) {
             val size = (low + high) / 2
-            val layout = layOutText(text, width, size.toFloat(), hyphenate)
-            if (layout.height <= height && fits(size.toFloat())) {
+            val layout = layOutText(text, width(size.toFloat()), size.toFloat(), hyphenate)
+            if (layout.height <= height && fits(size.toFloat(), layout)) {
                 best = size to layout
                 low = size + 1
             } else {
@@ -186,6 +214,11 @@ class TranslationRenderer(context: Context, translation: PageTranslation) {
 
         /** Whole words are kept when they allow at least this share of the size hyphenation would. */
         const val MIN_WHOLE_WORD_SIZE = 0.8f
+
+        /** Share of the original letter size below which text is let out of its box rather than shrunk further. */
+        const val MIN_READABLE_SIZE = 0.6f
+
+        const val MIN_SYLLABLE = 3
 
         /** Share of capital letters above which the original counts as lettered in capitals, despite OCR misreads. */
         const val MIN_CAPITALS = 0.8f

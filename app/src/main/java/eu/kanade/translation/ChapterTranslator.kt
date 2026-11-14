@@ -23,12 +23,14 @@ import eu.kanade.translation.data.TranslationProvider
 import eu.kanade.translation.model.PageTranslation
 import eu.kanade.translation.model.Translation
 import eu.kanade.translation.model.TranslationBlock
+import eu.kanade.translation.recognizer.Letter
+import eu.kanade.translation.recognizer.LightPixels
 import eu.kanade.translation.recognizer.TextRecognizer
-import eu.kanade.translation.recognizer.Word
 import eu.kanade.translation.recognizer.bubbleBlocks
 import eu.kanade.translation.recognizer.grownIntoBubble
 import eu.kanade.translation.recognizer.inBubble
 import eu.kanade.translation.recognizer.lightPixels
+import eu.kanade.translation.recognizer.wordOf
 import eu.kanade.translation.translator.PageTranslator
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -344,8 +346,8 @@ class ChapterTranslator(
                 }
                     // Single letters are kept: an "I" alone on its line would stay in English beside the translation
                     .filter { it.boundingBox != null && it.text.isNotBlank() }
-                val page = toPageTranslation(blocks, bitmap.width, bitmap.height, ocrScale)
                 val pixels = bitmap.lightPixels()
+                val page = toPageTranslation(blocks, bitmap.width, bitmap.height, ocrScale, pixels)
                 val found = page.blocks
                 page.blocks = found.mapTo(mutableListOf()) {
                     it.inBubble(bitmap.width, bitmap.height, found, pixels) ?: it.grownIntoBubble(bitmap)
@@ -423,31 +425,32 @@ class ChapterTranslator(
         width: Int,
         height: Int,
         scale: Float,
+        pixels: LightPixels,
     ): PageTranslation {
         var lineNumber = 0
         val words = blocks.flatMap { block ->
             block.lines.flatMap { line ->
                 val number = lineNumber++
                 line.elements.mapNotNull { element ->
-                    val bounds = element.boundingBox ?: return@mapNotNull null
-                    val letter = element.symbols.firstOrNull()?.boundingBox ?: bounds
-                    Word(
-                        text = element.text,
-                        x = bounds.left / scale,
-                        y = bounds.top / scale,
-                        width = bounds.width() / scale,
-                        height = bounds.height() / scale,
-                        letterHeight = letter.height() / scale,
-                        line = number,
-                        angle = line.angle,
-                    )
+                    val letters = element.symbols.mapNotNull { symbol ->
+                        val bounds = symbol.boundingBox ?: return@mapNotNull null
+                        Letter(
+                            text = symbol.text,
+                            x = bounds.left / scale,
+                            y = bounds.top / scale,
+                            width = bounds.width() / scale,
+                            height = bounds.height() / scale,
+                        )
+                    }
+                    wordOf(letters, number, line.angle)
                 }
             }
         }
         return PageTranslation(
-            blocks = bubbleBlocks(words).toMutableList(),
+            blocks = bubbleBlocks(words, pixels).toMutableList(),
             imgWidth = width.toFloat(),
             imgHeight = height.toFloat(),
+            words = words,
         )
     }
 
