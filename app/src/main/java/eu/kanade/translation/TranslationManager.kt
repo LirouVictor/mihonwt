@@ -25,6 +25,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
 import logcat.LogPriority
 import mihon.core.metro.AppCoroutineScope
@@ -52,6 +54,10 @@ class TranslationManager(
 
     private val deletions = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
 
+    // Chapters downloaded together are queued from several threads at once, which could each start a translator job
+    // and translate the queue twice
+    private val queueing = Mutex()
+
     /** Emits whenever the saved translations may have changed: a queued one finished, or one was deleted. */
     val changes: Flow<Unit> = merge(queueState.map {}, deletions)
 
@@ -77,8 +83,10 @@ class TranslationManager(
 
     fun translateChapter(manga: Manga, chapter: Chapter) {
         scope.launch {
-            translator.queueChapter(manga, chapter)
-            if (!translator.isRunning) translator.start()
+            queueing.withLock {
+                translator.queueChapter(manga, chapter)
+                if (!translator.isRunning) translator.start()
+            }
         }
     }
 
@@ -87,8 +95,10 @@ class TranslationManager(
         scope.launch {
             val source = sourceManager.get(manga.source) ?: return@launch
             provider.findTranslationFile(chapter.name, chapter.scanlator, manga.title, source)?.delete()
-            translator.queueChapter(manga, chapter)
-            if (!translator.isRunning) translator.start()
+            queueing.withLock {
+                translator.queueChapter(manga, chapter)
+                if (!translator.isRunning) translator.start()
+            }
         }
     }
 

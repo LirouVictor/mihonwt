@@ -142,7 +142,7 @@ class ChapterTranslator(
                         .groupBy { it.source }
                         .toList()
                         .take(5)
-                        .map { (_, translations) -> translations.first() }
+                        .map { (_, translations) -> translations.next() }
                     emit(activeTranslations)
 
                     if (activeTranslations.isEmpty()) break
@@ -169,6 +169,16 @@ class ChapterTranslator(
                 }
             }
         }
+    }
+
+    /**
+     * The one of these translations, all from one source, to run now: the one running, so it isn't cancelled, or else
+     * the lowest chapter of the first queued series. Chapters downloaded together finish downloading in any order, and
+     * the reader needs the earliest first.
+     */
+    private fun List<Translation>.next(): Translation {
+        return firstOrNull { it.status == Translation.State.TRANSLATING }
+            ?: filter { it.manga.id == first().manga.id }.minBy { it.chapter.chapterNumber }
     }
 
     private fun CoroutineScope.launchTranslationJob(translation: Translation) = launch {
