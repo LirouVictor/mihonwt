@@ -24,6 +24,7 @@ import eu.kanade.translation.model.PageTranslation
 import eu.kanade.translation.model.Translation
 import eu.kanade.translation.model.TranslationBlock
 import eu.kanade.translation.recognizer.TextRecognizer
+import eu.kanade.translation.recognizer.fixLetteringMistakes
 import eu.kanade.translation.recognizer.grownIntoBubble
 import eu.kanade.translation.recognizer.inBubble
 import eu.kanade.translation.recognizer.lightPixels
@@ -66,6 +67,7 @@ import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
@@ -322,6 +324,7 @@ class ChapterTranslator(
                     // Single letters are kept: an "I" alone on its line would stay in English beside the translation
                     .filter { it.boundingBox != null && it.text.isNotBlank() }
                 val page = toPageTranslation(blocks, bitmap.width, bitmap.height)
+                page.blocks.forEach { block -> rereadEnlarged(bitmap, block)?.let { block.text = it } }
                 val pixels = bitmap.lightPixels()
                 val found = page.blocks
                 page.blocks = found.mapTo(mutableListOf()) {
@@ -338,6 +341,35 @@ class ChapterTranslator(
             translation.updateProgress { it.copy(page = index + 1, pages = count) }
         }
         return pages
+    }
+
+    /**
+     * Returns the text of [block] read again from an enlarged crop of [bitmap] when its letters are small, as ML Kit
+     * misreads small comic lettering far more often. Returns null when they aren't, or when the second reading finds
+     * much more or less text, as when the crop takes in part of a neighbouring bubble.
+     */
+    private fun rereadEnlarged(bitmap: Bitmap, block: TranslationBlock): String? {
+        val scale = min(MAX_REREAD_SCALE, REREAD_LETTER_HEIGHT / max(block.symHeight, 1f))
+        if (scale < MIN_REREAD_SCALE || abs(block.angle) > MAX_REREAD_ANGLE) return null
+        val padding = block.symHeight / 2
+        val left = (block.x - padding).toInt().coerceIn(0, bitmap.width - 1)
+        val top = (block.y - padding).toInt().coerceIn(0, bitmap.height - 1)
+        val right = (block.x + block.width + padding).toInt().coerceIn(left + 1, bitmap.width)
+        val bottom = (block.y + block.height + padding).toInt().coerceIn(top + 1, bitmap.height)
+        val crop = Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top)
+        val enlarged = crop.scale(((right - left) * scale).toInt(), ((bottom - top) * scale).toInt())
+        try {
+            val text = textRecognizer.recognize(InputImage.fromBitmap(enlarged, 0)).textBlocks
+                .sortedBy { it.boundingBox?.top ?: 0 }
+                .joinToString(" ") { it.text }
+                .fixLetteringMistakes()
+            val before = block.text.count(Char::isLetterOrDigit)
+            val after = text.count(Char::isLetterOrDigit)
+            return text.takeIf { after >= before * MIN_REREAD_TEXT && after <= before / MIN_REREAD_TEXT }
+        } finally {
+            if (enlarged !== crop) enlarged.recycle()
+            if (crop !== bitmap) crop.recycle()
+        }
     }
 
     /** Returns this page shrunk to a size the model reads the lettering at, without many image tokens. */
@@ -390,7 +422,7 @@ class ChapterTranslator(
             val symBounds = element.symbols.firstOrNull()?.boundingBox ?: element.boundingBox ?: bounds
             page.blocks.add(
                 TranslationBlock(
-                    text = block.text,
+                    text = block.text.fixLetteringMistakes(),
                     width = bounds.width().toFloat(),
                     height = bounds.height().toFloat(),
                     symWidth = symBounds.width().toFloat(),
@@ -454,6 +486,13 @@ class ChapterTranslator(
         const val BATCH_SIZE = 5
         const val MODEL_IMAGE_SIZE = 1024
         const val MODEL_IMAGE_QUALITY = 75
+
+        // ML Kit reads letters best at about this height in pixels
+        const val REREAD_LETTER_HEIGHT = 32f
+        const val MIN_REREAD_SCALE = 1.5f
+        const val MAX_REREAD_SCALE = 3f
+        const val MAX_REREAD_ANGLE = 10f
+        const val MIN_REREAD_TEXT = 0.8f
         const val MAX_GLOSSARY_TERMS = 300
     }
 
