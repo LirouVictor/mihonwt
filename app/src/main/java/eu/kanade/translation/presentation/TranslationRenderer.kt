@@ -124,17 +124,13 @@ class TranslationRenderer(context: Context, translation: PageTranslation, privat
     }
 
     /**
-     * Returns the translation of the bubble at [x], [y] on the image when translations are shown on tap, with those of
-     * the bubbles joined to it, which share one painted area, from right to left as manga is read.
+     * Returns the translation of the highlighted text at [x], [y] on the image when translations are shown on tap, or
+     * else of the bubble there, so that each of the bubbles joined into one painted area shows its own text.
      */
     fun translationAt(x: Float, y: Float): String? {
         if (!onTap) return null
-        val tapped = blocks.firstOrNull { it.contains(x, y) } ?: return null
-        val area = tapped.bubbleArea ?: return tapped.translation
-        return blocks
-            .filter { block -> block.bubbleArea?.let { RectF.intersects(it, area) } == true }
-            .sortedByDescending { it.centerX }
-            .joinToString("\n\n") { it.translation }
+        val tapped = blocks.firstOrNull { it.boxContains(x, y) } ?: blocks.firstOrNull { it.bubbleContains(x, y) }
+        return tapped?.translation
     }
 
     private fun layOut(block: TranslationBlock, blocks: List<TranslationBlock>): Block {
@@ -178,7 +174,6 @@ class TranslationRenderer(context: Context, translation: PageTranslation, privat
             angle = block.angle,
             box = box.apply { offset(-centerX(), -centerY()) },
             bubble = bubble,
-            bubbleArea = block.bubbleBounds(),
             cornerRadius = symHeight / 4,
             translation = translation,
             text = text,
@@ -287,16 +282,15 @@ class TranslationRenderer(context: Context, translation: PageTranslation, privat
         val angle: Float,
         val box: RectF,
         val bubble: List<RectF>,
-        /** Bounds of the painted bubble, shared by blocks found in bubbles joined together. */
-        val bubbleArea: RectF?,
         val cornerRadius: Float,
         val translation: String,
         val text: StaticLayout,
     ) {
-        fun contains(x: Float, y: Float): Boolean {
-            return bubble.any { it.contains(x, y) } ||
-                (abs(x - centerX) <= box.width() / 2 && abs(y - centerY) <= box.height() / 2)
+        fun boxContains(x: Float, y: Float): Boolean {
+            return abs(x - centerX) <= box.width() / 2 && abs(y - centerY) <= box.height() / 2
         }
+
+        fun bubbleContains(x: Float, y: Float): Boolean = bubble.any { it.contains(x, y) }
 
         fun drawBackground(canvas: Canvas) = canvas.withSave {
             bubble.forEach { drawRect(it, bubblePaint) }
