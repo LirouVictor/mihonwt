@@ -45,7 +45,11 @@ class BubbleDetector private constructor(private val session: OrtSession) : Clos
         val sizeShape = longArrayOf(1, 2)
         val sizeType = (session.inputInfo.getValue(SIZES_INPUT).info as TensorInfo).type
         val sizes = if (sizeType == OnnxJavaType.INT64) {
-            OnnxTensor.createTensor(env, LongBuffer.wrap(longArrayOf(page.width.toLong(), page.height.toLong())), sizeShape)
+            OnnxTensor.createTensor(
+                env,
+                LongBuffer.wrap(longArrayOf(page.width.toLong(), page.height.toLong())),
+                sizeShape,
+            )
         } else {
             OnnxTensor.createTensor(env, IntBuffer.wrap(intArrayOf(page.width, page.height)), sizeShape)
         }
@@ -60,6 +64,7 @@ class BubbleDetector private constructor(private val session: OrtSession) : Clos
                         }
                         else -> throw IOException("Unexpected detector labels")
                     }
+
                     @Suppress("UNCHECKED_CAST")
                     val boxes = (result.get("boxes").get().value as Array<Array<FloatArray>>).first()
                     val scores = (result.get("scores").get().value as Array<FloatArray>).first()

@@ -404,7 +404,10 @@ class ChapterTranslator(
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             logcat(LogPriority.ERROR, e)
-            val message = context.stringResource(WTMR.strings.translation_detector_unavailable, e.message ?: e.toString())
+            val message = context.stringResource(
+                WTMR.strings.translation_detector_unavailable,
+                e.message ?: e.toString(),
+            )
             withContext(Dispatchers.Main) { context.toast(message, Toast.LENGTH_LONG) }
             null
         }
