@@ -286,17 +286,22 @@ class MangaViewModel(
             isFromSource = isFromSource,
             chapters = mangaAndChapters.chapters.map { item ->
                 val downloadState = downloads[item.id]
-                val translationState = translations[item.id]
+                val queuedState = translations[item.id]
+                val translationState = queuedState ?: item.translationState
+                // Translated chapters leave the queue, but their step times stay until the app closes
+                val translationNote = when (translationState) {
+                    Translation.State.ERROR -> translationManager.getQueuedTranslationOrNull(item.id)?.error
+                    Translation.State.TRANSLATED -> translationManager.getStepTimes(item.id)
+                    else -> null
+                }
                 val selected = item.id in selectedIds
-                if (downloadState == null && translationState == null && !selected) return@map item
+                if (downloadState == null && queuedState == null && translationNote == null && !selected) {
+                    return@map item
+                }
                 item.copy(
                     downloadState = downloadState ?: item.downloadState,
-                    translationState = translationState ?: item.translationState,
-                    translationNote = when (translationState) {
-                        Translation.State.ERROR -> translationManager.getQueuedTranslationOrNull(item.id)?.error
-                        Translation.State.TRANSLATED -> translationManager.getStepTimes(item.id)
-                        else -> null
-                    },
+                    translationState = translationState,
+                    translationNote = translationNote,
                     selected = selected,
                 )
             },

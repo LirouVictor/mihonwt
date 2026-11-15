@@ -334,7 +334,6 @@ class ChapterTranslator(
             recognizedImages.remove(chapterId)
             _partialTranslations.update { it - chapterId }
             translation.progress = null
-            translation.status = Translation.State.TRANSLATED
             stepTimes[chapterId] = context.stringResource(
                 WTMR.strings.translation_times,
                 times.start.elapsedNow().inWholeMilliseconds.seconds(),
@@ -345,6 +344,7 @@ class ChapterTranslator(
                 times.bubbles.get().seconds(),
                 times.translate.get().seconds(),
             )
+            translation.status = Translation.State.TRANSLATED
         } catch (e: Throwable) {
             if (e is CancellationException) throw e
             logcat(LogPriority.ERROR, e)
