@@ -175,6 +175,7 @@ class TranslationRenderer(context: Context, translation: PageTranslation, var on
             box = box.apply { offset(-centerX(), -centerY()) },
             bubble = bubble,
             cornerRadius = symHeight / 4,
+            background = block.background.takeIf { bubble.isEmpty() },
             translation = translation,
             text = text,
         )
@@ -283,6 +284,8 @@ class TranslationRenderer(context: Context, translation: PageTranslation, var on
         val box: RectF,
         val bubble: List<RectF>,
         val cornerRadius: Float,
+        /** The art's color under text outside a bubble, whose translation is then outlined to stand out from it. */
+        val background: Int?,
         val translation: String,
         val text: StaticLayout,
     ) {
@@ -297,6 +300,7 @@ class TranslationRenderer(context: Context, translation: PageTranslation, var on
             if (bubble.isEmpty()) {
                 translate(centerX, centerY)
                 rotate(angle)
+                boxPaint.color = background ?: Color.WHITE
                 drawRoundRect(box, cornerRadius, cornerRadius, boxPaint)
             }
         }
@@ -311,6 +315,16 @@ class TranslationRenderer(context: Context, translation: PageTranslation, var on
             translate(centerX, centerY)
             rotate(angle)
             translate(-text.width / 2f, -text.height / 2f)
+            if (background != null) {
+                val paint = text.paint
+                paint.style = Paint.Style.STROKE
+                paint.strokeJoin = Paint.Join.ROUND
+                paint.strokeWidth = paint.textSize * OUTLINE_WIDTH
+                paint.color = Color.WHITE
+                text.draw(this)
+                paint.style = Paint.Style.FILL
+                paint.color = Color.BLACK
+            }
             text.draw(this)
         }
     }
@@ -318,6 +332,9 @@ class TranslationRenderer(context: Context, translation: PageTranslation, var on
     private companion object {
         /** Translucent orange, to tint translated text without hiding it. */
         const val HIGHLIGHT_COLOR = 0x40FF9800
+
+        /** Width of the white outline around text outside a bubble, as a share of the text size. */
+        const val OUTLINE_WIDTH = 0.2f
 
         /**
          * Splits words where a line can break without hyphenation. Not after hyphens: the line breaker kept

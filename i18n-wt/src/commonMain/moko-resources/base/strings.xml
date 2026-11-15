@@ -7,6 +7,7 @@
     <string name="action_delete_translation">Delete translation</string>
     <string name="translation_failed">Couldn\'t translate %1$s: %2$s</string>
     <string name="translation_times">Translated with %1$s in %2$.1f s. Reading pages: %3$.1f s (opening images %4$.1f s, OCR %5$.1f s, bubble detector %6$.1f s, finding bubbles %7$.1f s). Translating: %8$.1f s, adding up batches run in parallel</string>
+    <string name="translation_error_quota">%1$s won\'t take more requests for now. Choose another service in Settings › Translation</string>
     <string name="translation_error_no_api_key">Add an API key in Settings › Translation</string>
     <string name="translation_error_not_downloaded">Download the chapter before translating it</string>
     <string name="action_retranslate">Translate again</string>
@@ -32,7 +33,7 @@
     <string name="pref_tap_to_reveal">Translate only the tapped bubble</string>
     <string name="pref_tap_to_reveal_summary">Pages keep their original text, and tapping a bubble shows its translation in a popup, closed by tapping outside it. Applies to pages opened after the change.</string>
     <string name="pref_detect_bubbles">Detect bubbles on this device</string>
-    <string name="pref_detect_bubbles_summary">Groups the text read by OCR by the bubbles a detector finds, leaving out sound effects. Downloads an 11 MB model the first time. Not used while the AI finds the bubbles.</string>
+    <string name="pref_detect_bubbles_summary">Groups the text read by OCR by the bubbles a detector finds, leaving out sound effects. Not used while the AI finds the bubbles.</string>
     <string name="translation_detector_unavailable">Bubble detector unavailable, grouping without it: %1$s</string>
     <string name="pref_translate_on_download">Translate after downloading</string>
     <string name="pref_translate_on_download_summary">Queue each chapter for translation as soon as its download finishes. Pairs well with automatic downloads while reading.</string>

@@ -7,6 +7,7 @@
     <string name="action_delete_translation">Excluir tradução</string>
     <string name="translation_failed">Não foi possível traduzir %1$s: %2$s</string>
     <string name="translation_times">Traduzido com %1$s em %2$.1f s. Leitura das páginas: %3$.1f s (abrir imagens %4$.1f s, OCR %5$.1f s, detector de balões %6$.1f s, achar balões %7$.1f s). Tradução: %8$.1f s, somando os lotes em paralelo</string>
+    <string name="translation_error_quota">O limite do %1$s acabou por enquanto. Escolha outro serviço em Configurações › Tradução</string>
     <string name="translation_error_no_api_key">Adicione uma chave de API em Configurações › Tradução</string>
     <string name="translation_error_not_downloaded">Baixe o capítulo antes de traduzir</string>
     <string name="action_retranslate">Traduzir de novo</string>
@@ -32,7 +33,7 @@
     <string name="pref_tap_to_reveal">Traduzir só o balão tocado</string>
     <string name="pref_tap_to_reveal_summary">As páginas ficam com o texto original, e tocar num balão mostra a tradução dele numa janelinha, que fecha ao tocar fora. Vale para as páginas abertas depois da mudança.</string>
     <string name="pref_detect_bubbles">Detectar balões no aparelho</string>
-    <string name="pref_detect_bubbles_summary">Agrupa o texto lido pelo OCR pelos balões que um detector acha, deixando de fora as onomatopeias. Baixa um modelo de 11 MB na primeira vez. Não é usado enquanto a IA acha os balões.</string>
+    <string name="pref_detect_bubbles_summary">Agrupa o texto lido pelo OCR pelos balões que um detector acha, deixando de fora as onomatopeias. Não é usado enquanto a IA acha os balões.</string>
     <string name="translation_detector_unavailable">Detector de balões indisponível, agrupando sem ele: %1$s</string>
     <string name="pref_translate_on_download">Traduzir ao baixar</string>
     <string name="pref_translate_on_download_summary">Coloca cada capítulo na fila de tradução assim que o download termina. Combina com o download automático durante a leitura.</string>

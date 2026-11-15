@@ -95,6 +95,31 @@ private fun Bitmap.rowStrip(y: Int, left: Int, right: Int) = BooleanArray(right 
     isLight(getPixel(left + it, y))
 }
 
+/**
+ * Returns this block with the color of the art just around it on [bitmap] as its background, when it isn't in a speech
+ * bubble: the median of each channel over a ring half a letter out, so stray lines and letters don't tint it.
+ */
+fun TranslationBlock.withBackground(bitmap: Bitmap): TranslationBlock {
+    if (bubble.isNotEmpty()) return this
+    val margin = symHeight / 2
+    val left = (x - margin).toInt().coerceIn(0, bitmap.width - 1)
+    val top = (y - margin).toInt().coerceIn(0, bitmap.height - 1)
+    val right = (x + width + margin).toInt().coerceIn(left, bitmap.width - 1)
+    val bottom = (y + height + margin).toInt().coerceIn(top, bitmap.height - 1)
+    val ring = buildList {
+        for (px in left..right step RING_STEP) {
+            add(bitmap.getPixel(px, top))
+            add(bitmap.getPixel(px, bottom))
+        }
+        for (py in top..bottom step RING_STEP) {
+            add(bitmap.getPixel(left, py))
+            add(bitmap.getPixel(right, py))
+        }
+    }
+    fun median(channel: (Int) -> Int) = ring.map(channel).sorted()[ring.size / 2]
+    return copy(background = Color.rgb(median(Color::red), median(Color::green), median(Color::blue)))
+}
+
 /** Reads [LightPixels] off this bitmap. */
 fun Bitmap.lightPixels() = LightPixels { left, top, right, bottom ->
     val width = right - left
@@ -107,6 +132,7 @@ private fun isLight(color: Int): Boolean =
     Color.red(color) * 0.299f + Color.green(color) * 0.587f + Color.blue(color) * 0.114f >= LIGHT_LUMINANCE
 
 private const val MAX_ANGLE = 10f
+private const val RING_STEP = 2
 private const val MAX_GROWTH_LINES = 4
 private const val LIGHT_LUMINANCE = 200f
 
