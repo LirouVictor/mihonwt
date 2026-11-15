@@ -396,27 +396,38 @@ class ChapterTranslator(
             val bitmap = decodePage(openStream)
             times.decode.addAndGet(decodeStart.elapsedNow().inWholeMilliseconds)
             try {
-                val ocrScale = bitmap.ocrScale()
-                val ocrBitmap = if (ocrScale > 1f) {
-                    bitmap.scale((bitmap.width * ocrScale).toInt(), (bitmap.height * ocrScale).toInt())
-                } else {
-                    bitmap
+                val (ocr, textBoxes) = coroutineScope {
+                    // The detector runs on the CPU while ML Kit reads the page on its own threads
+                    val detection = detector?.let {
+                        async(Dispatchers.Default) {
+                            val detectStart = TimeSource.Monotonic.markNow()
+                            it.detect(bitmap).also {
+                                times.detect.addAndGet(detectStart.elapsedNow().inWholeMilliseconds)
+                            }
+                        }
+                    }
+                    val ocrScale = bitmap.ocrScale()
+                    val ocrBitmap = if (ocrScale > 1f) {
+                        bitmap.scale((bitmap.width * ocrScale).toInt(), (bitmap.height * ocrScale).toInt())
+                    } else {
+                        bitmap
+                    }
+                    val ocrStart = TimeSource.Monotonic.markNow()
+                    val blocks = try {
+                        textRecognizer.recognize(InputImage.fromBitmap(ocrBitmap, 0)).textBlocks
+                    } finally {
+                        times.ocr.addAndGet(ocrStart.elapsedNow().inWholeMilliseconds)
+                        if (ocrBitmap !== bitmap) ocrBitmap.recycle()
+                    }
+                        // Single letters are kept: an "I" alone on its line would stay in English beside the
+                        // translation
+                        .filter { it.boundingBox != null && it.text.isNotBlank() }
+                    (blocks to ocrScale) to detection?.await()
                 }
-                val ocrStart = TimeSource.Monotonic.markNow()
-                val blocks = try {
-                    textRecognizer.recognize(InputImage.fromBitmap(ocrBitmap, 0)).textBlocks
-                } finally {
-                    times.ocr.addAndGet(ocrStart.elapsedNow().inWholeMilliseconds)
-                    if (ocrBitmap !== bitmap) ocrBitmap.recycle()
-                }
-                    // Single letters are kept: an "I" alone on its line would stay in English beside the translation
-                    .filter { it.boundingBox != null && it.text.isNotBlank() }
                 val bubblesStart = TimeSource.Monotonic.markNow()
                 val pixels = bitmap.lightPixels()
                 times.bubbles.addAndGet(bubblesStart.elapsedNow().inWholeMilliseconds)
-                val detectStart = TimeSource.Monotonic.markNow()
-                val textBoxes = detector?.detect(bitmap)
-                times.detect.addAndGet(detectStart.elapsedNow().inWholeMilliseconds)
+                val (blocks, ocrScale) = ocr
                 val groupStart = TimeSource.Monotonic.markNow()
                 val page = toPageTranslation(blocks, bitmap.width, bitmap.height, ocrScale, pixels, textBoxes)
                 val found = page.blocks
