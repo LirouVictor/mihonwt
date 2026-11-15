@@ -205,16 +205,16 @@ class TranslationRenderer(context: Context, translation: PageTranslation, privat
         val words = text.split(WORD_BREAK)
         // Checked on the layout itself, as a word measured just narrow enough on its own was still cut, as "VENC EMOS"
         val whole = largestFitting(text, { width }, height, maxSize, hyphenate = false) { _, layout ->
-            layout.breaksOnlyBetweenWords(minSyllable = Int.MAX_VALUE)
+            layout.breaksOnlyBetweenWords(hyphenated = false)
         }
         val hyphenated = largestFitting(text, { width }, height, maxSize, hyphenate = true) { _, layout ->
-            layout.breaksOnlyBetweenWords(MIN_SYLLABLE)
+            layout.breaksOnlyBetweenWords(hyphenated = true)
         }
         val best = if (whole.first >= hyphenated.first * MIN_WHOLE_WORD_SIZE) whole else hyphenated
         if (best.first >= maxSize * MIN_READABLE_SIZE) return best.second
         val widenedWidth = { size: Float -> widestWord(words, size).coerceIn(width, maxWidth) }
         val widened = largestFitting(text, widenedWidth, height, maxSize, hyphenate = false) { size, layout ->
-            widestWord(words, size) <= maxWidth && layout.breaksOnlyBetweenWords(minSyllable = Int.MAX_VALUE)
+            widestWord(words, size) <= maxWidth && layout.breaksOnlyBetweenWords(hyphenated = false)
         }
         return if (widened.first > best.first) widened.second else best.second
     }
@@ -225,16 +225,21 @@ class TranslationRenderer(context: Context, translation: PageTranslation, privat
     }
 
     /**
-     * Whether each line ends between words, or inside one at what is likely a hyphenation point, leaving at least
-     * [minSyllable] letters on each side. A word too long for the width is otherwise cut anywhere, as "AIR A!".
+     * Whether each line ends at a space or a hyphen, or, when [hyphenated], at a hyphen the layout added inside a word,
+     * leaving at least [MIN_SYLLABLE] letters on each side. A word too wide for the line is otherwise cut anywhere
+     * without a hyphen, as "VEN CEMOS", or before its punctuation, as "NÃO" over a lone "!".
      */
-    private fun StaticLayout.breaksOnlyBetweenWords(minSyllable: Int): Boolean {
+    private fun StaticLayout.breaksOnlyBetweenWords(hyphenated: Boolean): Boolean {
         return (0..<lineCount - 1).all { line ->
             val end = getLineEnd(line)
-            if (!text[end - 1].isLetter() || !text[end].isLetter()) return@all true
+            val last = text[end - 1]
+            if (last.isWhitespace() || last == '-') return@all true
+            if (!hyphenated || !last.isLetter() || !text[end].isLetter()) return@all false
+            val addedHyphen = getLineWidth(line) - paint.measureText(text, getLineStart(line), end) >
+                paint.measureText("-") / 2
             val before = text.substring(0, end).takeLastWhile(Char::isLetter).length
             val after = text.substring(end).takeWhile(Char::isLetter).length
-            before >= minSyllable && after >= minSyllable
+            addedHyphen && before >= MIN_SYLLABLE && after >= MIN_SYLLABLE
         }
     }
 
