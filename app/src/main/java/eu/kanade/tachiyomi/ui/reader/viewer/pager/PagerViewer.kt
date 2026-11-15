@@ -118,7 +118,7 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
         pager.addOnPageChangeListener(pagerListener)
         pager.tapListener = f@{ event ->
             val pages = pager.children.filterIsInstance<ReaderPageImageView>()
-            if (pages.any { it.toggleTranslationAt(event.rawX, event.rawY) }) return@f
+            if (pages.any { it.showTranslationAt(event.rawX, event.rawY) }) return@f
             val viewPosition = IntArray(2)
             pager.getLocationOnScreen(viewPosition)
             val viewPositionRelativeToWindow = IntArray(2)

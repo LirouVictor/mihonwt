@@ -27,10 +27,10 @@ import kotlin.math.min
 /**
  * Draws the translation of a page over its image: each speech bubble painted white, or a white box over blocks found
  * outside one, and the translated text in the largest size that fits. Lays the text out once, in the coordinates of
- * [translation]'s image, so drawing it at any zoom only scales the canvas. With [tapToReveal], each block is only drawn
- * once tapped, leaving the original lettering to read until then.
+ * [translation]'s image, so drawing it at any zoom only scales the canvas. With [onTap], nothing is drawn: the page
+ * keeps its original lettering, and [translationAt] gives the translation of a tapped bubble to show apart.
  */
-class TranslationRenderer(context: Context, translation: PageTranslation, private val tapToReveal: Boolean = false) {
+class TranslationRenderer(context: Context, translation: PageTranslation, private val onTap: Boolean = false) {
 
     /** Width of the image the blocks are placed on. */
     val imageWidth = translation.imgWidth
@@ -57,27 +57,20 @@ class TranslationRenderer(context: Context, translation: PageTranslation, privat
 
     /** Draws onto [canvas] with the image scaled by [scale] and its top left corner at [left], [top]. */
     fun draw(canvas: Canvas, scale: Float, left: Float, top: Float) {
+        if (onTap) return
         canvas.withSave {
             translate(left, top)
             scale(scale, scale)
             // Bubbles first, as blocks sharing one would otherwise paint over each other's text
-            val shown = if (tapToReveal) blocks.filter { it in revealed } else blocks
-            shown.forEach { it.drawBackground(this) }
-            shown.forEach { it.drawText(this) }
+            blocks.forEach { it.drawBackground(this) }
+            blocks.forEach { it.drawText(this) }
         }
     }
 
-    private val revealed = mutableSetOf<Block>()
-
-    /**
-     * Shows or hides again the translation of the block at [x], [y] on the image, when drawn only on tap. Returns
-     * whether there was one.
-     */
-    fun toggleAt(x: Float, y: Float): Boolean {
-        if (!tapToReveal) return false
-        val block = blocks.firstOrNull { it.contains(x, y) } ?: return false
-        if (!revealed.remove(block)) revealed.add(block)
-        return true
+    /** Returns the translation of the block at [x], [y] on the image when translations are shown on tap. */
+    fun translationAt(x: Float, y: Float): String? {
+        if (!onTap) return null
+        return blocks.firstOrNull { it.contains(x, y) }?.translation
     }
 
     private fun layOut(block: TranslationBlock): Block {
@@ -94,6 +87,7 @@ class TranslationRenderer(context: Context, translation: PageTranslation, privat
         val box = RectF(0f, 0f, width + padding * symWidth / 2, height + padding * symHeight / 2)
         val textWidth = box.width().toInt()
         val textHeight = box.height()
+        val translation = block.displayedTranslation()
         return Block(
             centerX = block.x + block.width / 2,
             centerY = block.y + block.height / 2,
@@ -104,7 +98,8 @@ class TranslationRenderer(context: Context, translation: PageTranslation, privat
             // Translations of chapters saved before line breaks were dropped still carry the English ones, and a
             // longer Portuguese line kept whole forced a tiny text size
             // Never larger than the original lettering, which a short reply in a big bubble would otherwise dwarf
-            text = fitText(block.displayedTranslation(), textWidth, textHeight, symHeight / capHeightRatio),
+            translation = translation,
+            text = fitText(translation, textWidth, textHeight, symHeight / capHeightRatio),
         )
     }
 
@@ -204,6 +199,7 @@ class TranslationRenderer(context: Context, translation: PageTranslation, privat
         val box: RectF,
         val bubble: List<RectF>,
         val cornerRadius: Float,
+        val translation: String,
         val text: StaticLayout,
     ) {
         fun contains(x: Float, y: Float): Boolean {
