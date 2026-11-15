@@ -114,6 +114,14 @@ open class ReaderPageImageView @JvmOverloads constructor(
             translation = translation
         }
 
+    /** Whether translations are shown only on tap, which applies to the current one without laying it out again. */
+    var isTranslationOnTap = false
+        set(value) {
+            field = value
+            translation?.onTap = value
+            translation = translation
+        }
+
     var onImageLoaded: (() -> Unit)? = null
     var onImageLoadError: ((Throwable?) -> Unit)? = null
     var onScaleChanged: ((newScale: Float) -> Unit)? = null

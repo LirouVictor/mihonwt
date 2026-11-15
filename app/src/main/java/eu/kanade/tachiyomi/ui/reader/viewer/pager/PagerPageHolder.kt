@@ -99,6 +99,9 @@ class PagerPageHolder(
             launch {
                 context.appGraph.translationPreferences.showTranslations.changes().collect { isTranslationShown = it }
             }
+            launch {
+                context.appGraph.translationPreferences.tapToReveal.changes().collect { isTranslationOnTap = it }
+            }
             // A translation that lands while the chapter is open redraws the page
             combine(page.statusFlow, page.translationFlow) { state, _ -> state }.collectLatest { state ->
                 when (state) {
