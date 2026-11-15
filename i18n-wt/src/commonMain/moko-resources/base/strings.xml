@@ -6,7 +6,7 @@
     <string name="action_translate_chapter">Translate chapter</string>
     <string name="action_delete_translation">Delete translation</string>
     <string name="translation_failed">Couldn\'t translate %1$s: %2$s</string>
-    <string name="translation_times">Translated in %1$.1f s. Reading pages: %2$.1f s (opening images %3$.1f s, OCR %4$.1f s, bubble detector %5$.1f s, finding bubbles %6$.1f s). Translating: %7$.1f s, adding up batches run in parallel</string>
+    <string name="translation_times">Translated with %1$s in %2$.1f s. Reading pages: %3$.1f s (opening images %4$.1f s, OCR %5$.1f s, bubble detector %6$.1f s, finding bubbles %7$.1f s). Translating: %8$.1f s, adding up batches run in parallel</string>
     <string name="translation_error_no_api_key">Add an API key in Settings › Translation</string>
     <string name="translation_error_not_downloaded">Download the chapter before translating it</string>
     <string name="action_retranslate">Translate again</string>

@@ -113,10 +113,12 @@ internal fun String.withTermsKept(terms: Regex?, translations: Map<String, Strin
 
 /**
  * Returns DeepL's XML reply as plain text. DeepL sometimes contracts the "de" before a kept name into a bare "d", as
- * in "guarda d<keep>Vlad</keep>" for "Vlad's guard", or drops the space before it.
+ * in "guarda d<keep>Vlad</keep>" for "Vlad's guard", drops the space before it, or tacks letters onto its end, as in
+ * "<keep>Vamola</keep>e, você tá bem?!".
  */
 internal fun String.fromXml(): String = replace(CONTRACTED_DE, "de ")
     .replace(GLUED_TO_KEPT, " ")
+    .replace(GLUED_AFTER_KEPT, "")
     .replace(TAG, "")
     .replace("&lt;", "<")
     .replace("&gt;", ">")
@@ -130,3 +132,4 @@ private const val KEEP_TAG = "keep"
 private val TAG = Regex("</?$KEEP_TAG>")
 private val CONTRACTED_DE = Regex("""\bd(?=<$KEEP_TAG>)""")
 private val GLUED_TO_KEPT = Regex("""(?<=\p{L})(?=<$KEEP_TAG>)""")
+private val GLUED_AFTER_KEPT = Regex("""(?<=</$KEEP_TAG>)\p{L}+""")

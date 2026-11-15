@@ -238,6 +238,9 @@ class ChapterTranslator(
             translation.status = Translation.State.TRANSLATING
             translation.progress = null
             val translator = createTranslator()
+            val service = translationPreferences.service.get()
+            val translatedWith = translator.name +
+                translationPreferences.model(service).get().takeIf { service.hasModels }?.let { " ($it)" }.orEmpty()
             val mangaDir = provider.getMangaDir(translation.manga.title, translation.source)
             val chapterDir = downloadProvider.findChapterDir(
                 translation.chapter.name,
@@ -302,9 +305,10 @@ class ChapterTranslator(
                     if (left.isNotEmpty()) terms = terms + translator.translate(left, title, images, known, onRetry)
                     times.translate.addAndGet(batchStart.elapsedNow().inWholeMilliseconds)
                     results.withLock {
-                        terms.forEach { (term, translated) ->
-                            if (glossary.size < MAX_GLOSSARY_TERMS) glossary.putIfAbsent(term, translated)
-                        }
+                        // Terms the model gives again move to the end, keeping how they were first translated, so a
+                        // full glossary drops those not seen for longest rather than refusing new characters
+                        terms.forEach { (term, translated) -> glossary[term] = glossary.remove(term) ?: translated }
+                        glossary.keys.take(max(0, glossary.size - MAX_GLOSSARY_TERMS)).forEach(glossary::remove)
                         done.putAll(batch)
                         translation.updateProgress { it.copy(translated = done.size, retries = 0) }
                         _partialTranslations.update { it + (chapterId to done.toMap()) }
@@ -336,6 +340,7 @@ class ChapterTranslator(
             translation.progress = null
             stepTimes[chapterId] = context.stringResource(
                 WTMR.strings.translation_times,
+                translatedWith,
                 times.start.elapsedNow().inWholeMilliseconds.seconds(),
                 times.read.get().seconds(),
                 times.decode.get().seconds(),
@@ -395,27 +400,38 @@ class ChapterTranslator(
             val bitmap = decodePage(openStream)
             times.decode.addAndGet(decodeStart.elapsedNow().inWholeMilliseconds)
             try {
-                val ocrScale = bitmap.ocrScale()
-                val ocrBitmap = if (ocrScale > 1f) {
-                    bitmap.scale((bitmap.width * ocrScale).toInt(), (bitmap.height * ocrScale).toInt())
-                } else {
-                    bitmap
+                val (ocr, textBoxes) = coroutineScope {
+                    // The detector runs on the CPU while ML Kit reads the page on its own threads
+                    val detection = detector?.let {
+                        async(Dispatchers.Default) {
+                            val detectStart = TimeSource.Monotonic.markNow()
+                            it.detect(bitmap).also {
+                                times.detect.addAndGet(detectStart.elapsedNow().inWholeMilliseconds)
+                            }
+                        }
+                    }
+                    val ocrScale = bitmap.ocrScale()
+                    val ocrBitmap = if (ocrScale > 1f) {
+                        bitmap.scale((bitmap.width * ocrScale).toInt(), (bitmap.height * ocrScale).toInt())
+                    } else {
+                        bitmap
+                    }
+                    val ocrStart = TimeSource.Monotonic.markNow()
+                    val blocks = try {
+                        textRecognizer.recognize(InputImage.fromBitmap(ocrBitmap, 0)).textBlocks
+                    } finally {
+                        times.ocr.addAndGet(ocrStart.elapsedNow().inWholeMilliseconds)
+                        if (ocrBitmap !== bitmap) ocrBitmap.recycle()
+                    }
+                        // Single letters are kept: an "I" alone on its line would stay in English beside the
+                        // translation
+                        .filter { it.boundingBox != null && it.text.isNotBlank() }
+                    (blocks to ocrScale) to detection?.await()
                 }
-                val ocrStart = TimeSource.Monotonic.markNow()
-                val blocks = try {
-                    textRecognizer.recognize(InputImage.fromBitmap(ocrBitmap, 0)).textBlocks
-                } finally {
-                    times.ocr.addAndGet(ocrStart.elapsedNow().inWholeMilliseconds)
-                    if (ocrBitmap !== bitmap) ocrBitmap.recycle()
-                }
-                    // Single letters are kept: an "I" alone on its line would stay in English beside the translation
-                    .filter { it.boundingBox != null && it.text.isNotBlank() }
                 val bubblesStart = TimeSource.Monotonic.markNow()
                 val pixels = bitmap.lightPixels()
                 times.bubbles.addAndGet(bubblesStart.elapsedNow().inWholeMilliseconds)
-                val detectStart = TimeSource.Monotonic.markNow()
-                val textBoxes = detector?.detect(bitmap)
-                times.detect.addAndGet(detectStart.elapsedNow().inWholeMilliseconds)
+                val (blocks, ocrScale) = ocr
                 val groupStart = TimeSource.Monotonic.markNow()
                 val page = toPageTranslation(blocks, bitmap.width, bitmap.height, ocrScale, pixels, textBoxes)
                 val found = page.blocks

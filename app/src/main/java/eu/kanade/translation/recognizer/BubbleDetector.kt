@@ -3,6 +3,7 @@ package eu.kanade.translation.recognizer
 import ai.onnxruntime.OnnxJavaType
 import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
+import ai.onnxruntime.OrtException
 import ai.onnxruntime.OrtSession
 import ai.onnxruntime.TensorInfo
 import android.content.Context
@@ -11,8 +12,10 @@ import androidx.core.graphics.scale
 import eu.kanade.tachiyomi.network.await
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import logcat.LogPriority
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import tachiyomi.core.common.util.system.logcat
 import java.io.Closeable
 import java.io.File
 import java.io.IOException
@@ -87,12 +90,31 @@ class BubbleDetector private constructor(private val session: OrtSession) : Clos
         private const val MODEL_SIZE = 11_120_765L
         private const val MODEL_FILE = "bubble_detector_v4_s_int8.onnx"
 
+        // Phones pair a few fast cores with slower ones, which would hold the fast ones back
+        private const val XNNPACK_MAX_THREADS = 4
+
         /** Loads the detector, first downloading its model of about 11 MB if it isn't on the device yet. */
         suspend fun load(context: Context): BubbleDetector = withContext(Dispatchers.IO) {
             val model = File(context.noBackupFilesDir, MODEL_FILE)
             if (model.length() != MODEL_SIZE) download(model)
-            val session = OrtEnvironment.getEnvironment().createSession(model.path, OrtSession.SessionOptions())
+            val environment = OrtEnvironment.getEnvironment()
+            // XNNPACK runs the model's convolutions with ARM's vector instructions; the rest stays on the default CPU
+            // provider, which also takes over when XNNPACK can't load
+            val session = try {
+                environment.createSession(model.path, sessionOptions(xnnpack = true))
+            } catch (e: OrtException) {
+                logcat(LogPriority.WARN, e)
+                environment.createSession(model.path, sessionOptions(xnnpack = false))
+            }
             BubbleDetector(session)
+        }
+
+        private fun sessionOptions(xnnpack: Boolean) = OrtSession.SessionOptions().apply {
+            setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+            if (xnnpack) {
+                val threads = Runtime.getRuntime().availableProcessors().coerceAtMost(XNNPACK_MAX_THREADS)
+                addXnnpack(mapOf("intra_op_num_threads" to threads.toString()))
+            }
         }
 
         private suspend fun download(model: File) {
