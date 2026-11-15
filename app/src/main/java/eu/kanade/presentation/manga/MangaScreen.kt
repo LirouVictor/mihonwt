@@ -781,7 +781,7 @@ private fun LazyListScope.sharedChapterItems(
                     downloadStateProvider = { item.downloadState },
                     downloadProgressProvider = { downloadProgressProvider(item.id) },
                     translationStateProvider = { item.translationState },
-                    translationErrorProvider = { item.translationError },
+                    translationNoteProvider = { item.translationNote },
                     translationProgressFlow = {
                         translationManager.getQueuedTranslationOrNull(item.id)?.progressFlow ?: flowOf(null)
                     },

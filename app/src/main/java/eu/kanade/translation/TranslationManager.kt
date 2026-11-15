@@ -106,6 +106,9 @@ class TranslationManager(
         return queueState.value.find { it.chapter.id == chapterId }
     }
 
+    /** See [ChapterTranslator.stepTimes]. */
+    fun getStepTimes(chapterId: Long): String? = translator.stepTimes[chapterId]
+
     suspend fun getChapterTranslationStatus(
         chapterId: Long,
         chapterName: String,

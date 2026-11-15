@@ -49,7 +49,7 @@ enum class ChapterTranslationAction {
 fun ChapterTranslationIndicator(
     enabled: Boolean,
     state: Translation.State,
-    error: String?,
+    note: String?,
     progressFlow: Flow<Translation.Progress?>,
     onClick: (ChapterTranslationAction) -> Unit,
     modifier: Modifier = Modifier,
@@ -116,12 +116,16 @@ fun ChapterTranslationIndicator(
                 )
                 else -> listOf(stringResource(MR.strings.action_cancel) to ChapterTranslationAction.CANCEL)
             }
-            if (state == Translation.State.ERROR && error != null) {
+            if ((state == Translation.State.ERROR || state == Translation.State.TRANSLATED) && note != null) {
                 val context = LocalContext.current
                 MenuNote(
-                    text = error,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.clickable { context.copyToClipboard(error, error) },
+                    text = note,
+                    color = if (state == Translation.State.ERROR) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    modifier = Modifier.clickable { context.copyToClipboard(note, note) },
                 )
             }
             if (state == Translation.State.TRANSLATING || state == Translation.State.QUEUE) {
