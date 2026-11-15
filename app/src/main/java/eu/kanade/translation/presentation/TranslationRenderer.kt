@@ -59,7 +59,21 @@ class TranslationRenderer(context: Context, translation: PageTranslation, privat
 
     private val blocks = translation.blocks
         .filter { it.translation.isNotBlank() && it.width > 0 && it.height > 0 }
+        .let { blocks ->
+            // A block the translator gave back unchanged, as a sign or a name, keeps its original lettering, unless a
+            // bubble it shares is painted over for the others
+            val painted = blocks.filterNot { it.isUntranslated() }.mapNotNull { it.bubbleBounds() }
+            blocks.filter { block ->
+                !block.isUntranslated() ||
+                    block.bubbleBounds()?.let { bounds -> painted.any { RectF.intersects(it, bounds) } } == true
+            }
+        }
         .map(::layOut)
+
+    private fun TranslationBlock.isUntranslated(): Boolean {
+        fun String.letters() = filter(Char::isLetterOrDigit).lowercase()
+        return translation.letters() == text.letters()
+    }
 
     /** Draws onto [canvas] with the image scaled by [scale] and its top left corner at [left], [top]. */
     fun draw(canvas: Canvas, scale: Float, left: Float, top: Float) {
