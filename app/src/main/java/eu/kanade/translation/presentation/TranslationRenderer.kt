@@ -68,11 +68,41 @@ class TranslationRenderer(context: Context, translation: PageTranslation, privat
                     block.bubbleBounds()?.let { bounds -> painted.any { RectF.intersects(it, bounds) } } == true
             }
         }
-        .map(::layOut)
+        .let { blocks -> blocks.map { layOut(it, blocks) } }
 
     private fun TranslationBlock.isUntranslated(): Boolean {
         fun String.letters() = filter(Char::isLetterOrDigit).lowercase()
         return translation.letters() == text.letters()
+    }
+
+    private fun TranslationBlock.bubbleBounds(): RectF? = bubble.takeIf { it.isNotEmpty() }?.let { areas ->
+        RectF(
+            areas.minOf { it.x },
+            areas.minOf { it.y },
+            areas.maxOf { it.x + it.width },
+            areas.maxOf { it.y + it.height },
+        )
+    }
+
+    /**
+     * Width the upright [block] may take in its bubble: as far as the bubble reaches on both sides of its center along
+     * its height, short of the other [blocks] beside it. A bubble shared by several blocks otherwise kept each to the
+     * width of its original letters, as a narrow "SAY WHAT?!" in a wide bubble.
+     */
+    private fun roomInBubble(block: TranslationBlock, blocks: List<TranslationBlock>): Float {
+        val centerX = block.x + block.width / 2
+        val top = block.y
+        val bottom = block.y + block.height
+        val rows = block.bubble.filter { it.y < bottom && it.y + it.height > top && centerX in it.x..it.x + it.width }
+        if (rows.isEmpty()) return block.width
+        var left = rows.maxOf { it.x }
+        var right = rows.minOf { it.x + it.width }
+        blocks.filter { it !== block && it.y < bottom && it.y + it.height > top }.forEach { other ->
+            if (other.x + other.width / 2 < centerX) left = max(left, other.x + other.width)
+            else right = min(right, other.x)
+        }
+        val margin = block.symHeight / 2
+        return max(block.width, 2 * (min(centerX - left, right - centerX) - margin))
     }
 
     /** Draws onto [canvas] with the image scaled by [scale] and its top left corner at [left], [top]. */
@@ -104,19 +134,15 @@ class TranslationRenderer(context: Context, translation: PageTranslation, privat
             .joinToString("\n\n") { it.translation }
     }
 
-    private fun TranslationBlock.bubbleBounds(): RectF? = bubble.takeIf { it.isNotEmpty() }?.let { areas ->
-        RectF(
-            areas.minOf { it.x },
-            areas.minOf { it.y },
-            areas.maxOf { it.x + it.width },
-            areas.maxOf { it.y + it.height },
-        )
-    }
-
-    private fun layOut(block: TranslationBlock): Block {
+    private fun layOut(block: TranslationBlock, blocks: List<TranslationBlock>): Block {
         // Text sideways on the image, as on a page rotated to fit, is laid out along the long side of its block
         val isSideways = abs(block.angle % 180) in 45f..135f
-        val width = if (isSideways) block.height else block.width
+        val isUpright = abs(block.angle) < MAX_UPRIGHT_ANGLE
+        val width = when {
+            isSideways -> block.height
+            isUpright -> roomInBubble(block, blocks)
+            else -> block.width
+        }
         val height = if (isSideways) block.width else block.height
         val symWidth = if (isSideways) block.symHeight else block.symWidth
         val symHeight = if (isSideways) block.symWidth else block.symHeight
@@ -132,7 +158,7 @@ class TranslationRenderer(context: Context, translation: PageTranslation, privat
         val maxWidth = min(boxWidth * MAX_WIDENING, bubbleWidth ?: Float.MAX_VALUE).coerceAtLeast(boxWidth)
         val translation = block.displayedTranslation()
         // Lettering stacked a letter per line in a tall, narrow bubble stays that way
-        val isStacked = !isSideways && height >= width * MIN_STACKED_RATIO && translation.none(Char::isWhitespace)
+        val isStacked = !isSideways && height >= block.width * MIN_STACKED_RATIO && translation.none(Char::isWhitespace)
         // Never larger than the original lettering, which a short reply in a big bubble would otherwise dwarf
         val text = fitText(
             if (isStacked) translation.toList().joinToString("\n") else translation,
@@ -174,18 +200,18 @@ class TranslationRenderer(context: Context, translation: PageTranslation, privat
      */
     private fun fitText(text: String, width: Int, maxWidth: Int, height: Float, maxSize: Float): StaticLayout {
         val words = text.split(WORD_BREAK)
-        val whole = largestFitting(text, { width }, height, maxSize, hyphenate = false) { size, _ ->
-            textPaint.textSize = size
-            words.all { textPaint.measureText(it) <= width }
+        // Checked on the layout itself, as a word measured just narrow enough on its own was still cut, as "VENC EMOS"
+        val whole = largestFitting(text, { width }, height, maxSize, hyphenate = false) { _, layout ->
+            layout.breaksOnlyBetweenWords(minSyllable = Int.MAX_VALUE)
         }
         val hyphenated = largestFitting(text, { width }, height, maxSize, hyphenate = true) { _, layout ->
-            layout.breaksOnlyBetweenWords()
+            layout.breaksOnlyBetweenWords(MIN_SYLLABLE)
         }
         val best = if (whole.first >= hyphenated.first * MIN_WHOLE_WORD_SIZE) whole else hyphenated
         if (best.first >= maxSize * MIN_READABLE_SIZE) return best.second
         val widenedWidth = { size: Float -> widestWord(words, size).coerceIn(width, maxWidth) }
-        val widened = largestFitting(text, widenedWidth, height, maxSize, hyphenate = false) { size, _ ->
-            widestWord(words, size) <= maxWidth
+        val widened = largestFitting(text, widenedWidth, height, maxSize, hyphenate = false) { size, layout ->
+            widestWord(words, size) <= maxWidth && layout.breaksOnlyBetweenWords(minSyllable = Int.MAX_VALUE)
         }
         return if (widened.first > best.first) widened.second else best.second
     }
@@ -197,15 +223,15 @@ class TranslationRenderer(context: Context, translation: PageTranslation, privat
 
     /**
      * Whether each line ends between words, or inside one at what is likely a hyphenation point, leaving at least
-     * [MIN_SYLLABLE] letters on each side. A word too long for the width is otherwise cut anywhere, as "AIR A!".
+     * [minSyllable] letters on each side. A word too long for the width is otherwise cut anywhere, as "AIR A!".
      */
-    private fun StaticLayout.breaksOnlyBetweenWords(): Boolean {
+    private fun StaticLayout.breaksOnlyBetweenWords(minSyllable: Int): Boolean {
         return (0..<lineCount - 1).all { line ->
             val end = getLineEnd(line)
             if (!text[end - 1].isLetter() || !text[end].isLetter()) return@all true
             val before = text.substring(0, end).takeLastWhile(Char::isLetter).length
             val after = text.substring(end).takeWhile(Char::isLetter).length
-            before >= MIN_SYLLABLE && after >= MIN_SYLLABLE
+            before >= minSyllable && after >= minSyllable
         }
     }
 
@@ -291,8 +317,11 @@ class TranslationRenderer(context: Context, translation: PageTranslation, privat
         /** Translucent orange, to tint translated text without hiding it. */
         const val HIGHLIGHT_COLOR = 0x40FF9800
 
-        /** Splits words, and after hyphens, where a line can break without hyphenation. */
-        val WORD_BREAK = Regex("""\s+|(?<=-)""")
+        /**
+         * Splits words where a line can break without hyphenation. Not after hyphens: the line breaker kept
+         * "VAMO-CHAN!" whole and cut it between letters.
+         */
+        val WORD_BREAK = Regex("""\s+""")
 
         /** Whole words are kept when they allow at least this share of the size hyphenation would. */
         const val MIN_WHOLE_WORD_SIZE = 0.8f
@@ -304,6 +333,9 @@ class TranslationRenderer(context: Context, translation: PageTranslation, privat
 
         /** How much wider than its box text may grow when its words don't fit at a readable size. */
         const val MAX_WIDENING = 1.4f
+
+        /** Tilt in degrees up to which a block is taken as upright, for widening it in its bubble. */
+        const val MAX_UPRIGHT_ANGLE = 10f
 
         /** Height to width ratio from which a box holding a single word is lettered a letter per line. */
         const val MIN_STACKED_RATIO = 3f
