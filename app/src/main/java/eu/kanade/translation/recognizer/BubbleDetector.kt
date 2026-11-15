@@ -38,11 +38,12 @@ class BubbleDetector private constructor(private val session: OrtSession) : Clos
         input.getPixels(pixels, 0, INPUT_SIZE, 0, 0, INPUT_SIZE, INPUT_SIZE)
         if (input !== page) input.recycle()
         val plane = INPUT_SIZE * INPUT_SIZE
-        val image = FloatBuffer.allocate(3 * plane)
-        pixels.forEachIndexed { i, color ->
-            image.put(i, (color shr 16 and 0xFF) / 255f)
-            image.put(plane + i, (color shr 8 and 0xFF) / 255f)
-            image.put(2 * plane + i, (color and 0xFF) / 255f)
+        val image = FloatArray(3 * plane)
+        for (i in 0..<plane) {
+            val color = pixels[i]
+            image[i] = (color shr 16 and 0xFF) * BYTE_TO_UNIT
+            image[plane + i] = (color shr 8 and 0xFF) * BYTE_TO_UNIT
+            image[2 * plane + i] = (color and 0xFF) * BYTE_TO_UNIT
         }
 
         val sizeShape = longArrayOf(1, 2)
@@ -56,7 +57,11 @@ class BubbleDetector private constructor(private val session: OrtSession) : Clos
         } else {
             OnnxTensor.createTensor(env, IntBuffer.wrap(intArrayOf(page.width, page.height)), sizeShape)
         }
-        return OnnxTensor.createTensor(env, image, longArrayOf(1, 3, INPUT_SIZE.toLong(), INPUT_SIZE.toLong())).use {
+        return OnnxTensor.createTensor(
+            env,
+            FloatBuffer.wrap(image),
+            longArrayOf(1, 3, INPUT_SIZE.toLong(), INPUT_SIZE.toLong()),
+        ).use {
             sizes.use { _ ->
                 session.run(mapOf(IMAGES_INPUT to it, SIZES_INPUT to sizes)).use { result ->
                     val labels = when (val value = result.get("labels").get().value) {
@@ -81,6 +86,7 @@ class BubbleDetector private constructor(private val session: OrtSession) : Clos
 
     companion object {
         private const val INPUT_SIZE = 640
+        private const val BYTE_TO_UNIT = 1 / 255f
         private const val IMAGES_INPUT = "images"
         private const val SIZES_INPUT = "orig_target_sizes"
 
