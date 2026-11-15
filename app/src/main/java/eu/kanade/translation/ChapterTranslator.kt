@@ -35,6 +35,7 @@ import eu.kanade.translation.recognizer.bubbleBlocks
 import eu.kanade.translation.recognizer.grownIntoBubble
 import eu.kanade.translation.recognizer.inBubble
 import eu.kanade.translation.recognizer.lightPixels
+import eu.kanade.translation.recognizer.withBackground
 import eu.kanade.translation.recognizer.wordOf
 import eu.kanade.translation.translator.LanguageModelTranslator
 import eu.kanade.translation.translator.PageTranslator
@@ -440,7 +441,14 @@ class ChapterTranslator(
                 val page = toPageTranslation(blocks, bitmap.width, bitmap.height, ocrScale, pixels, textBoxes)
                 val found = page.blocks
                 page.blocks = found.mapTo(mutableListOf()) {
-                    it.inBubble(bitmap.width, bitmap.height, found, pixels) ?: it.grownIntoBubble(bitmap)
+                    (
+                        it.inBubble(
+                            bitmap.width,
+                            bitmap.height,
+                            found,
+                            pixels,
+                        ) ?: it.grownIntoBubble(bitmap)
+                        ).withBackground(bitmap)
                 }
                 times.bubbles.addAndGet(groupStart.elapsedNow().inWholeMilliseconds)
                 if (page.blocks.isNotEmpty()) {
@@ -505,7 +513,14 @@ class ChapterTranslator(
             val pixels = bitmap.lightPixels()
             val found = blocksOfFoundText(texts, words)
             blocks = found.mapTo(mutableListOf()) {
-                it.inBubble(bitmap.width, bitmap.height, found, pixels) ?: it.grownIntoBubble(bitmap)
+                (
+                    it.inBubble(
+                        bitmap.width,
+                        bitmap.height,
+                        found,
+                        pixels,
+                    ) ?: it.grownIntoBubble(bitmap)
+                    ).withBackground(bitmap)
             }
         } finally {
             bitmap.recycle()

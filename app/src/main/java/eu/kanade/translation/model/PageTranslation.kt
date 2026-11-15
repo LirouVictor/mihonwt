@@ -29,6 +29,8 @@ data class TranslationBlock(
     val angle: Float,
     /** The inside of the speech bubble around the text, painted over before the translation is drawn. */
     val bubble: List<Area> = emptyList(),
+    /** The color of the art around text outside a bubble, which covers it before its outlined translation is drawn. */
+    val background: Int? = null,
 )
 
 /** A rectangle on the page. */
