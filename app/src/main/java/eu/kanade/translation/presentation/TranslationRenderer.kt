@@ -27,8 +27,9 @@ import kotlin.math.min
 /**
  * Draws the translation of a page over its image: each speech bubble painted white, or a white box over blocks found
  * outside one, and the translated text in the largest size that fits. Lays the text out once, in the coordinates of
- * [translation]'s image, so drawing it at any zoom only scales the canvas. With [onTap], nothing is drawn: the page
- * keeps its original lettering, and [translationAt] gives the translation of a tapped bubble to show apart.
+ * [translation]'s image, so drawing it at any zoom only scales the canvas. With [onTap], the page keeps its original
+ * lettering with each translated block only tinted, and [translationAt] gives the translation of a tapped bubble to
+ * show apart.
  */
 class TranslationRenderer(context: Context, translation: PageTranslation, private val onTap: Boolean = false) {
 
@@ -39,6 +40,8 @@ class TranslationRenderer(context: Context, translation: PageTranslation, privat
 
     // Without antialiasing, as the soft edges of the rectangles a bubble is painted with left faint lines between them
     private val bubblePaint = Paint().apply { color = Color.WHITE }
+
+    private val highlightPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = HIGHLIGHT_COLOR }
 
     private val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.BLACK
@@ -60,20 +63,40 @@ class TranslationRenderer(context: Context, translation: PageTranslation, privat
 
     /** Draws onto [canvas] with the image scaled by [scale] and its top left corner at [left], [top]. */
     fun draw(canvas: Canvas, scale: Float, left: Float, top: Float) {
-        if (onTap) return
         canvas.withSave {
             translate(left, top)
             scale(scale, scale)
+            if (onTap) {
+                blocks.forEach { it.drawHighlight(this) }
+                return@withSave
+            }
             // Bubbles first, as blocks sharing one would otherwise paint over each other's text
             blocks.forEach { it.drawBackground(this) }
             blocks.forEach { it.drawText(this) }
         }
     }
 
-    /** Returns the translation of the block at [x], [y] on the image when translations are shown on tap. */
+    /**
+     * Returns the translation of the bubble at [x], [y] on the image when translations are shown on tap, with those of
+     * the bubbles joined to it, which share one painted area, from right to left as manga is read.
+     */
     fun translationAt(x: Float, y: Float): String? {
         if (!onTap) return null
-        return blocks.firstOrNull { it.contains(x, y) }?.translation
+        val tapped = blocks.firstOrNull { it.contains(x, y) } ?: return null
+        val area = tapped.bubbleArea ?: return tapped.translation
+        return blocks
+            .filter { block -> block.bubbleArea?.let { RectF.intersects(it, area) } == true }
+            .sortedByDescending { it.centerX }
+            .joinToString("\n\n") { it.translation }
+    }
+
+    private fun TranslationBlock.bubbleBounds(): RectF? = bubble.takeIf { it.isNotEmpty() }?.let { areas ->
+        RectF(
+            areas.minOf { it.x },
+            areas.minOf { it.y },
+            areas.maxOf { it.x + it.width },
+            areas.maxOf { it.y + it.height },
+        )
     }
 
     private fun layOut(block: TranslationBlock): Block {
@@ -112,6 +135,7 @@ class TranslationRenderer(context: Context, translation: PageTranslation, privat
             angle = block.angle,
             box = box.apply { offset(-centerX(), -centerY()) },
             bubble = bubble,
+            bubbleArea = block.bubbleBounds(),
             cornerRadius = symHeight / 4,
             translation = translation,
             text = text,
@@ -215,6 +239,8 @@ class TranslationRenderer(context: Context, translation: PageTranslation, privat
         val angle: Float,
         val box: RectF,
         val bubble: List<RectF>,
+        /** Bounds of the painted bubble, shared by blocks found in bubbles joined together. */
+        val bubbleArea: RectF?,
         val cornerRadius: Float,
         val translation: String,
         val text: StaticLayout,
@@ -233,6 +259,12 @@ class TranslationRenderer(context: Context, translation: PageTranslation, privat
             }
         }
 
+        fun drawHighlight(canvas: Canvas) = canvas.withSave {
+            translate(centerX, centerY)
+            rotate(angle)
+            drawRoundRect(box, cornerRadius, cornerRadius, highlightPaint)
+        }
+
         fun drawText(canvas: Canvas) = canvas.withSave {
             translate(centerX, centerY)
             rotate(angle)
@@ -242,6 +274,9 @@ class TranslationRenderer(context: Context, translation: PageTranslation, privat
     }
 
     private companion object {
+        /** Translucent orange, to tint translated text without hiding it. */
+        const val HIGHLIGHT_COLOR = 0x40FF9800
+
         /** Splits words, and after hyphens, where a line can break without hyphenation. */
         val WORD_BREAK = Regex("""\s+|(?<=-)""")
 
