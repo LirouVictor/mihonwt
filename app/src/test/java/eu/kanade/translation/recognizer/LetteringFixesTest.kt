@@ -14,6 +14,13 @@ class LetteringFixesTest {
     }
 
     @Test
+    fun `words after an ellipsis misread as digits are fixed`() {
+        assertEquals("...SO I'M GONNA", "...50 I'M GONNA".fixLetteringMistakes())
+        assertEquals("...IS YOU, AIRA!", "...15 YOU, AIRA!".fixLetteringMistakes())
+        assertEquals("...50 years", "...50 years".fixLetteringMistakes())
+    }
+
+    @Test
     fun `numbers and slashes between words stay`() {
         assertEquals("CHAPTER 233. AND/OR 1 MORE", "CHAPTER 233. AND/OR 1 MORE".fixLetteringMistakes())
     }
