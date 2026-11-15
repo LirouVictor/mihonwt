@@ -3,6 +3,7 @@
 
 package eu.kanade.translation.translator
 
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.addJsonObject
@@ -20,6 +21,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 import java.util.Base64
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * Translates with the Gemini REST API.
@@ -81,7 +83,9 @@ class GeminiTranslator(
             .header("x-goog-api-key", apiKey)
             .post(body.toString().toRequestBody("application/json".toMediaType()))
             .build()
-        val json = send(request, onRetry)
+        // A batch normally answers in 2-3 s, but now and then a request hangs for half a minute or more, holding up the
+        // chapter, and asking again is quicker
+        val json = withTimeoutOrNull(STALLED_AFTER) { send(request, onRetry) } ?: send(request, onRetry)
 
         val candidate = (json["candidates"] as? JsonArray)?.firstOrNull()?.jsonObject
             ?: throw IOException("Gemini returned no candidates: ${json["promptFeedback"]}")
@@ -110,6 +114,7 @@ class GeminiTranslator(
 
     private companion object {
         const val BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
+        val STALLED_AFTER = 15.seconds
 
         // Comics often trip the default filters, which would drop whole pages
         val SAFETY_CATEGORIES = listOf(
