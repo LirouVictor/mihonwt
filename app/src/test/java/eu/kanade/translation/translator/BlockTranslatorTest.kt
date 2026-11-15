@@ -34,4 +34,9 @@ class BlockTranslatorTest {
                 .fromXml(),
         )
     }
+
+    @Test
+    fun `letters tacked onto a kept name are dropped`() {
+        assertEquals("Vamola, você tá bem?!", "<keep>Vamola</keep>e, você tá bem?!".fromXml())
+    }
 }
