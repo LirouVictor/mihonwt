@@ -31,7 +31,7 @@ import kotlin.math.min
  * lettering with each translated block only tinted, and [translationAt] gives the translation of a tapped bubble to
  * show apart.
  */
-class TranslationRenderer(context: Context, translation: PageTranslation, private val onTap: Boolean = false) {
+class TranslationRenderer(context: Context, translation: PageTranslation, var onTap: Boolean = false) {
 
     /** Width of the image the blocks are placed on. */
     val imageWidth = translation.imgWidth

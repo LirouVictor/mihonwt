@@ -138,6 +138,10 @@ class WebtoonPageHolder(
                 context.appGraph.translationPreferences.showTranslations.changes()
                     .collect { frame.isTranslationShown = it }
             }
+            launch {
+                context.appGraph.translationPreferences.tapToReveal.changes()
+                    .collect { frame.isTranslationOnTap = it }
+            }
             // A translation that lands while the chapter is open redraws the page
             combine(page.statusFlow, page.translationFlow) { state, _ -> state }.collectLatest { state ->
                 when (state) {
