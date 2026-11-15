@@ -302,9 +302,10 @@ class ChapterTranslator(
                     if (left.isNotEmpty()) terms = terms + translator.translate(left, title, images, known, onRetry)
                     times.translate.addAndGet(batchStart.elapsedNow().inWholeMilliseconds)
                     results.withLock {
-                        terms.forEach { (term, translated) ->
-                            if (glossary.size < MAX_GLOSSARY_TERMS) glossary.putIfAbsent(term, translated)
-                        }
+                        // Terms the model gives again move to the end, keeping how they were first translated, so a
+                        // full glossary drops those not seen for longest rather than refusing new characters
+                        terms.forEach { (term, translated) -> glossary[term] = glossary.remove(term) ?: translated }
+                        glossary.keys.take(max(0, glossary.size - MAX_GLOSSARY_TERMS)).forEach(glossary::remove)
                         done.putAll(batch)
                         translation.updateProgress { it.copy(translated = done.size, retries = 0) }
                         _partialTranslations.update { it + (chapterId to done.toMap()) }
