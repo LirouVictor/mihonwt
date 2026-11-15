@@ -39,7 +39,7 @@ class TranslationPreferences(
      * Whether a model that reads page images also finds the text on them, rather than translating the text OCR
      * grouped, which can't tell lettering from the artwork or touching bubbles apart.
      */
-    val findTextOnImages: Preference<Boolean> = preferenceStore.getBoolean("translation_find_text_on_images", true)
+    val findTextOnImages: Preference<Boolean> = preferenceStore.getBoolean("translation_find_text_on_images", false)
 
     /** Whether OCR text is grouped by the bubbles an on-device detector finds, rather than by its layout alone. */
     val detectBubbles: Preference<Boolean> = preferenceStore.getBoolean("translation_detect_bubbles", true)
