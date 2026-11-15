@@ -125,6 +125,7 @@ private fun TranslationBlock.inBubble(
         if (row < rows - 1) queue.add(index + cols)
     }
     val bubble = BooleanArray(cols * rows) { !outside[it] }
+    keepArt(bubble, inside, cols, left, top, cell, lineHeight * ART_MIN_LINES, others + this)
 
     // Bubbles that touch share their light space, so each block only lays its text out on the cells nearer to it
     val neighbours = others.filter { it !== this && it.overlaps(left, top, right, bottom) }
@@ -150,6 +151,67 @@ private fun TranslationBlock.inBubble(
         height = textBottom - textTop,
         bubble = bubbleAreas(bubble, cols, rows, left, top, cell),
     )
+}
+
+/**
+ * Takes out of [bubble] the drawings it encloses, like a character's face beside the text, so they are neither painted
+ * over nor written on: marks taller and wider than [minSize] that none of the [blocks] reaches. Smaller marks are
+ * letters OCR missed or specks, and are painted over.
+ */
+private fun keepArt(
+    bubble: BooleanArray,
+    inside: BooleanArray,
+    cols: Int,
+    left: Int,
+    top: Int,
+    cell: Int,
+    minSize: Float,
+    blocks: List<TranslationBlock>,
+) {
+    val rows = bubble.size / cols
+    val seen = BooleanArray(bubble.size)
+    val queue = ArrayDeque<Int>()
+    val mark = mutableListOf<Int>()
+    for (seed in bubble.indices) {
+        if (seen[seed] || !bubble[seed] || inside[seed]) continue
+        seen[seed] = true
+        queue.add(seed)
+        mark.clear()
+        var minCol = cols
+        var maxCol = 0
+        var minRow = rows
+        var maxRow = 0
+        while (queue.isNotEmpty()) {
+            val index = queue.removeFirst()
+            mark.add(index)
+            val col = index % cols
+            val row = index / cols
+            minCol = min(minCol, col)
+            maxCol = max(maxCol, col)
+            minRow = min(minRow, row)
+            maxRow = max(maxRow, row)
+            for (dy in -1..1) {
+                for (dx in -1..1) {
+                    val c = col + dx
+                    val r = row + dy
+                    if (c !in 0..<cols || r !in 0..<rows) continue
+                    val next = r * cols + c
+                    if (!seen[next] && bubble[next] && !inside[next]) {
+                        seen[next] = true
+                        queue.add(next)
+                    }
+                }
+            }
+        }
+        val markLeft = left + minCol * cell
+        val markTop = top + minRow * cell
+        val markRight = left + (maxCol + 1) * cell
+        val markBottom = top + (maxRow + 1) * cell
+        val isArt = markRight - markLeft >= minSize &&
+            markBottom - markTop >= minSize &&
+            blocks.none { it.overlaps(markLeft, markTop, markRight, markBottom) }
+        if (isArt) mark.forEach { bubble[it] = false }
+    }
 }
 
 /** Covers the [bubble] cells with rectangles, one per run of cells, joining runs repeated on the rows below. */
@@ -229,6 +291,9 @@ private const val MAX_ANGLE = 10f
 private const val CELLS_PER_LINE = 8f
 private val REACH_LINES = listOf(6f, 12f, 24f)
 private const val TEXT_MARGIN_LINES = 0.25f
+
+// Letters are about a line high and specks smaller, while a face drawn in a bubble spans a few lines
+private const val ART_MIN_LINES = 1.5f
 
 // Bubbles whose inside leaves the text much less room than the letters had are probably not bubbles at all
 private const val MIN_TEXT_AREA = 0.6f
