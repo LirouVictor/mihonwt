@@ -21,6 +21,10 @@ class DeepLTranslator(private val apiKey: String) : BlockTranslator() {
     // Keys of the free plan end in ":fx" and only work on its own address
     private val baseUrl = if (apiKey.endsWith(":fx")) "https://api-free.deepl.com" else "https://api.deepl.com"
 
+    // The quality model and custom instructions may not be offered on every plan, so a request they make fail is sent
+    // again without them, and later ones leave them out
+    private var withExtras = true
+
     override suspend fun translatePage(
         texts: List<String>,
         glossary: Map<String, String>,
@@ -29,30 +33,57 @@ class DeepLTranslator(private val apiKey: String) : BlockTranslator() {
         val terms = glossaryPattern(glossary.keys)
         val translations = glossary.mapKeys { it.key.lowercase() }
         return texts.chunked(MAX_TEXTS).flatMap { chunk ->
-            val body = buildJsonObject {
-                putJsonArray("text") { chunk.forEach { add(it.withTermsKept(terms, translations)) } }
-                put("source_lang", "EN")
-                put("target_lang", "PT-BR")
-                put("formality", "prefer_less")
-                // Each block is otherwise translated on its own. Context isn't billed
-                put("context", texts.joinToString("\n"))
-                put("tag_handling", "xml")
-                putJsonArray("ignore_tags") { add(KEEP_TAG) }
+            val replies = try {
+                request(chunk, texts, terms, translations, onRetry)
+            } catch (e: ApiException) {
+                if (!withExtras || e.status !in REJECTED_CODES) throw e
+                withExtras = false
+                request(chunk, texts, terms, translations, onRetry)
             }
-            val request = Request.Builder()
-                .url("$baseUrl/v2/translate")
-                .header("Authorization", "DeepL-Auth-Key $apiKey")
-                .post(body.toString().toRequestBody("application/json".toMediaType()))
-                .build()
-            val replies = (send(request, onRetry)["translations"] as? JsonArray).orEmpty()
-                .map { it.jsonObject["text"]?.jsonPrimitive?.contentOrNull.orEmpty().fromXml() }
             if (replies.size != chunk.size) throw IOException("$name returned ${replies.size} of ${chunk.size}")
             replies
         }
     }
 
+    private suspend fun request(
+        chunk: List<String>,
+        texts: List<String>,
+        terms: Regex?,
+        translations: Map<String, String>,
+        onRetry: (attempt: Int) -> Unit,
+    ): List<String> {
+        val body = buildJsonObject {
+            putJsonArray("text") { chunk.forEach { add(it.withTermsKept(terms, translations)) } }
+            put("source_lang", "EN")
+            put("target_lang", "PT-BR")
+            put("formality", "prefer_less")
+            // Each block is otherwise translated on its own. Context isn't billed
+            put("context", texts.joinToString("\n"))
+            put("tag_handling", "xml")
+            putJsonArray("ignore_tags") { add(KEEP_TAG) }
+            if (withExtras) {
+                put("model_type", "quality_optimized")
+                putJsonArray("custom_instructions") { CUSTOM_INSTRUCTIONS.forEach { add(it) } }
+            }
+        }
+        val request = Request.Builder()
+            .url("$baseUrl/v2/translate")
+            .header("Authorization", "DeepL-Auth-Key $apiKey")
+            .post(body.toString().toRequestBody("application/json".toMediaType()))
+            .build()
+        return (send(request, onRetry)["translations"] as? JsonArray).orEmpty()
+            .map { it.jsonObject["text"]?.jsonPrimitive?.contentOrNull.orEmpty().fromXml() }
+    }
+
     private companion object {
         const val MAX_TEXTS = 50
+        val REJECTED_CODES = setOf(400, 403)
+
+        val CUSTOM_INSTRUCTIONS = listOf(
+            "This is manga dialogue: use natural, colloquial Brazilian Portuguese as people speak it today.",
+            "Use Brazilian spelling and vocabulary, never European Portuguese forms.",
+            "Keep character names, nicknames, titles of techniques and honorifics such as -chan or -san untranslated.",
+        )
     }
 }
 

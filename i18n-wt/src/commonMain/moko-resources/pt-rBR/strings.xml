@@ -6,7 +6,7 @@
     <string name="action_translate_chapter">Traduzir capítulo</string>
     <string name="action_delete_translation">Excluir tradução</string>
     <string name="translation_failed">Não foi possível traduzir %1$s: %2$s</string>
-    <string name="translation_times">%1$s traduzido em %2$d s. Leitura das páginas: %3$d s (OCR %4$d s, detector de balões %5$d s). Tradução: %6$d s somando os lotes em paralelo</string>
+    <string name="translation_times">Traduzido em %1$.1f s. Leitura das páginas: %2$.1f s (abrir imagens %3$.1f s, OCR %4$.1f s, detector de balões %5$.1f s, achar balões %6$.1f s). Tradução: %7$.1f s, somando os lotes em paralelo</string>
     <string name="translation_error_no_api_key">Adicione uma chave de API em Configurações › Tradução</string>
     <string name="translation_error_not_downloaded">Baixe o capítulo antes de traduzir</string>
     <string name="action_retranslate">Traduzir de novo</string>

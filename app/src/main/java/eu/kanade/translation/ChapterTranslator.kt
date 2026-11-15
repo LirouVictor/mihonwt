@@ -122,6 +122,9 @@ class ChapterTranslator(
      */
     val partialTranslations = _partialTranslations.asStateFlow()
 
+    /** How long each step of the chapters translated since the app started took, by chapter id. */
+    val stepTimes = ConcurrentHashMap<Long, String>()
+
     fun start(): Boolean {
         if (isRunning || queueState.value.isEmpty()) {
             return false
@@ -332,16 +335,16 @@ class ChapterTranslator(
             _partialTranslations.update { it - chapterId }
             translation.progress = null
             translation.status = Translation.State.TRANSLATED
-            val message = context.stringResource(
+            stepTimes[chapterId] = context.stringResource(
                 WTMR.strings.translation_times,
-                translation.chapter.name,
-                times.start.elapsedNow().inWholeSeconds,
-                times.read.get() / 1000,
-                times.ocr.get() / 1000,
-                times.detect.get() / 1000,
-                times.translate.get() / 1000,
+                times.start.elapsedNow().inWholeMilliseconds.seconds(),
+                times.read.get().seconds(),
+                times.decode.get().seconds(),
+                times.ocr.get().seconds(),
+                times.detect.get().seconds(),
+                times.bubbles.get().seconds(),
+                times.translate.get().seconds(),
             )
-            withContext(Dispatchers.Main) { context.toast(message, Toast.LENGTH_LONG) }
         } catch (e: Throwable) {
             if (e is CancellationException) throw e
             logcat(LogPriority.ERROR, e)
@@ -388,7 +391,9 @@ class ChapterTranslator(
         withChapterPages(chapterDir) { index, count, fileName, openStream ->
             currentCoroutineContext().ensureActive()
             translation.updateProgress { it.copy(page = index, pages = count) }
+            val decodeStart = TimeSource.Monotonic.markNow()
             val bitmap = decodePage(openStream)
+            times.decode.addAndGet(decodeStart.elapsedNow().inWholeMilliseconds)
             try {
                 val ocrScale = bitmap.ocrScale()
                 val ocrBitmap = if (ocrScale > 1f) {
@@ -405,15 +410,19 @@ class ChapterTranslator(
                 }
                     // Single letters are kept: an "I" alone on its line would stay in English beside the translation
                     .filter { it.boundingBox != null && it.text.isNotBlank() }
+                val bubblesStart = TimeSource.Monotonic.markNow()
                 val pixels = bitmap.lightPixels()
+                times.bubbles.addAndGet(bubblesStart.elapsedNow().inWholeMilliseconds)
                 val detectStart = TimeSource.Monotonic.markNow()
                 val textBoxes = detector?.detect(bitmap)
                 times.detect.addAndGet(detectStart.elapsedNow().inWholeMilliseconds)
+                val groupStart = TimeSource.Monotonic.markNow()
                 val page = toPageTranslation(blocks, bitmap.width, bitmap.height, ocrScale, pixels, textBoxes)
                 val found = page.blocks
                 page.blocks = found.mapTo(mutableListOf()) {
                     it.inBubble(bitmap.width, bitmap.height, found, pixels) ?: it.grownIntoBubble(bitmap)
                 }
+                times.bubbles.addAndGet(groupStart.elapsedNow().inWholeMilliseconds)
                 if (page.blocks.isNotEmpty()) {
                     pages[fileName] = page
                     images?.put(fileName, bitmap.toSmallJpeg())
@@ -428,16 +437,20 @@ class ChapterTranslator(
     }
 
     /**
-     * Milliseconds a chapter spent on each step, shown when it is done to see which step to speed up. Batches run in
+     * Milliseconds a chapter spent on each step, shown in its menu to see which step to speed up. Batches run in
      * parallel with each other and with reading, so the steps add up to more than the whole.
      */
     private class Times {
         val start = TimeSource.Monotonic.markNow()
         val read = AtomicLong()
+        val decode = AtomicLong()
         val ocr = AtomicLong()
+        val bubbles = AtomicLong()
         val detect = AtomicLong()
         val translate = AtomicLong()
     }
+
+    private fun Long.seconds() = this / 1000f
 
     private var detector: BubbleDetector? = null
 

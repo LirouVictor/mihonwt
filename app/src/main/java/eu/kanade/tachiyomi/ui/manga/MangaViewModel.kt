@@ -292,8 +292,11 @@ class MangaViewModel(
                 item.copy(
                     downloadState = downloadState ?: item.downloadState,
                     translationState = translationState ?: item.translationState,
-                    translationError = translationManager.getQueuedTranslationOrNull(item.id)?.error
-                        .takeIf { translationState == Translation.State.ERROR },
+                    translationNote = when (translationState) {
+                        Translation.State.ERROR -> translationManager.getQueuedTranslationOrNull(item.id)?.error
+                        Translation.State.TRANSLATED -> translationManager.getStepTimes(item.id)
+                        else -> null
+                    },
                     selected = selected,
                 )
             },
@@ -1256,7 +1259,8 @@ sealed class ChapterList {
         val chapter: Chapter,
         val downloadState: Download.State,
         val translationState: Translation.State = Translation.State.NOT_TRANSLATED,
-        val translationError: String? = null,
+        /** Why the translation failed, or how long its steps took. */
+        val translationNote: String? = null,
         val selected: Boolean = false,
     ) : ChapterList() {
         val id = chapter.id
