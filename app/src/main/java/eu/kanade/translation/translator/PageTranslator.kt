@@ -71,13 +71,14 @@ abstract class PageTranslator {
                 message = "$name HTTP ${response.code}: " +
                     ((error?.get("message") as? JsonPrimitive)?.contentOrNull ?: body.take(200)),
                 code = (error?.get("code") as? JsonPrimitive)?.contentOrNull,
+                status = response.code,
             )
         }
         json
     }
 
-    /** An error response, with the API's own error [code] when it gives one. */
-    class ApiException(message: String, val code: String?) : IOException(message)
+    /** An error response with HTTP [status], and the API's own error [code] when it gives one. */
+    class ApiException(message: String, val code: String?, val status: Int) : IOException(message)
 
     companion object {
         /** Returns the translator for [service]. [customBaseUrl] is only used by [TranslationService.CUSTOM]. */
