@@ -7,6 +7,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.Rect
 import android.graphics.RectF
 import android.text.Layout
@@ -38,7 +39,7 @@ class TranslationRenderer(context: Context, translation: PageTranslation, var on
 
     private val boxPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
 
-    // Without antialiasing, as the soft edges of the rectangles a bubble is painted with left faint lines between them
+    // Without antialiasing, as soft edges between the rectangles a bubble is painted with left faint lines
     private val bubblePaint = Paint().apply { color = Color.WHITE }
 
     private val highlightPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = HIGHLIGHT_COLOR }
@@ -293,10 +294,13 @@ class TranslationRenderer(context: Context, translation: PageTranslation, var on
             return abs(x - centerX) <= box.width() / 2 && abs(y - centerY) <= box.height() / 2
         }
 
+        // One shape, as rectangles filled one by one leave hairline gaps where their scaled edges round apart
+        private val bubbleShape = Path().apply { bubble.forEach { addRect(it, Path.Direction.CW) } }
+
         fun bubbleContains(x: Float, y: Float): Boolean = bubble.any { it.contains(x, y) }
 
         fun drawBackground(canvas: Canvas) = canvas.withSave {
-            bubble.forEach { drawRect(it, bubblePaint) }
+            drawPath(bubbleShape, bubblePaint)
             if (bubble.isEmpty()) {
                 translate(centerX, centerY)
                 rotate(angle)
