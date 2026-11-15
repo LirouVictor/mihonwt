@@ -27,15 +27,18 @@ import kotlin.math.min
 /**
  * Draws the translation of a page over its image: each speech bubble painted white, or a white box over blocks found
  * outside one, and the translated text in the largest size that fits. Lays the text out once, in the coordinates of
- * [translation]'s image, so drawing it at any zoom only scales the canvas. With [tapToReveal], each block is only drawn
- * once tapped, leaving the original lettering to read until then.
+ * [translation]'s image, so drawing it at any zoom only scales the canvas. With [onTap], nothing is drawn: the page
+ * keeps its original lettering, and [translationAt] gives the translation of a tapped bubble to show apart.
  */
-class TranslationRenderer(context: Context, translation: PageTranslation, private val tapToReveal: Boolean = false) {
+class TranslationRenderer(context: Context, translation: PageTranslation, private val onTap: Boolean = false) {
 
     /** Width of the image the blocks are placed on. */
     val imageWidth = translation.imgWidth
 
     private val boxPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
+
+    // Without antialiasing, as the soft edges of the rectangles a bubble is painted with left faint lines between them
+    private val bubblePaint = Paint().apply { color = Color.WHITE }
 
     private val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.BLACK
@@ -57,27 +60,20 @@ class TranslationRenderer(context: Context, translation: PageTranslation, privat
 
     /** Draws onto [canvas] with the image scaled by [scale] and its top left corner at [left], [top]. */
     fun draw(canvas: Canvas, scale: Float, left: Float, top: Float) {
+        if (onTap) return
         canvas.withSave {
             translate(left, top)
             scale(scale, scale)
             // Bubbles first, as blocks sharing one would otherwise paint over each other's text
-            val shown = if (tapToReveal) blocks.filter { it in revealed } else blocks
-            shown.forEach { it.drawBackground(this) }
-            shown.forEach { it.drawText(this) }
+            blocks.forEach { it.drawBackground(this) }
+            blocks.forEach { it.drawText(this) }
         }
     }
 
-    private val revealed = mutableSetOf<Block>()
-
-    /**
-     * Shows or hides again the translation of the block at [x], [y] on the image, when drawn only on tap. Returns
-     * whether there was one.
-     */
-    fun toggleAt(x: Float, y: Float): Boolean {
-        if (!tapToReveal) return false
-        val block = blocks.firstOrNull { it.contains(x, y) } ?: return false
-        if (!revealed.remove(block)) revealed.add(block)
-        return true
+    /** Returns the translation of the block at [x], [y] on the image when translations are shown on tap. */
+    fun translationAt(x: Float, y: Float): String? {
+        if (!onTap) return null
+        return blocks.firstOrNull { it.contains(x, y) }?.translation
     }
 
     private fun layOut(block: TranslationBlock): Block {
@@ -91,20 +87,34 @@ class TranslationRenderer(context: Context, translation: PageTranslation, privat
         // Text wider than its box ran into the art and the next speech bubble. A box found in a bubble is already
         // clear of its outline
         val padding = if (block.bubble.isEmpty()) 1f else 0f
-        val box = RectF(0f, 0f, width + padding * symWidth / 2, height + padding * symHeight / 2)
-        val textWidth = box.width().toInt()
-        val textHeight = box.height()
+        val boxWidth = width + padding * symWidth / 2
+        val boxHeight = height + padding * symHeight / 2
+        val bubble = block.bubble.map { RectF(it.x, it.y, it.x + it.width, it.y + it.height) }
+        // A word too long for the box may take some of the bubble's width beside it, but never the art's
+        val bubbleWidth = bubble.maxOfOrNull { it.right }?.minus(bubble.minOf { it.left })
+        val maxWidth = min(boxWidth * MAX_WIDENING, bubbleWidth ?: Float.MAX_VALUE).coerceAtLeast(boxWidth)
+        val translation = block.displayedTranslation()
+        // Lettering stacked a letter per line in a tall, narrow bubble stays that way
+        val isStacked = !isSideways && height >= width * MIN_STACKED_RATIO && translation.none(Char::isWhitespace)
+        // Never larger than the original lettering, which a short reply in a big bubble would otherwise dwarf
+        val text = fitText(
+            if (isStacked) translation.toList().joinToString("\n") else translation,
+            boxWidth.toInt(),
+            maxWidth.toInt(),
+            boxHeight,
+            symHeight / capHeightRatio,
+        )
+        // A box outside a bubble grows with text that had to be widened, so the white still covers it
+        val box = RectF(0f, 0f, max(boxWidth, text.width.toFloat()), boxHeight)
         return Block(
             centerX = block.x + block.width / 2,
             centerY = block.y + block.height / 2,
             angle = block.angle,
             box = box.apply { offset(-centerX(), -centerY()) },
-            bubble = block.bubble.map { RectF(it.x, it.y, it.x + it.width, it.y + it.height) },
+            bubble = bubble,
             cornerRadius = symHeight / 4,
-            // Translations of chapters saved before line breaks were dropped still carry the English ones, and a
-            // longer Portuguese line kept whole forced a tiny text size
-            // Never larger than the original lettering, which a short reply in a big bubble would otherwise dwarf
-            text = fitText(block.displayedTranslation(), textWidth, textHeight, symHeight / capHeightRatio),
+            translation = translation,
+            text = text,
         )
     }
 
@@ -122,9 +132,9 @@ class TranslationRenderer(context: Context, translation: PageTranslation, privat
     /**
      * Lays [text] out in the largest whole text size that fits [width] by [height], up to [maxSize]. Words are kept
      * whole unless hyphenating them allows a much larger size, as in a narrow bubble with a long word. Words are never
-     * cut between letters: when the box is too narrow for them at a readable size, the text spills out sideways.
+     * cut between letters: when the box is too narrow for them at a readable size, the text widens up to [maxWidth].
      */
-    private fun fitText(text: String, width: Int, height: Float, maxSize: Float): StaticLayout {
+    private fun fitText(text: String, width: Int, maxWidth: Int, height: Float, maxSize: Float): StaticLayout {
         val words = text.split(WORD_BREAK)
         val whole = largestFitting(text, { width }, height, maxSize, hyphenate = false) { size, _ ->
             textPaint.textSize = size
@@ -135,8 +145,10 @@ class TranslationRenderer(context: Context, translation: PageTranslation, privat
         }
         val best = if (whole.first >= hyphenated.first * MIN_WHOLE_WORD_SIZE) whole else hyphenated
         if (best.first >= maxSize * MIN_READABLE_SIZE) return best.second
-        val widenedWidth = { size: Float -> max(width, widestWord(words, size)) }
-        val widened = largestFitting(text, widenedWidth, height, maxSize, hyphenate = false) { _, _ -> true }
+        val widenedWidth = { size: Float -> widestWord(words, size).coerceIn(width, maxWidth) }
+        val widened = largestFitting(text, widenedWidth, height, maxSize, hyphenate = false) { size, _ ->
+            widestWord(words, size) <= maxWidth
+        }
         return if (widened.first > best.first) widened.second else best.second
     }
 
@@ -204,6 +216,7 @@ class TranslationRenderer(context: Context, translation: PageTranslation, privat
         val box: RectF,
         val bubble: List<RectF>,
         val cornerRadius: Float,
+        val translation: String,
         val text: StaticLayout,
     ) {
         fun contains(x: Float, y: Float): Boolean {
@@ -212,7 +225,7 @@ class TranslationRenderer(context: Context, translation: PageTranslation, privat
         }
 
         fun drawBackground(canvas: Canvas) = canvas.withSave {
-            bubble.forEach { drawRect(it, boxPaint) }
+            bubble.forEach { drawRect(it, bubblePaint) }
             if (bubble.isEmpty()) {
                 translate(centerX, centerY)
                 rotate(angle)
@@ -239,6 +252,12 @@ class TranslationRenderer(context: Context, translation: PageTranslation, privat
         const val MIN_READABLE_SIZE = 0.6f
 
         const val MIN_SYLLABLE = 3
+
+        /** How much wider than its box text may grow when its words don't fit at a readable size. */
+        const val MAX_WIDENING = 1.4f
+
+        /** Height to width ratio from which a box holding a single word is lettered a letter per line. */
+        const val MIN_STACKED_RATIO = 3f
 
         /** Share of capital letters above which the original counts as lettered in capitals, despite OCR misreads. */
         const val MIN_CAPITALS = 0.8f

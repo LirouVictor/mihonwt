@@ -95,3 +95,6 @@
 # ML Kit creates its components by reflection from names in the manifest, and the rule shipped with firebase-components
 # keeps the classes but, under R8's full mode, not their constructors
 -keep class * implements com.google.firebase.components.ComponentRegistrar { public <init>(); }
+
+# ONNX Runtime's native code creates and calls its Java classes by name, which its own rules only cover for telemetry
+-keep class ai.onnxruntime.** { *; }

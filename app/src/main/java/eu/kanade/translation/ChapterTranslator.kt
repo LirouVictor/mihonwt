@@ -59,6 +59,10 @@ import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import logcat.LogPriority
@@ -264,40 +268,50 @@ class ChapterTranslator(
                     }.also { recognized.close() }
                 }
                 // Batches go out as soon as OCR has read their pages, so the reader shows the first pages while the
-                // rest are still being read. Small batches also keep each reply within the model's output limit
-                val batch = mutableMapOf<String, PageTranslation>()
+                // rest are still being read. Small batches also keep each reply within the model's output limit, and a
+                // few at a time keep a chapter from waiting on each reply in turn
                 val onRetry: (Int) -> Unit = { attempt ->
                     translation.updateProgress { progress -> progress.copy(retries = attempt) }
                 }
-                suspend fun translateBatch() {
+                val inFlight = Semaphore(PARALLEL_BATCHES)
+                val results = Mutex()
+                suspend fun translateBatch(batch: Map<String, PageTranslation>) = inFlight.withPermit {
                     val title = translation.manga.title
+                    val known = results.withLock { glossary.toMap() }
                     var terms = emptyMap<String, String>()
                     var answered = emptySet<String>()
                     if (findsText) {
                         val (found, foundTerms) = (translator as LanguageModelTranslator)
-                            .findText(batch, title, images, glossary, onRetry)
+                            .findText(batch, title, images, known, onRetry)
                         found.forEach { (name, texts) -> batch.getValue(name).useText(chapterDir, name, texts) }
                         terms = foundTerms
                         answered = found.keys
                     }
                     // Pages the model skipped still get the text OCR grouped translated
                     val left = batch.filterKeys { it !in answered }
-                    if (left.isNotEmpty()) terms = terms + translator.translate(left, title, images, glossary, onRetry)
-                    terms.forEach { (term, translated) ->
-                        if (glossary.size < MAX_GLOSSARY_TERMS) glossary.putIfAbsent(term, translated)
+                    if (left.isNotEmpty()) terms = terms + translator.translate(left, title, images, known, onRetry)
+                    results.withLock {
+                        terms.forEach { (term, translated) ->
+                            if (glossary.size < MAX_GLOSSARY_TERMS) glossary.putIfAbsent(term, translated)
+                        }
+                        done.putAll(batch)
+                        translation.updateProgress { it.copy(translated = done.size, retries = 0) }
+                        _partialTranslations.update { it + (chapterId to done.toMap()) }
                     }
-                    done.putAll(batch)
-                    batch.clear()
-                    translation.updateProgress { it.copy(translated = done.size, retries = 0) }
-                    _partialTranslations.update { it + (chapterId to done.toMap()) }
                 }
+                val alreadyDone = done.keys.toSet()
+                var batch = mutableMapOf<String, PageTranslation>()
                 for ((name, page) in recognized) {
                     translation.updateProgress { it.copy(toTranslate = it.toTranslate + 1) }
-                    if (name in done) continue
+                    if (name in alreadyDone) continue
                     batch[name] = page
-                    if (batch.size == BATCH_SIZE) translateBatch()
+                    if (batch.size == BATCH_SIZE) {
+                        val full = batch
+                        launch { translateBatch(full) }
+                        batch = mutableMapOf()
+                    }
                 }
-                if (batch.isNotEmpty()) translateBatch()
+                if (batch.isNotEmpty()) launch { translateBatch(batch) }
                 ocr.await()
             }
 
@@ -531,6 +545,7 @@ class ChapterTranslator(
 
     private companion object {
         const val BATCH_SIZE = 5
+        const val PARALLEL_BATCHES = 3
         const val MODEL_IMAGE_SIZE = 1024
         const val MODEL_IMAGE_QUALITY = 75
 

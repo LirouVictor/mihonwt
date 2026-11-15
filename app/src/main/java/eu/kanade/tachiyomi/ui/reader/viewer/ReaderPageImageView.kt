@@ -2,21 +2,27 @@ package eu.kanade.tachiyomi.ui.reader.viewer
 
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.ColorFilter
 import android.graphics.Paint
 import android.graphics.PointF
 import android.graphics.RectF
 import android.graphics.drawable.Animatable
 import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
+import android.graphics.drawable.GradientDrawable
 import android.util.AttributeSet
 import android.view.GestureDetector
+import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.FrameLayout
 import android.widget.ImageView
+import android.widget.PopupWindow
+import android.widget.TextView
 import androidx.annotation.AttrRes
 import androidx.annotation.CallSuper
 import androidx.annotation.StyleRes
@@ -368,30 +374,62 @@ open class ReaderPageImageView @JvmOverloads constructor(
     }
 
     /**
-     * Shows or hides the translation of the bubble at [screenX], [screenY] when translations are shown on tap.
+     * Shows the translation of the bubble at [screenX], [screenY] in a popup when translations are shown on tap.
      * Returns whether there was one there, so the tap isn't also taken as navigation.
      */
-    fun toggleTranslationAt(screenX: Float, screenY: Float): Boolean {
+    fun showTranslationAt(screenX: Float, screenY: Float): Boolean {
         val translation = translation?.takeIf { isTranslationShown } ?: return false
         val view = pageView ?: return false
         val location = IntArray(2).also { view.getLocationOnScreen(it) }
         val x = screenX - location[0]
         val y = screenY - location[1]
         if (x < 0 || y < 0 || x > view.width || y > view.height) return false
-        val toggled = when (view) {
+        val text = when (view) {
             is SubsamplingScaleImageView -> {
                 val source = view.takeIf { it.isReady }?.viewToSourceCoord(x, y) ?: return false
                 val scale = translation.imageWidth / view.sWidth
-                translation.toggleAt(source.x * scale, source.y * scale)
+                translation.translationAt(source.x * scale, source.y * scale)
             }
             is WebtoonStripImageView -> {
                 val scale = translation.imageWidth / view.width
-                translation.toggleAt(x * scale, y * scale)
+                translation.translationAt(x * scale, y * scale)
             }
-            else -> false
+            else -> null
+        } ?: return false
+        showTranslationPopup(text, screenX.toInt(), screenY.toInt())
+        return true
+    }
+
+    private fun showTranslationPopup(text: String, screenX: Int, screenY: Int) {
+        val density = resources.displayMetrics.density
+        val padding = (12 * density).toInt()
+        val label = TextView(context).apply {
+            this.text = text
+            setTextColor(Color.BLACK)
+            textSize = 16f
+            setPadding(padding, padding, padding, padding)
+            background = GradientDrawable().apply {
+                setColor(Color.WHITE)
+                cornerRadius = 8 * density
+            }
         }
-        if (toggled) view.invalidate()
-        return toggled
+        val maxWidth = (resources.displayMetrics.widthPixels * 0.8f).toInt()
+        label.measure(
+            View.MeasureSpec.makeMeasureSpec(maxWidth, View.MeasureSpec.AT_MOST),
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+        )
+        val screen = resources.displayMetrics
+        val left = (screenX - label.measuredWidth / 2)
+            .coerceIn(0, (screen.widthPixels - label.measuredWidth).coerceAtLeast(0))
+        // Above the finger, or below it near the top of the screen, so the popup doesn't hide the bubble's start
+        val gap = (24 * density).toInt()
+        val top = (screenY - label.measuredHeight - gap).takeIf { it >= 0 } ?: (screenY + gap)
+        // Focusable, so the tap that closes it isn't also taken as navigation
+        PopupWindow(label, label.measuredWidth, label.measuredHeight, true).apply {
+            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            elevation = 4 * density
+            showAtLocation(this@ReaderPageImageView, Gravity.NO_GRAVITY, left, top)
+        }
     }
 
     // Drawn with the page so it moves with every zoom and pan step

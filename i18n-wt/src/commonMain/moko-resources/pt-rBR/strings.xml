@@ -29,7 +29,7 @@
     <string name="pref_find_text_on_images">Achar balões com a IA</string>
     <string name="pref_find_text_on_images_summary">O modelo acha sozinho os balões e legendas de cada página, deixando de fora onomatopeias e placas. Desligue para traduzir o texto agrupado pelo OCR do app.</string>
     <string name="pref_tap_to_reveal">Traduzir só o balão tocado</string>
-    <string name="pref_tap_to_reveal_summary">As páginas ficam com o texto original, e tocar num balão mostra a tradução dele, ou esconde de novo. Vale para as páginas abertas depois da mudança.</string>
+    <string name="pref_tap_to_reveal_summary">As páginas ficam com o texto original, e tocar num balão mostra a tradução dele numa janelinha, que fecha ao tocar fora. Vale para as páginas abertas depois da mudança.</string>
     <string name="pref_detect_bubbles">Detectar balões no aparelho</string>
     <string name="pref_detect_bubbles_summary">Agrupa o texto lido pelo OCR pelos balões que um detector acha, deixando de fora as onomatopeias. Baixa um modelo de 11 MB na primeira vez. Não é usado enquanto a IA acha os balões.</string>
     <string name="translation_detector_unavailable">Detector de balões indisponível, agrupando sem ele: %1$s</string>
