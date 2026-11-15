@@ -23,8 +23,8 @@ import kotlin.time.Duration.Companion.seconds
 /** Translates the text blocks found on a chapter's pages. */
 abstract class PageTranslator {
 
-    /** Shown in error messages. */
-    protected abstract val name: String
+    /** Shown in error messages and in the step times of a chapter. */
+    abstract val name: String
 
     // Not NetworkHelper's client: its verbose logging would print the API key header, and its read timeout is too
     // short for a whole chapter.

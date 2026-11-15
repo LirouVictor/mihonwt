@@ -238,6 +238,9 @@ class ChapterTranslator(
             translation.status = Translation.State.TRANSLATING
             translation.progress = null
             val translator = createTranslator()
+            val service = translationPreferences.service.get()
+            val translatedWith = translator.name +
+                translationPreferences.model(service).get().takeIf { service.hasModels }?.let { " ($it)" }.orEmpty()
             val mangaDir = provider.getMangaDir(translation.manga.title, translation.source)
             val chapterDir = downloadProvider.findChapterDir(
                 translation.chapter.name,
@@ -337,6 +340,7 @@ class ChapterTranslator(
             translation.progress = null
             stepTimes[chapterId] = context.stringResource(
                 WTMR.strings.translation_times,
+                translatedWith,
                 times.start.elapsedNow().inWholeMilliseconds.seconds(),
                 times.read.get().seconds(),
                 times.decode.get().seconds(),
