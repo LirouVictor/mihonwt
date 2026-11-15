@@ -98,8 +98,11 @@ class TranslationRenderer(context: Context, translation: PageTranslation, privat
         var left = rows.maxOf { it.x }
         var right = rows.minOf { it.x + it.width }
         blocks.filter { it !== block && it.y < bottom && it.y + it.height > top }.forEach { other ->
-            if (other.x + other.width / 2 < centerX) left = max(left, other.x + other.width)
-            else right = min(right, other.x)
+            if (other.x + other.width / 2 < centerX) {
+                left = max(left, other.x + other.width)
+            } else {
+                right = min(right, other.x)
+            }
         }
         val margin = block.symHeight / 2
         return max(block.width, 2 * (min(centerX - left, right - centerX) - margin))
