@@ -1,0 +1,15 @@
+{
+  "uniqueId": "huggingface.co:ogkalu:comic-text-and-bubble-detector",
+  "artifactVersion": "16e8a62",
+  "name": "Comic text and bubble detector",
+  "description": "Model that finds speech bubbles and captions for translation, downloaded on first use.",
+  "website": "https://huggingface.co/ogkalu/comic-text-and-bubble-detector",
+  "developers": [
+    {
+      "name": "ogkalu"
+    }
+  ],
+  "licenses": [
+    "Apache-2.0"
+  ]
+}

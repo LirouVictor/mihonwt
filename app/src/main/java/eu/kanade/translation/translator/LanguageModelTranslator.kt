@@ -101,8 +101,14 @@ abstract class LanguageModelTranslator : PageTranslator() {
                 putJsonArray(name) { pages.getValue(name).blocks.forEach { add(it.text.joinLines()) } }
             }
         }
+        val prompt = systemPrompt(FIND_TEXT_PROMPT, series, glossary)
         val output = try {
-            request(systemPrompt(FIND_TEXT_PROMPT, series, glossary), input.toString(), pageImages, onRetry)
+            try {
+                request(prompt, input.toString(), pageImages, onRetry, FIND_TEXT_SCHEMA)
+            } catch (e: InvalidReplyException) {
+                // Long replies of nested boxes now and then come out malformed even in JSON mode
+                request(prompt, input.toString(), pageImages, onRetry, FIND_TEXT_SCHEMA)
+            }
         } catch (e: TruncatedReplyException) {
             if (pageImages.size < 2) throw e
             val halves = pageImages.keys.chunked((pageImages.size + 1) / 2).map { names ->
@@ -111,12 +117,19 @@ abstract class LanguageModelTranslator : PageTranslator() {
             return halves.fold(emptyMap<String, List<FoundText>>()) { found, half -> found + half.first } to
                 halves.fold(emptyMap()) { terms, half -> terms + half.second }
         }
-        val found = pageImages.keys.mapNotNull { name ->
-            val texts = output[name] as? JsonArray ?: return@mapNotNull null
+        val found = (output["pages"] as? JsonArray).orEmpty().filterIsInstance<JsonObject>().mapNotNull { entry ->
+            val name = (entry["page"] as? JsonPrimitive)?.contentOrNull?.takeIf { it in pageImages }
+                ?: return@mapNotNull null
             val page = pages.getValue(name)
+            val texts = entry["texts"] as? JsonArray ?: return@mapNotNull null
             name to texts.mapNotNull { (it as? JsonObject)?.toFoundText(page.imgWidth, page.imgHeight) }
         }.toMap()
-        return found to output.glossary()
+        val terms = (output["glossary"] as? JsonArray).orEmpty().filterIsInstance<JsonObject>().mapNotNull { entry ->
+            val term = (entry["term"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
+            val translation = (entry["translation"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
+            term to translation
+        }.toMap()
+        return found to terms
     }
 
     private fun JsonObject.toFoundText(width: Float, height: Float): FoundText? {
@@ -152,12 +165,13 @@ abstract class LanguageModelTranslator : PageTranslator() {
         input: String,
         images: Map<String, ByteArray>,
         onRetry: (attempt: Int) -> Unit,
+        schema: JsonObject? = null,
     ): JsonObject {
-        val reply = complete(systemPrompt, input, images, onRetry)
+        val reply = complete(systemPrompt, input, images, onRetry, schema)
         // Without a JSON mode, models may wrap the object in a code block or a sentence
         return runCatching {
             Json.parseToJsonElement(reply.substring(reply.indexOf('{'), reply.lastIndexOf('}') + 1)).jsonObject
-        }.getOrElse { throw IOException("$name returned invalid JSON: ${reply.take(200)}") }
+        }.getOrElse { throw InvalidReplyException(name, reply) }
     }
 
     private fun countMissing(pages: Map<String, PageTranslation>, output: JsonObject): Int {
@@ -170,13 +184,21 @@ abstract class LanguageModelTranslator : PageTranslator() {
     /** Returns the names of the models this API key can use, to pick one from. */
     abstract suspend fun models(): List<String>
 
-    /** Returns the model's reply to [userText], which should be a JSON object, with [images] if it [readsImages]. */
+    /**
+     * Returns the model's reply to [userText], which should be a JSON object, with [images] if it [readsImages], and
+     * following [schema], in Gemini's form, if the API can enforce one.
+     */
     protected abstract suspend fun complete(
         systemPrompt: String,
         userText: String,
         images: Map<String, ByteArray>,
         onRetry: (attempt: Int) -> Unit,
+        schema: JsonObject? = null,
     ): String
+
+    /** Thrown when the reply isn't a JSON object. */
+    class InvalidReplyException(name: String, reply: String) :
+        IOException("$name returned invalid JSON: ${reply.take(200)}")
 
     /** Thrown when the reply hit the model's output limit, so a smaller batch may fit. */
     class TruncatedReplyException(name: String) :
@@ -191,6 +213,22 @@ abstract class LanguageModelTranslator : PageTranslator() {
         // Gemini gives boxes as [ymin, xmin, ymax, xmax] scaled to 0-1000, the form it was trained to detect in
         private const val BOX_SCALE = 1000f
 
+        private val FIND_TEXT_SCHEMA = Json.parseToJsonElement(
+            """
+            {"type":"OBJECT","required":["pages","glossary"],"properties":{
+              "pages":{"type":"ARRAY","items":{"type":"OBJECT","required":["page","texts"],"properties":{
+                "page":{"type":"STRING"},
+                "texts":{"type":"ARRAY","items":{"type":"OBJECT","required":["box_2d","text","translation"],
+                  "propertyOrdering":["box_2d","text","translation"],"properties":{
+                  "box_2d":{"type":"ARRAY","items":{"type":"INTEGER"}},
+                  "text":{"type":"STRING"},
+                  "translation":{"type":"STRING"}}}}}}},
+              "glossary":{"type":"ARRAY","items":{"type":"OBJECT","required":["term","translation"],"properties":{
+                "term":{"type":"STRING"},
+                "translation":{"type":"STRING"}}}}}}
+            """,
+        ).jsonObject
+
         private val FIND_TEXT_PROMPT = """
             You translate comics (manga, manhwa, manhua) from their page images.
 
@@ -202,11 +240,9 @@ abstract class LanguageModelTranslator : PageTranslator() {
 
             Give each bubble or box once, with all of its text, even when its lines are far apart. Two bubbles that touch are two entries.
 
-            For each, return "box_2d": the box around its letters as [ymin, xmin, ymax, xmax], scaled from 0 to 1000 over the page image; "text": its original text; and "translation".
+            Under "pages", return an entry for each page with its file name as "page" and, under "texts", each bubble or box with "box_2d": the box around its letters as [ymin, xmin, ymax, xmax], scaled from 0 to 1000 over the page image; "text": its original text; and "translation".
 
-            Also return, under the key "$GLOSSARY_KEY", an object mapping each name and recurring term on these pages (characters, places, attacks, powers, invented words) to how you translated it.
-
-            Return {[filename:string]:[{"box_2d":[number,number,number,number],"text":string,"translation":string}], "$GLOSSARY_KEY":{[term:string]:string}}
+            Under "glossary", return each name and recurring term on these pages (characters, places, attacks, powers, invented words) as "term", with how you translated it as "translation".
         """.trimIndent()
 
         private val SYSTEM_PROMPT = """

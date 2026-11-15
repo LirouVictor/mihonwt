@@ -87,6 +87,53 @@ fun blocksOfFoundText(found: List<FoundText>, words: List<Word>): List<Translati
 
 private fun List<Float>.median(): Float? = sorted().getOrNull(size / 2)
 
+/** A box around text that a detector found on a page, at page coordinates. */
+class TextBox(val left: Float, val top: Float, val right: Float, val bottom: Float)
+
+/**
+ * Returns the text boxes among a detector's [boxes], given as left, top, right, bottom, with their [labels] and
+ * [scores]: text in a bubble, or text outside one when the detector is surer, as it then also takes art for text.
+ * Boxes around whole bubbles are left out, as the text inside them is found on its own.
+ */
+fun textBoxes(labels: LongArray, boxes: Array<FloatArray>, scores: FloatArray): List<TextBox> {
+    return labels.indices.mapNotNull { i ->
+        val minScore = when (labels[i]) {
+            LABEL_TEXT_IN_BUBBLE -> MIN_TEXT_IN_BUBBLE_SCORE
+            LABEL_TEXT_OUTSIDE_BUBBLE -> MIN_TEXT_OUTSIDE_BUBBLE_SCORE
+            else -> return@mapNotNull null
+        }
+        val (left, top, right, bottom) = boxes[i].toList()
+        TextBox(left, top, right, bottom).takeIf { scores[i] >= minScore && right > left && bottom > top }
+    }
+}
+
+/**
+ * Groups [words] into one block per box a detector found around a bubble's text or a caption. Words outside every box,
+ * like sound effects, are dropped, and so are boxes without words.
+ */
+fun blocksInBoxes(boxes: List<TextBox>, words: List<Word>): List<TranslationBlock> {
+    val wordsByBox = words.groupBy { word ->
+        val cx = word.x + word.width / 2
+        val cy = word.y + word.height / 2
+        val margin = word.letterHeight * FOUND_BOX_MARGIN
+        boxes
+            .filter { cx in it.left - margin..it.right + margin && cy in it.top - margin..it.bottom + margin }
+            // Detectors give the same text more than once, in boxes of different sizes
+            .minByOrNull { (it.right - it.left) * (it.bottom - it.top) }
+    }
+    return boxes
+        .mapNotNull { box -> wordsByBox[box]?.let(::joinedBlock) }
+        .filterNot { it.isArt() }
+}
+
+// Lines are joined by line breaks, top to bottom, so words hyphenated across them are joined back
+private fun joinedBlock(words: List<Word>): TranslationBlock {
+    return words.groupBy { it.line }.values
+        .map { line -> line.sortedBy { it.x }.toBlock() }
+        .sortedBy { it.y }
+        .reduce(::mergeTextBlock)
+}
+
 /**
  * Whether a bubble's outline runs between [left] and [right], as where two bubbles touch: a dark stroke across the
  * height of the words with light space on both sides of it, which lettering never leaves between two words.
@@ -236,6 +283,11 @@ private const val MIN_OUTLINE_SHARE = 0.6f
 private const val FOUND_BOX_MARGIN = 1f
 
 private const val FALLBACK_LINES = 3f
+
+private const val LABEL_TEXT_IN_BUBBLE = 1L
+private const val LABEL_TEXT_OUTSIDE_BUBBLE = 2L
+private const val MIN_TEXT_IN_BUBBLE_SCORE = 0.3f
+private const val MIN_TEXT_OUTSIDE_BUBBLE_SCORE = 0.5f
 
 private const val MIN_LETTERS_TO_TRIM = 3
 private const val MAX_LETTER_HEIGHT = 1.4f

@@ -4,6 +4,7 @@
 package eu.kanade.translation.translator
 
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
@@ -39,6 +40,7 @@ class GeminiTranslator(
         userText: String,
         images: Map<String, ByteArray>,
         onRetry: (attempt: Int) -> Unit,
+        schema: JsonObject?,
     ): String {
         val body = buildJsonObject {
             putJsonObject("systemInstruction") {
@@ -63,6 +65,7 @@ class GeminiTranslator(
             }
             putJsonObject("generationConfig") {
                 put("responseMimeType", "application/json")
+                if (schema != null) put("responseSchema", schema)
             }
             putJsonArray("safetySettings") {
                 SAFETY_CATEGORIES.forEach { category ->

@@ -1,6 +1,7 @@
 package eu.kanade.translation.translator
 
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -29,6 +30,7 @@ class OpenAiCompatibleTranslator(
         userText: String,
         images: Map<String, ByteArray>,
         onRetry: (attempt: Int) -> Unit,
+        schema: JsonObject?,
     ): String {
         val json = try {
             send(request(systemPrompt, userText, jsonMode = true), onRetry)

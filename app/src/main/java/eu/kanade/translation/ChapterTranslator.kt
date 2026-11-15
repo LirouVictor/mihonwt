@@ -24,9 +24,12 @@ import eu.kanade.translation.model.FoundText
 import eu.kanade.translation.model.PageTranslation
 import eu.kanade.translation.model.Translation
 import eu.kanade.translation.model.TranslationBlock
+import eu.kanade.translation.recognizer.BubbleDetector
 import eu.kanade.translation.recognizer.Letter
 import eu.kanade.translation.recognizer.LightPixels
+import eu.kanade.translation.recognizer.TextBox
 import eu.kanade.translation.recognizer.TextRecognizer
+import eu.kanade.translation.recognizer.blocksInBoxes
 import eu.kanade.translation.recognizer.blocksOfFoundText
 import eu.kanade.translation.recognizer.bubbleBlocks
 import eu.kanade.translation.recognizer.grownIntoBubble
@@ -239,6 +242,9 @@ class ChapterTranslator(
             val done = partialTranslations.value[chapterId].orEmpty().toMutableMap()
             val images = recognizedImages.getOrPut(chapterId) { ConcurrentHashMap() }
             val glossary = provider.getGlossary(mangaDir).toMutableMap()
+            val findsText = translator is LanguageModelTranslator &&
+                translator.readsImages &&
+                translationPreferences.findTextOnImages.get()
             val pages = coroutineScope {
                 val recognized = Channel<Pair<String, PageTranslation>>(Channel.UNLIMITED)
                 val ocr = async {
@@ -250,7 +256,8 @@ class ChapterTranslator(
                         cached
                     } else {
                         val pageImages = images.takeIf { translator.readsImages }
-                        recognizeChapter(chapterDir, translation, pageImages) { name, page ->
+                        val detector = bubbleDetector().takeUnless { findsText }
+                        recognizeChapter(chapterDir, translation, pageImages, detector) { name, page ->
                             recognized.send(name to page)
                         }
                             .also { recognizedChapters[chapterId] = it }
@@ -262,9 +269,6 @@ class ChapterTranslator(
                 val onRetry: (Int) -> Unit = { attempt ->
                     translation.updateProgress { progress -> progress.copy(retries = attempt) }
                 }
-                val findsText = translator is LanguageModelTranslator &&
-                    translator.readsImages &&
-                    translationPreferences.findTextOnImages.get()
                 suspend fun translateBatch() {
                     val title = translation.manga.title
                     var terms = emptyMap<String, String>()
@@ -344,6 +348,7 @@ class ChapterTranslator(
         chapterDir: UniFile,
         translation: Translation,
         images: MutableMap<String, ByteArray>?,
+        detector: BubbleDetector?,
         onPage: suspend (String, PageTranslation) -> Unit,
     ): Map<String, PageTranslation> {
         val pages = mutableMapOf<String, PageTranslation>()
@@ -366,7 +371,8 @@ class ChapterTranslator(
                     // Single letters are kept: an "I" alone on its line would stay in English beside the translation
                     .filter { it.boundingBox != null && it.text.isNotBlank() }
                 val pixels = bitmap.lightPixels()
-                val page = toPageTranslation(blocks, bitmap.width, bitmap.height, ocrScale, pixels)
+                val textBoxes = detector?.detect(bitmap)
+                val page = toPageTranslation(blocks, bitmap.width, bitmap.height, ocrScale, pixels, textBoxes)
                 val found = page.blocks
                 page.blocks = found.mapTo(mutableListOf()) {
                     it.inBubble(bitmap.width, bitmap.height, found, pixels) ?: it.grownIntoBubble(bitmap)
@@ -382,6 +388,29 @@ class ChapterTranslator(
             translation.updateProgress { it.copy(page = index + 1, pages = count) }
         }
         return pages
+    }
+
+    private var detector: BubbleDetector? = null
+
+    /**
+     * Returns the bubble detector when it is turned on, loading it the first time. When it can't be loaded, as without
+     * a connection for the first download, says why and returns null, so the chapter is grouped without it.
+     */
+    private suspend fun bubbleDetector(): BubbleDetector? {
+        if (!translationPreferences.detectBubbles.get()) return null
+        detector?.let { return it }
+        return try {
+            BubbleDetector.load(context).also { detector = it }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            logcat(LogPriority.ERROR, e)
+            val message = context.stringResource(
+                WTMR.strings.translation_detector_unavailable,
+                e.message ?: e.toString(),
+            )
+            withContext(Dispatchers.Main) { context.toast(message, Toast.LENGTH_LONG) }
+            null
+        }
     }
 
     /**
@@ -470,6 +499,7 @@ class ChapterTranslator(
         height: Int,
         scale: Float,
         pixels: LightPixels,
+        textBoxes: List<TextBox>?,
     ): PageTranslation {
         var lineNumber = 0
         val words = blocks.flatMap { block ->
@@ -491,7 +521,8 @@ class ChapterTranslator(
             }
         }
         return PageTranslation(
-            blocks = bubbleBlocks(words, pixels).toMutableList(),
+            blocks = textBoxes?.let { blocksInBoxes(it, words) }?.toMutableList()
+                ?: bubbleBlocks(words, pixels).toMutableList(),
             imgWidth = width.toFloat(),
             imgHeight = height.toFloat(),
             words = words,

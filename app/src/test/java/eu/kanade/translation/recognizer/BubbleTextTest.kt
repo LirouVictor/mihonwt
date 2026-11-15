@@ -93,4 +93,22 @@ class BubbleTextTest {
             },
         )
     }
+
+    @Test
+    fun `detections keep text boxes sure enough and drop whole bubbles`() {
+        val boxes = textBoxes(
+            labels = longArrayOf(0, 1, 1, 2, 2),
+            boxes = Array(5) { floatArrayOf(0f, 0f, 10f, 10f) },
+            scores = floatArrayOf(0.9f, 0.9f, 0.2f, 0.4f, 0.6f),
+        )
+        assertEquals(2, boxes.size)
+    }
+
+    @Test
+    fun `words are grouped by the detected box around them, in lines`() {
+        val words = line(0f, "DONT" to 0f, "GOT" to 40f) + line(16f, "WAN-" to 0f, "IT!" to 40f) +
+            line(200f, "BOOM" to 0f)
+        val boxes = listOf(TextBox(0f, 0f, 32f, 29f), TextBox(72f, 0f, 96f, 29f), TextBox(0f, -5f, 100f, 40f))
+        assertEquals(listOf("DONT\nWAN-", "GOT\nIT!"), blocksInBoxes(boxes, words).map { it.text })
+    }
 }
