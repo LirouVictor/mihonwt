@@ -124,17 +124,13 @@ class TranslationRenderer(context: Context, translation: PageTranslation, privat
     }
 
     /**
-     * Returns the translation of the bubble at [x], [y] on the image when translations are shown on tap, with those of
-     * the bubbles joined to it, which share one painted area, from right to left as manga is read.
+     * Returns the translation of the highlighted text at [x], [y] on the image when translations are shown on tap, or
+     * else of the bubble there, so that each of the bubbles joined into one painted area shows its own text.
      */
     fun translationAt(x: Float, y: Float): String? {
         if (!onTap) return null
-        val tapped = blocks.firstOrNull { it.contains(x, y) } ?: return null
-        val area = tapped.bubbleArea ?: return tapped.translation
-        return blocks
-            .filter { block -> block.bubbleArea?.let { RectF.intersects(it, area) } == true }
-            .sortedByDescending { it.centerX }
-            .joinToString("\n\n") { it.translation }
+        val tapped = blocks.firstOrNull { it.boxContains(x, y) } ?: blocks.firstOrNull { it.bubbleContains(x, y) }
+        return tapped?.translation
     }
 
     private fun layOut(block: TranslationBlock, blocks: List<TranslationBlock>): Block {
@@ -178,7 +174,6 @@ class TranslationRenderer(context: Context, translation: PageTranslation, privat
             angle = block.angle,
             box = box.apply { offset(-centerX(), -centerY()) },
             bubble = bubble,
-            bubbleArea = block.bubbleBounds(),
             cornerRadius = symHeight / 4,
             translation = translation,
             text = text,
@@ -205,16 +200,16 @@ class TranslationRenderer(context: Context, translation: PageTranslation, privat
         val words = text.split(WORD_BREAK)
         // Checked on the layout itself, as a word measured just narrow enough on its own was still cut, as "VENC EMOS"
         val whole = largestFitting(text, { width }, height, maxSize, hyphenate = false) { _, layout ->
-            layout.breaksOnlyBetweenWords(minSyllable = Int.MAX_VALUE)
+            layout.breaksOnlyBetweenWords(hyphenated = false)
         }
         val hyphenated = largestFitting(text, { width }, height, maxSize, hyphenate = true) { _, layout ->
-            layout.breaksOnlyBetweenWords(MIN_SYLLABLE)
+            layout.breaksOnlyBetweenWords(hyphenated = true)
         }
         val best = if (whole.first >= hyphenated.first * MIN_WHOLE_WORD_SIZE) whole else hyphenated
         if (best.first >= maxSize * MIN_READABLE_SIZE) return best.second
         val widenedWidth = { size: Float -> widestWord(words, size).coerceIn(width, maxWidth) }
         val widened = largestFitting(text, widenedWidth, height, maxSize, hyphenate = false) { size, layout ->
-            widestWord(words, size) <= maxWidth && layout.breaksOnlyBetweenWords(minSyllable = Int.MAX_VALUE)
+            widestWord(words, size) <= maxWidth && layout.breaksOnlyBetweenWords(hyphenated = false)
         }
         return if (widened.first > best.first) widened.second else best.second
     }
@@ -225,16 +220,21 @@ class TranslationRenderer(context: Context, translation: PageTranslation, privat
     }
 
     /**
-     * Whether each line ends between words, or inside one at what is likely a hyphenation point, leaving at least
-     * [minSyllable] letters on each side. A word too long for the width is otherwise cut anywhere, as "AIR A!".
+     * Whether each line ends at a space or a hyphen, or, when [hyphenated], at a hyphen the layout added inside a word,
+     * leaving at least [MIN_SYLLABLE] letters on each side. A word too wide for the line is otherwise cut anywhere
+     * without a hyphen, as "VEN CEMOS", or before its punctuation, as "NÃO" over a lone "!".
      */
-    private fun StaticLayout.breaksOnlyBetweenWords(minSyllable: Int): Boolean {
+    private fun StaticLayout.breaksOnlyBetweenWords(hyphenated: Boolean): Boolean {
         return (0..<lineCount - 1).all { line ->
             val end = getLineEnd(line)
-            if (!text[end - 1].isLetter() || !text[end].isLetter()) return@all true
+            val last = text[end - 1]
+            if (last.isWhitespace() || last == '-') return@all true
+            if (!hyphenated || !last.isLetter() || !text[end].isLetter()) return@all false
+            val addedHyphen = getLineWidth(line) - paint.measureText(text, getLineStart(line), end) >
+                paint.measureText("-") / 2
             val before = text.substring(0, end).takeLastWhile(Char::isLetter).length
             val after = text.substring(end).takeWhile(Char::isLetter).length
-            before >= minSyllable && after >= minSyllable
+            addedHyphen && before >= MIN_SYLLABLE && after >= MIN_SYLLABLE
         }
     }
 
@@ -282,16 +282,15 @@ class TranslationRenderer(context: Context, translation: PageTranslation, privat
         val angle: Float,
         val box: RectF,
         val bubble: List<RectF>,
-        /** Bounds of the painted bubble, shared by blocks found in bubbles joined together. */
-        val bubbleArea: RectF?,
         val cornerRadius: Float,
         val translation: String,
         val text: StaticLayout,
     ) {
-        fun contains(x: Float, y: Float): Boolean {
-            return bubble.any { it.contains(x, y) } ||
-                (abs(x - centerX) <= box.width() / 2 && abs(y - centerY) <= box.height() / 2)
+        fun boxContains(x: Float, y: Float): Boolean {
+            return abs(x - centerX) <= box.width() / 2 && abs(y - centerY) <= box.height() / 2
         }
+
+        fun bubbleContains(x: Float, y: Float): Boolean = bubble.any { it.contains(x, y) }
 
         fun drawBackground(canvas: Canvas) = canvas.withSave {
             bubble.forEach { drawRect(it, bubblePaint) }

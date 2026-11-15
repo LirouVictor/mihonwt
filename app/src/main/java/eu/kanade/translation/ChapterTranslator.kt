@@ -80,9 +80,11 @@ import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
+import kotlin.time.TimeSource
 
 /** Queue that runs OCR and translation on downloaded chapters and saves the result next to the downloads. */
 @Inject
@@ -246,6 +248,7 @@ class ChapterTranslator(
             val done = partialTranslations.value[chapterId].orEmpty().toMutableMap()
             val images = recognizedImages.getOrPut(chapterId) { ConcurrentHashMap() }
             val glossary = provider.getGlossary(mangaDir).toMutableMap()
+            val times = Times()
             val findsText = translator is LanguageModelTranslator &&
                 translator.readsImages &&
                 translationPreferences.findTextOnImages.get()
@@ -261,11 +264,14 @@ class ChapterTranslator(
                     } else {
                         val pageImages = images.takeIf { translator.readsImages }
                         val detector = bubbleDetector().takeUnless { findsText }
-                        recognizeChapter(chapterDir, translation, pageImages, detector) { name, page ->
+                        recognizeChapter(chapterDir, translation, pageImages, detector, times) { name, page ->
                             recognized.send(name to page)
                         }
                             .also { recognizedChapters[chapterId] = it }
-                    }.also { recognized.close() }
+                    }.also {
+                        recognized.close()
+                        times.read.set(times.start.elapsedNow().inWholeMilliseconds)
+                    }
                 }
                 // Batches go out as soon as OCR has read their pages, so the reader shows the first pages while the
                 // rest are still being read. Small batches also keep each reply within the model's output limit, and a
@@ -276,6 +282,7 @@ class ChapterTranslator(
                 val inFlight = Semaphore(PARALLEL_BATCHES)
                 val results = Mutex()
                 suspend fun translateBatch(batch: Map<String, PageTranslation>) = inFlight.withPermit {
+                    val batchStart = TimeSource.Monotonic.markNow()
                     val title = translation.manga.title
                     val known = results.withLock { glossary.toMap() }
                     var terms = emptyMap<String, String>()
@@ -290,6 +297,7 @@ class ChapterTranslator(
                     // Pages the model skipped still get the text OCR grouped translated
                     val left = batch.filterKeys { it !in answered }
                     if (left.isNotEmpty()) terms = terms + translator.translate(left, title, images, known, onRetry)
+                    times.translate.addAndGet(batchStart.elapsedNow().inWholeMilliseconds)
                     results.withLock {
                         terms.forEach { (term, translated) ->
                             if (glossary.size < MAX_GLOSSARY_TERMS) glossary.putIfAbsent(term, translated)
@@ -324,6 +332,16 @@ class ChapterTranslator(
             _partialTranslations.update { it - chapterId }
             translation.progress = null
             translation.status = Translation.State.TRANSLATED
+            val message = context.stringResource(
+                WTMR.strings.translation_times,
+                translation.chapter.name,
+                times.start.elapsedNow().inWholeSeconds,
+                times.read.get() / 1000,
+                times.ocr.get() / 1000,
+                times.detect.get() / 1000,
+                times.translate.get() / 1000,
+            )
+            withContext(Dispatchers.Main) { context.toast(message, Toast.LENGTH_LONG) }
         } catch (e: Throwable) {
             if (e is CancellationException) throw e
             logcat(LogPriority.ERROR, e)
@@ -363,6 +381,7 @@ class ChapterTranslator(
         translation: Translation,
         images: MutableMap<String, ByteArray>?,
         detector: BubbleDetector?,
+        times: Times,
         onPage: suspend (String, PageTranslation) -> Unit,
     ): Map<String, PageTranslation> {
         val pages = mutableMapOf<String, PageTranslation>()
@@ -377,15 +396,19 @@ class ChapterTranslator(
                 } else {
                     bitmap
                 }
+                val ocrStart = TimeSource.Monotonic.markNow()
                 val blocks = try {
                     textRecognizer.recognize(InputImage.fromBitmap(ocrBitmap, 0)).textBlocks
                 } finally {
+                    times.ocr.addAndGet(ocrStart.elapsedNow().inWholeMilliseconds)
                     if (ocrBitmap !== bitmap) ocrBitmap.recycle()
                 }
                     // Single letters are kept: an "I" alone on its line would stay in English beside the translation
                     .filter { it.boundingBox != null && it.text.isNotBlank() }
                 val pixels = bitmap.lightPixels()
+                val detectStart = TimeSource.Monotonic.markNow()
                 val textBoxes = detector?.detect(bitmap)
+                times.detect.addAndGet(detectStart.elapsedNow().inWholeMilliseconds)
                 val page = toPageTranslation(blocks, bitmap.width, bitmap.height, ocrScale, pixels, textBoxes)
                 val found = page.blocks
                 page.blocks = found.mapTo(mutableListOf()) {
@@ -402,6 +425,18 @@ class ChapterTranslator(
             translation.updateProgress { it.copy(page = index + 1, pages = count) }
         }
         return pages
+    }
+
+    /**
+     * Milliseconds a chapter spent on each step, shown when it is done to see which step to speed up. Batches run in
+     * parallel with each other and with reading, so the steps add up to more than the whole.
+     */
+    private class Times {
+        val start = TimeSource.Monotonic.markNow()
+        val read = AtomicLong()
+        val ocr = AtomicLong()
+        val detect = AtomicLong()
+        val translate = AtomicLong()
     }
 
     private var detector: BubbleDetector? = null
