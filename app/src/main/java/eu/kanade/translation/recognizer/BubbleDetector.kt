@@ -9,12 +9,9 @@ import ai.onnxruntime.TensorInfo
 import android.content.Context
 import android.graphics.Bitmap
 import androidx.core.graphics.scale
-import eu.kanade.tachiyomi.network.await
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import logcat.LogPriority
-import okhttp3.OkHttpClient
-import okhttp3.Request
 import tachiyomi.core.common.util.system.logcat
 import java.io.Closeable
 import java.io.File
@@ -25,7 +22,9 @@ import java.nio.LongBuffer
 
 /**
  * Finds the text of speech bubbles and captions on a page with ogkalu's comic text and bubble detector, an RT-DETR-v2
- * model trained on manga, webtoons, manhua and western comics, under the Apache License 2.0.
+ * model trained on manga, webtoons, manhua and western comics, under the Apache License 2.0. The app carries its
+ * detector-v4-s_int8.onnx (revision 16e8a622f91fabc6b5b65c96d32d1183f8843546) turned back into float weights, which
+ * XNNPACK can run and the integer operators of the original couldn't use.
  */
 class BubbleDetector private constructor(private val session: OrtSession) : Closeable {
 
@@ -90,27 +89,26 @@ class BubbleDetector private constructor(private val session: OrtSession) : Clos
         private const val IMAGES_INPUT = "images"
         private const val SIZES_INPUT = "orig_target_sizes"
 
-        // Pinned to a revision, so the file checked by its size is the one the code was written for
-        private const val MODEL_URL = "https://huggingface.co/ogkalu/comic-text-and-bubble-detector/resolve/" +
-            "16e8a622f91fabc6b5b65c96d32d1183f8843546/detector-v4-s_int8.onnx"
-        private const val MODEL_SIZE = 11_120_765L
-        private const val MODEL_FILE = "bubble_detector_v4_s_int8.onnx"
+        private const val MODEL_ASSET = "detector-v4-s_fp32.onnx"
+
+        // Downloaded by versions before the model came with the app
+        private const val OLD_MODEL_FILE = "bubble_detector_v4_s_int8.onnx"
 
         // Phones pair a few fast cores with slower ones, which would hold the fast ones back
         private const val XNNPACK_MAX_THREADS = 4
 
-        /** Loads the detector, first downloading its model of about 11 MB if it isn't on the device yet. */
+        /** Loads the detector from the model that comes with the app. */
         suspend fun load(context: Context): BubbleDetector = withContext(Dispatchers.IO) {
-            val model = File(context.noBackupFilesDir, MODEL_FILE)
-            if (model.length() != MODEL_SIZE) download(model)
+            File(context.noBackupFilesDir, OLD_MODEL_FILE).delete()
+            val model = context.assets.open(MODEL_ASSET).use { it.readBytes() }
             val environment = OrtEnvironment.getEnvironment()
             // XNNPACK runs the model's convolutions with ARM's vector instructions; the rest stays on the default CPU
             // provider, which also takes over when XNNPACK can't load
             val session = try {
-                environment.createSession(model.path, sessionOptions(xnnpack = true))
+                environment.createSession(model, sessionOptions(xnnpack = true))
             } catch (e: OrtException) {
                 logcat(LogPriority.WARN, e)
-                environment.createSession(model.path, sessionOptions(xnnpack = false))
+                environment.createSession(model, sessionOptions(xnnpack = false))
             }
             BubbleDetector(session)
         }
@@ -121,19 +119,6 @@ class BubbleDetector private constructor(private val session: OrtSession) : Clos
                 val threads = Runtime.getRuntime().availableProcessors().coerceAtMost(XNNPACK_MAX_THREADS)
                 addXnnpack(mapOf("intra_op_num_threads" to threads.toString()))
             }
-        }
-
-        private suspend fun download(model: File) {
-            val partial = File(model.path + ".part")
-            OkHttpClient().newCall(Request.Builder().url(MODEL_URL).build()).await().use { response ->
-                if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
-                partial.outputStream().use { response.body.byteStream().copyTo(it) }
-            }
-            if (partial.length() != MODEL_SIZE) {
-                partial.delete()
-                throw IOException("incomplete download")
-            }
-            if (!partial.renameTo(model)) throw IOException("could not save the model")
         }
     }
 }

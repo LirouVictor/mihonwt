@@ -33,7 +33,7 @@
     <string name="pref_tap_to_reveal">Translate only the tapped bubble</string>
     <string name="pref_tap_to_reveal_summary">Pages keep their original text, and tapping a bubble shows its translation in a popup, closed by tapping outside it. Applies to pages opened after the change.</string>
     <string name="pref_detect_bubbles">Detect bubbles on this device</string>
-    <string name="pref_detect_bubbles_summary">Groups the text read by OCR by the bubbles a detector finds, leaving out sound effects. Downloads an 11 MB model the first time. Not used while the AI finds the bubbles.</string>
+    <string name="pref_detect_bubbles_summary">Groups the text read by OCR by the bubbles a detector finds, leaving out sound effects. Not used while the AI finds the bubbles.</string>
     <string name="translation_detector_unavailable">Bubble detector unavailable, grouping without it: %1$s</string>
     <string name="pref_translate_on_download">Translate after downloading</string>
     <string name="pref_translate_on_download_summary">Queue each chapter for translation as soon as its download finishes. Pairs well with automatic downloads while reading.</string>
