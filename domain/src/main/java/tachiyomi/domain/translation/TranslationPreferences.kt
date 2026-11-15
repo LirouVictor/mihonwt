@@ -41,6 +41,9 @@ class TranslationPreferences(
      */
     val findTextOnImages: Preference<Boolean> = preferenceStore.getBoolean("translation_find_text_on_images", true)
 
+    /** Whether OCR text is grouped by the bubbles an on-device detector finds, rather than by its layout alone. */
+    val detectBubbles: Preference<Boolean> = preferenceStore.getBoolean("translation_detect_bubbles", true)
+
     val translateOnDownload: Preference<Boolean> = preferenceStore.getBoolean("translation_on_download", false)
 
     val showTranslations: Preference<Boolean> = preferenceStore.getBoolean("translation_show_in_reader", true)

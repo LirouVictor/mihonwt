@@ -332,6 +332,7 @@ dependencies {
     // Bubble translation OCR
     implementation(libs.mlkit.textRecognition)
     implementation(libs.mlkit.translate)
+    implementation(libs.onnxruntime.android)
 
     // GraphQL generation
     implementation(libs.apollo)
