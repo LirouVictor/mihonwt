@@ -353,7 +353,11 @@ class ChapterTranslator(
         } catch (e: Throwable) {
             if (e is CancellationException) throw e
             logcat(LogPriority.ERROR, e)
-            val error = e.message ?: e.toString()
+            val error = if (e is PageTranslator.QuotaExceededException) {
+                context.stringResource(WTMR.strings.translation_error_quota, e.service)
+            } else {
+                e.message ?: e.toString()
+            }
             translation.error = error
             translation.progress = null
             translation.status = Translation.State.ERROR

@@ -7,6 +7,7 @@
     <string name="action_delete_translation">Excluir tradução</string>
     <string name="translation_failed">Não foi possível traduzir %1$s: %2$s</string>
     <string name="translation_times">Traduzido com %1$s em %2$.1f s. Leitura das páginas: %3$.1f s (abrir imagens %4$.1f s, OCR %5$.1f s, detector de balões %6$.1f s, achar balões %7$.1f s). Tradução: %8$.1f s, somando os lotes em paralelo</string>
+    <string name="translation_error_quota">O limite do %1$s acabou por enquanto. Escolha outro serviço em Configurações › Tradução</string>
     <string name="translation_error_no_api_key">Adicione uma chave de API em Configurações › Tradução</string>
     <string name="translation_error_not_downloaded">Baixe o capítulo antes de traduzir</string>
     <string name="action_retranslate">Traduzir de novo</string>

@@ -48,21 +48,27 @@ abstract class PageTranslator {
         onRetry: (attempt: Int) -> Unit = {},
     ): Map<String, String>
 
-    /** Sends [request], retrying rate limits and overloads, and returns the response's JSON body. */
+    /**
+     * Sends [request], retrying rate limits and overloads, and returns the response's JSON body. Throws
+     * [QuotaExceededException] when the service's daily or monthly quota is used up, or its rate limit outlasts the
+     * retries.
+     */
     protected suspend fun send(
         request: Request,
         onRetry: (attempt: Int) -> Unit,
     ): JsonObject = withContext(Dispatchers.IO) {
         var attempt = 0
         var response = client.newCall(request).await()
-        // Rate limits and "model overloaded" errors usually clear within seconds
+        var body = response.use { it.body.string() }
+        // Rate limits and "model overloaded" errors usually clear within seconds, a used up daily quota doesn't
         while (response.code in RETRY_CODES && attempt < RETRY_DELAYS.size) {
-            response.close()
+            if (response.code == 429 && DAILY_LIMIT.containsMatchIn(body)) throw QuotaExceededException(name)
             onRetry(attempt + 1)
             delay(RETRY_DELAYS[attempt++])
             response = client.newCall(request).await()
+            body = response.use { it.body.string() }
         }
-        val body = response.use { it.body.string() }
+        if (response.code == 429 || response.code == DEEPL_QUOTA_EXCEEDED) throw QuotaExceededException(name)
         val json = runCatching { Json.parseToJsonElement(body).jsonObject }.getOrNull()
         if (!response.isSuccessful || json == null) {
             // DeepL puts the message at the top level rather than in an error object
@@ -80,6 +86,9 @@ abstract class PageTranslator {
     /** An error response with HTTP [status], and the API's own error [code] when it gives one. */
     class ApiException(message: String, val code: String?, val status: Int) : IOException(message)
 
+    /** The [service] won't take more requests for now, so the user should switch to another one. */
+    class QuotaExceededException(val service: String) : IOException("$service quota exceeded")
+
     companion object {
         /** Returns the translator for [service]. [customBaseUrl] is only used by [TranslationService.CUSTOM]. */
         fun create(service: TranslationService, apiKey: String, model: String, customBaseUrl: String): PageTranslator {
@@ -95,5 +104,12 @@ abstract class PageTranslator {
 
         private val RETRY_CODES = setOf(429, 500, 502, 503)
         private val RETRY_DELAYS = listOf(15.seconds, 30.seconds, 60.seconds)
+
+        // Gemini names the quota, as in "GenerateRequestsPerDayPerProjectPerModel-FreeTier", and OpenAI-compatible
+        // APIs like Groq say "tokens per day" in the message
+        private val DAILY_LIMIT = Regex("""PerDay|per day""", RegexOption.IGNORE_CASE)
+
+        // DeepL's own status for a used up monthly character allowance
+        private const val DEEPL_QUOTA_EXCEEDED = 456
     }
 }
