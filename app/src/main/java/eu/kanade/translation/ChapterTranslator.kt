@@ -256,6 +256,10 @@ class ChapterTranslator(
             val done = partialTranslations.value[chapterId].orEmpty().toMutableMap()
             val images = recognizedImages.getOrPut(chapterId) { ConcurrentHashMap() }
             val glossary = provider.getGlossary(mangaDir).toMutableMap()
+            val chapterFileName =
+                provider.getTranslationFileName(translation.chapter.name, translation.chapter.scanlator)
+            val seenWords = provider.getSeenWords(mangaDir).toMutableMap()
+            val readWords = ConcurrentHashMap.newKeySet<String>()
             val times = Times()
             val findsText = translator is LanguageModelTranslator &&
                 translator.readsImages &&
@@ -272,8 +276,13 @@ class ChapterTranslator(
                     } else {
                         val pageImages = images.takeIf { translator.readsImages }
                         val detector = bubbleDetector().takeUnless { findsText }
-                        val names = OcrSpelling.namesOf(glossary.keys)
-                        val fixText = { text: String -> spelling.fix(text, names) }
+                        val learnedNames = seenWords.filterValues { it != chapterFileName }.keys
+                        val names = OcrSpelling.namesOf(glossary.keys) + learnedNames
+                        // Only words left unknown after fixing are kept, so a misreading fixed once isn't taken for a name
+                        val fixText = { text: String ->
+                            spelling.fix(text, names, anyLetter = learnedNames.isNotEmpty())
+                                .also { readWords += spelling.unknownWords(it) }
+                        }
                         recognizeChapter(chapterPages, translation, pageImages, detector, fixText, times) {
                                 name,
                                 page,
@@ -337,10 +346,16 @@ class ChapterTranslator(
                 ocr.await()
             }
 
-            mangaDir.createFile(
-                provider.getTranslationFileName(translation.chapter.name, translation.chapter.scanlator),
-            )!!.openOutputStream().use { it.write(Json.encodeToString(pages).toByteArray()) }
+            mangaDir.createFile(chapterFileName)!!.openOutputStream().use {
+                it.write(Json.encodeToString(pages).toByteArray())
+            }
             provider.saveGlossary(mangaDir, glossary)
+            if (readWords.isNotEmpty()) {
+                // Words read again move to the end, so a full list drops those not read for longest
+                readWords.forEach { seenWords[it] = seenWords.remove(it) ?: chapterFileName }
+                seenWords.keys.take(max(0, seenWords.size - MAX_SEEN_WORDS)).forEach(seenWords::remove)
+                provider.saveSeenWords(mangaDir, seenWords)
+            }
             recognizedChapters.remove(chapterId)
             recognizedImages.remove(chapterId)
             _partialTranslations.update { it - chapterId }
@@ -710,6 +725,7 @@ class ChapterTranslator(
         const val MAX_OCR_SCALE = 2.5f
         const val MAX_OCR_PIXELS = 16_000_000
         const val MAX_GLOSSARY_TERMS = 300
+        const val MAX_SEEN_WORDS = 5000
     }
 
     private fun areAllTranslationsFinished(): Boolean {
