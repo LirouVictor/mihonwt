@@ -9,6 +9,7 @@ import eu.kanade.tachiyomi.util.system.buildNotificationChannel
 import eu.kanade.tachiyomi.util.system.buildNotificationChannelGroup
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.i18n.MR
+import tachiyomi.i18n.wt.WTMR
 
 /**
  * Class to manage the basic information of all the notifications used in the app.
@@ -73,6 +74,17 @@ object Notifications {
     const val ID_UPDATES_TO_EXTS = -401
     const val ID_EXTENSION_INSTALLER = -402
 
+    /**
+     * Notification channels and ids used by the chapter translator.
+     */
+    private const val GROUP_TRANSLATION = "group_translation"
+    const val CHANNEL_TRANSLATION_PROGRESS = "translation_progress_channel"
+    const val ID_TRANSLATION_PROGRESS = -1001
+    const val CHANNEL_TRANSLATION_COMPLETE = "translation_complete_channel"
+    const val ID_TRANSLATION_COMPLETE = -1002
+    const val CHANNEL_TRANSLATION_ERROR = "translation_error_channel"
+    const val ID_TRANSLATION_ERROR = -1003
+
     private val deprecatedChannels = listOf(
         "downloader_channel",
         "downloader_complete_channel",
@@ -111,6 +123,9 @@ object Notifications {
                 },
                 buildNotificationChannelGroup(GROUP_APK_UPDATES) {
                     setName(context.stringResource(MR.strings.label_recent_updates))
+                },
+                buildNotificationChannelGroup(GROUP_TRANSLATION) {
+                    setName(context.stringResource(WTMR.strings.pref_category_translation))
                 },
             ),
         )
@@ -160,6 +175,19 @@ object Notifications {
                 buildNotificationChannel(CHANNEL_EXTENSIONS_UPDATE, IMPORTANCE_DEFAULT) {
                     setGroup(GROUP_APK_UPDATES)
                     setName(context.stringResource(MR.strings.channel_ext_updates))
+                },
+                buildNotificationChannel(CHANNEL_TRANSLATION_PROGRESS, IMPORTANCE_LOW) {
+                    setName(context.stringResource(MR.strings.channel_progress))
+                    setGroup(GROUP_TRANSLATION)
+                    setShowBadge(false)
+                },
+                buildNotificationChannel(CHANNEL_TRANSLATION_COMPLETE, IMPORTANCE_DEFAULT) {
+                    setName(context.stringResource(MR.strings.channel_complete))
+                    setGroup(GROUP_TRANSLATION)
+                },
+                buildNotificationChannel(CHANNEL_TRANSLATION_ERROR, IMPORTANCE_DEFAULT) {
+                    setName(context.stringResource(MR.strings.channel_errors))
+                    setGroup(GROUP_TRANSLATION)
                 },
             ),
         )

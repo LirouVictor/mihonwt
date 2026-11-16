@@ -44,4 +44,10 @@
     <string name="translation_detector_unavailable">Bubble detector unavailable, grouping without it: %1$s</string>
     <string name="pref_translate_on_download">Translate after downloading</string>
     <string name="pref_translate_on_download_summary">Queue each chapter for translation as soon as its download finishes. Pairs well with automatic downloads while reading.</string>
+    <string name="translation_notifier_title">Translating chapter</string>
+    <string name="translation_notifier_queued">%1$d more in the queue</string>
+    <string name="translation_notifier_done">Chapter translated</string>
+    <string name="translation_notifier_done_many">%1$d chapters translated</string>
+    <string name="translation_notifier_failed">Couldn\'t translate a chapter</string>
+    <string name="translation_notifier_failed_many">Couldn\'t translate %1$d chapters</string>
 </resources>

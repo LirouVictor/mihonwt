@@ -40,6 +40,7 @@ import eu.kanade.tachiyomi.ui.setting.track.BaseOAuthLoginActivity
 import eu.kanade.tachiyomi.ui.webview.WebViewActivity
 import eu.kanade.tachiyomi.util.CrashLogUtil
 import eu.kanade.translation.TranslationManager
+import eu.kanade.translation.TranslationWorker
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.protobuf.ProtoBuf
 import mihon.core.metro.IsDebugBuild
@@ -75,6 +76,7 @@ interface AppGraph : ViewModelGraph {
     fun inject(backupCreateWorker: BackupCreateWorker)
     fun inject(delayedTrackingUpdateWorker: DelayedTrackingUpdateWorker)
     fun inject(downloadWorker: DownloadWorker)
+    fun inject(translationWorker: TranslationWorker)
     fun inject(notificationReceiver: NotificationReceiver)
     fun inject(notificationReceiver: SecureActivityDelegateImpl)
     fun inject(extensionInstallActivity: ExtensionInstallActivity)

@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.components.DropdownMenu
 import eu.kanade.tachiyomi.util.system.copyToClipboard
 import eu.kanade.translation.model.Translation
+import eu.kanade.translation.translationProgressText
 import kotlinx.coroutines.flow.Flow
 import mihon.icons.materialsymbols.MaterialSymbols
 import mihon.icons.materialsymbols.rounded.Error
@@ -129,21 +130,8 @@ fun ChapterTranslationIndicator(
                 )
             }
             if (state == Translation.State.TRANSLATING || state == Translation.State.QUEUE) {
-                val current = progress
                 MenuNote(
-                    text = when {
-                        current == null -> stringResource(WTMR.strings.translation_queued)
-                        current.page < current.pages ->
-                            stringResource(WTMR.strings.translation_progress_ocr, current.page + 1, current.pages)
-                        current.retries > 0 ->
-                            stringResource(WTMR.strings.translation_progress_ai_retry, current.retries)
-                        else ->
-                            stringResource(
-                                WTMR.strings.translation_progress_ai,
-                                current.translated,
-                                current.toTranslate,
-                            )
-                    },
+                    text = LocalContext.current.translationProgressText(progress),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }

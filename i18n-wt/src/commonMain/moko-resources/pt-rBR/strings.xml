@@ -44,4 +44,10 @@
     <string name="translation_detector_unavailable">Detector de balões indisponível, agrupando sem ele: %1$s</string>
     <string name="pref_translate_on_download">Traduzir ao baixar</string>
     <string name="pref_translate_on_download_summary">Coloca cada capítulo na fila de tradução assim que o download termina. Combina com o download automático durante a leitura.</string>
+    <string name="translation_notifier_title">Traduzindo capítulo</string>
+    <string name="translation_notifier_queued">mais %1$d na fila</string>
+    <string name="translation_notifier_done">Capítulo traduzido</string>
+    <string name="translation_notifier_done_many">%1$d capítulos traduzidos</string>
+    <string name="translation_notifier_failed">Não foi possível traduzir um capítulo</string>
+    <string name="translation_notifier_failed_many">Não foi possível traduzir %1$d capítulos</string>
 </resources>
