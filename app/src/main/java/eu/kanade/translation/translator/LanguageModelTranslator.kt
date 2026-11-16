@@ -130,7 +130,7 @@ abstract class LanguageModelTranslator : PageTranslator() {
 
     /**
      * Returns the English text of each block of [pages] as the model reads it on their [images], fixing what OCR
-     * misread, for a machine translator that can't see the pages: by page name, then by block index. Blocks the
+     * misread, for a translator that can't see the pages: by page name, then by block index. Blocks the
      * model didn't answer for are left out.
      */
     suspend fun correctText(

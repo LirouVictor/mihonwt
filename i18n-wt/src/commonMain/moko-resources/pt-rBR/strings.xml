@@ -28,8 +28,13 @@
     <string name="pref_model_choose">Toque para escolher</string>
     <string name="pref_model_search">Buscar ou digitar o nome</string>
     <string name="pref_model_list_error">Não foi possível buscar os modelos: %1$s</string>
+    <string name="pref_group_reading">Leitura das páginas</string>
+    <string name="pref_group_review">Revisão do texto</string>
+    <string name="pref_group_translation">Tradução</string>
+    <string name="pref_group_reader">No leitor</string>
+    <string name="pref_correct_text_with_gemini_summary">O Gemini olha as páginas e corrige o que o OCR leu errado antes de qualquer tradutor que não as vê. Usa a chave e o modelo abaixo.</string>
+    <string name="pref_correct_text_with_gemini_skipped">Pulada enquanto o Gemini traduz, pois ele já lê as páginas.</string>
     <string name="pref_correct_text_with_gemini">Corrigir o texto com o Gemini</string>
-    <string name="pref_correct_text_with_gemini_summary">Antes do DeepL ou do tradutor offline, o Gemini olha as páginas e corrige o que o OCR leu errado. Usa a chave e o modelo do Gemini.</string>
     <string name="pref_find_text_on_images">Achar balões com a IA</string>
     <string name="pref_find_text_on_images_summary">O modelo acha sozinho os balões e legendas de cada página, deixando de fora onomatopeias e placas. Posiciona o texto com menos precisão que o detector de balões.</string>
     <string name="pref_tap_to_reveal">Traduzir só o balão tocado</string>

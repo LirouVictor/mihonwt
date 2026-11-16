@@ -52,7 +52,6 @@ import eu.kanade.translation.recognizer.lightPixels
 import eu.kanade.translation.recognizer.withBackground
 import eu.kanade.translation.recognizer.withOverlapsJoined
 import eu.kanade.translation.recognizer.wordOf
-import eu.kanade.translation.translator.BlockTranslator
 import eu.kanade.translation.translator.GeminiTranslator
 import eu.kanade.translation.translator.LanguageModelTranslator
 import eu.kanade.translation.translator.PageTranslator
@@ -284,8 +283,9 @@ class ChapterTranslator(
             val seenWords = provider.getSeenWords(mangaDir).toMutableMap()
             val readWords = ConcurrentHashMap.newKeySet<String>()
             val times = Times()
+            // A translator that reads the pages fixes OCR's mistakes itself
             val corrector = gemini().takeIf {
-                translator is BlockTranslator && translationPreferences.correctTextWithGemini.get()
+                !translator.readsImages && translationPreferences.correctTextWithGemini.get()
             }
             val findsText = translator is LanguageModelTranslator &&
                 translator.readsImages &&
