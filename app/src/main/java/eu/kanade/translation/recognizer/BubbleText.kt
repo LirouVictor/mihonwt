@@ -112,8 +112,21 @@ fun textBoxes(labels: LongArray, boxes: Array<FloatArray>, scores: FloatArray): 
  * like sound effects, are dropped, and so are boxes without words.
  */
 fun blocksInBoxes(boxes: List<TextBox>, words: List<Word>): List<TranslationBlock> {
+    val wordsByBox = wordsByBox(boxes, words)
+    return boxes
+        .mapNotNull { box -> wordsByBox[box]?.let(::joinedBlock) }
+        .filterNot { it.isArt() }
+}
+
+/** Returns the [boxes] that none of [words] is placed in, whose text OCR missed. */
+fun boxesWithoutWords(boxes: List<TextBox>, words: List<Word>): List<TextBox> {
+    val wordsByBox = wordsByBox(boxes, words)
+    return boxes.filter { it !in wordsByBox }
+}
+
+private fun wordsByBox(boxes: List<TextBox>, words: List<Word>): Map<TextBox?, List<Word>> {
     val pageLetterHeight = words.map { it.letterHeight }.median() ?: 0f
-    val wordsByBox = words.groupBy { word ->
+    return words.groupBy { word ->
         val cx = word.x + word.width / 2
         val cy = word.y + word.height / 2
         // A bubble's outline read as a huge letter would otherwise reach boxes all over the page
@@ -124,9 +137,6 @@ fun blocksInBoxes(boxes: List<TextBox>, words: List<Word>): List<TranslationBloc
             // Detectors give the same text more than once, in boxes of different sizes
             .minByOrNull { (it.right - it.left) * (it.bottom - it.top) }
     }
-    return boxes
-        .mapNotNull { box -> wordsByBox[box]?.let(::joinedBlock) }
-        .filterNot { it.isArt() }
 }
 
 private fun Word.areaInside(box: TextBox, margin: Float): Float {

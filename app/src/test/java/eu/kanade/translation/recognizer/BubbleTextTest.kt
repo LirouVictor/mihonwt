@@ -121,4 +121,11 @@ class BubbleTextTest {
         assertEquals(listOf("WRONG.", "GOT YOU"), blocks.map { it.text })
         assertEquals(listOf(13f, 13f), blocks.map { it.symHeight })
     }
+
+    @Test
+    fun `boxes without words are the ones OCR missed`() {
+        val words = line(0f, "GOT" to 0f, "YOU" to 6f)
+        val missed = TextBox(200f, 0f, 240f, 100f)
+        assertEquals(listOf(missed), boxesWithoutWords(listOf(TextBox(0f, 0f, 60f, 13f), missed), words))
+    }
 }
