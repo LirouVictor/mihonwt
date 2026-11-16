@@ -21,7 +21,9 @@ import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.lang.compareToCaseInsensitiveNaturalOrder
 import eu.kanade.tachiyomi.util.system.toast
 import eu.kanade.translation.data.ApiKeyCipher
+import eu.kanade.translation.data.CharacterLookup
 import eu.kanade.translation.data.TranslationProvider
+import eu.kanade.translation.data.startingGlossary
 import eu.kanade.translation.model.FoundText
 import eu.kanade.translation.model.PageTranslation
 import eu.kanade.translation.model.Translation
@@ -42,6 +44,7 @@ import eu.kanade.translation.recognizer.lightPixels
 import eu.kanade.translation.recognizer.withBackground
 import eu.kanade.translation.recognizer.withOverlapsJoined
 import eu.kanade.translation.recognizer.wordOf
+import eu.kanade.translation.translator.GeminiTranslator
 import eu.kanade.translation.translator.LanguageModelTranslator
 import eu.kanade.translation.translator.PageTranslator
 import kotlinx.coroutines.CancellationException
@@ -74,6 +77,7 @@ import kotlinx.serialization.json.Json
 import logcat.LogPriority
 import mihon.core.archive.archiveReader
 import mihon.data.cache.ChapterCache
+import okhttp3.OkHttpClient
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.util.system.ImageUtil
 import tachiyomi.core.common.util.system.logcat
@@ -92,6 +96,7 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
+import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource
 
 /** Queue that runs OCR and translation on chapters, downloaded or online, and saves the result by the downloads. */
@@ -257,6 +262,11 @@ class ChapterTranslator(
             val done = partialTranslations.value[chapterId].orEmpty().toMutableMap()
             val images = recognizedImages.getOrPut(chapterId) { ConcurrentHashMap() }
             val glossary = provider.getGlossary(mangaDir).toMutableMap()
+            // A series is looked up once per run of the app while its glossary is empty, so a series nothing knows
+            // isn't asked about again for every chapter
+            if (glossary.isEmpty() && lookedUpSeries.add(translation.manga.id)) {
+                glossary += lookUpGlossary(translation.manga.title, translator)
+            }
             val chapterFileName =
                 provider.getTranslationFileName(translation.chapter.name, translation.chapter.scanlator)
             val seenWords = provider.getSeenWords(mangaDir).toMutableMap()
@@ -281,7 +291,7 @@ class ChapterTranslator(
                         val names = OcrSpelling.namesOf(glossary.keys) + learnedNames
                         // Only words left unknown after fixing are kept, so a misreading fixed once isn't taken for a name
                         val fixText = { text: String ->
-                            spelling.fix(text, names, anyLetter = learnedNames.isNotEmpty())
+                            spelling.fix(text, names, anyLetter = names.isNotEmpty())
                                 .also { readWords += spelling.unknownWords(it) }
                         }
                         recognizeChapter(chapterPages, translation, pageImages, detector, fixText, times) {
@@ -387,6 +397,34 @@ class ChapterTranslator(
             val message = context.stringResource(WTMR.strings.translation_failed, translation.chapter.name, error)
             withContext(Dispatchers.Main) { context.toast(message, Toast.LENGTH_LONG) }
         }
+    }
+
+    /**
+     * Returns the names and terms of the series titled [title] to start its glossary with: its characters from
+     * AniList or MyAnimeList, and what a language model knows of it, the [translator] if it is one or else Gemini if it has a key.
+     */
+    private suspend fun lookUpGlossary(title: String, translator: PageTranslator): Map<String, String> =
+        coroutineScope {
+            val characters = async { lookUp { characterLookup.characterNames(title) }.orEmpty() }
+            val model = translator as? LanguageModelTranslator ?: gemini()
+            val terms = async { model?.let { lookUp { it.seriesTerms(title) } }.orEmpty() }
+            startingGlossary(characters.await(), terms.await(), spelling::isWord)
+        }
+
+    // A glossary only helps, so a failed lookup leaves it to grow as before
+    private suspend fun <T> lookUp(block: suspend () -> T): T? = try {
+        block()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        logcat(LogPriority.WARN, e) { "Series lookup failed" }
+        null
+    }
+
+    private fun gemini(): GeminiTranslator? {
+        val apiKey = ApiKeyCipher.decrypt(translationPreferences.apiKey(TranslationService.GEMINI).get())
+        val model = translationPreferences.model(TranslationService.GEMINI).get()
+        return if (apiKey.isBlank() || model.isBlank()) null else GeminiTranslator(apiKey, model)
     }
 
     private fun createTranslator(): PageTranslator {
@@ -503,6 +541,10 @@ class ChapterTranslator(
     private var detector: BubbleDetector? = null
 
     private val spelling by lazy { OcrSpelling.load(context) }
+
+    private val characterLookup by lazy { CharacterLookup(OkHttpClient.Builder().callTimeout(LOOKUP_TIMEOUT).build()) }
+
+    private val lookedUpSeries = ConcurrentHashMap.newKeySet<Long>()
 
     /**
      * Returns the bubble detector when it is turned on, loading it the first time. When it can't be loaded, as without
@@ -716,6 +758,7 @@ class ChapterTranslator(
         const val MAX_OCR_PIXELS = 16_000_000
         const val MAX_GLOSSARY_TERMS = 300
         const val MAX_SEEN_WORDS = 5000
+        val LOOKUP_TIMEOUT = 15.seconds
     }
 
     private fun areAllTranslationsFinished(): Boolean {

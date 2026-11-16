@@ -124,13 +124,22 @@ abstract class LanguageModelTranslator : PageTranslator() {
             val texts = entry["texts"] as? JsonArray ?: return@mapNotNull null
             name to texts.mapNotNull { (it as? JsonObject)?.toFoundText(page.imgWidth, page.imgHeight) }
         }.toMap()
-        val terms = (output["glossary"] as? JsonArray).orEmpty().filterIsInstance<JsonObject>().mapNotNull { entry ->
+        return found to output.terms()
+    }
+
+    /**
+     * Returns the names and recurring terms of [series] the model knows, as characters, places, groups and attacks,
+     * with how translations usually give them, or none when it doesn't know the series.
+     */
+    suspend fun seriesTerms(series: String): Map<String, String> =
+        request(SERIES_TERMS_PROMPT, series, emptyMap(), {}, SERIES_TERMS_SCHEMA).terms()
+
+    private fun JsonObject.terms(): Map<String, String> =
+        (this["glossary"] as? JsonArray).orEmpty().filterIsInstance<JsonObject>().mapNotNull { entry ->
             val term = (entry["term"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
             val translation = (entry["translation"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
             term to translation
         }.toMap()
-        return found to terms
-    }
 
     private fun JsonObject.toFoundText(width: Float, height: Float): FoundText? {
         val box = (this["box_2d"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.floatOrNull }
@@ -228,6 +237,21 @@ abstract class LanguageModelTranslator : PageTranslator() {
                 "translation":{"type":"STRING"}}}}}}
             """,
         ).jsonObject
+
+        private val SERIES_TERMS_SCHEMA = Json.parseToJsonElement(
+            """
+            {"type":"OBJECT","required":["glossary"],"properties":{
+              "glossary":{"type":"ARRAY","items":{"type":"OBJECT","required":["term","translation"],"properties":{
+                "term":{"type":"STRING"},
+                "translation":{"type":"STRING"}}}}}}
+            """,
+        ).jsonObject
+
+        private val SERIES_TERMS_PROMPT = """
+            You help translate a comic from English into Brazilian Portuguese. The user gives its title. Under "glossary", list the names and recurring terms of this series that a translation must keep consistent: its main and recurring characters, by their full names and by the short names they are usually called, and its places, groups, ships, powers and attacks.
+            Give each "term" as English releases write it, and its "translation" as Brazilian Portuguese releases usually give it; names usually stay as they are.
+            List at most 150, the most important first. If you don't know this series, return an empty list rather than guessing.
+        """.trimIndent()
 
         private val FIND_TEXT_PROMPT = """
             You translate comics (manga, manhwa, manhua) from their page images.
