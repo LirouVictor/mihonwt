@@ -38,6 +38,8 @@ class TranslationRenderer(context: Context, translation: PageTranslation, var on
     /** Width of the image the blocks are placed on. */
     val imageWidth = translation.imgWidth
 
+    private val imageHeight = translation.imgHeight
+
     private val boxPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
 
     // Without antialiasing, as soft edges between the rectangles a bubble is painted with left faint lines
@@ -170,9 +172,12 @@ class TranslationRenderer(context: Context, translation: PageTranslation, var on
         )
         // A box outside a bubble grows with text that had to be widened, so the white still covers it
         val box = RectF(0f, 0f, max(boxWidth, text.width.toFloat()), boxHeight)
+        // Text widened past the edge of the page, as in a bubble cut by it, moves in to stay whole
+        val centerX = block.x + block.width / 2
+        val centerY = block.y + block.height / 2
         return Block(
-            centerX = block.x + block.width / 2,
-            centerY = block.y + block.height / 2,
+            centerX = if (isUpright) centerX.keptOnPage(box.width(), imageWidth) else centerX,
+            centerY = if (isUpright) centerY.keptOnPage(box.height(), imageHeight) else centerY,
             angle = block.angle,
             box = box.apply { offset(-centerX(), -centerY()) },
             bubble = bubble,
@@ -182,6 +187,9 @@ class TranslationRenderer(context: Context, translation: PageTranslation, var on
             text = text,
         )
     }
+
+    private fun Float.keptOnPage(size: Float, pageSize: Float): Float =
+        if (size >= pageSize) this else coerceIn(size / 2, pageSize - size / 2)
 
     /**
      * The translation as drawn: in capitals when the original lettering was, as models often answer in sentence case,
