@@ -19,22 +19,38 @@ class OcrSpelling(private val ranks: Map<String, Int>) {
      * series' names are known.
      */
     fun fix(text: String, names: Set<String> = emptySet(), anyLetter: Boolean = false): String =
-        // The halves of a word hyphenated across lines aren't words, and "TECTING" was changed into "TESTING"
-        WORD.replace(text.joinHyphenatedWords()) { match ->
-            val word = match.value
-            val key = word.key()
-            if (!isCheckable(key) || key in ranks || key in names || word.isPossessiveOf(names)) return@replace word
-            val fixed = best(misreadings(word, key), names)
-                ?: split(word, key)
-                ?: anyLetterChange(key, anyLetter)
-                ?: return@replace word
-            val cased = if (word.any(Char::isLowerCase) && word.count(Char::isUpperCase) <= 1) {
-                fixed.lowercase().replaceFirstChar { if (word.first().isUpperCase()) it.uppercaseChar() else it }
-            } else {
-                fixed
-            }
-            if (' ' in fixed) cased else withApostrophes(word, key, cased)
+        WORD.replace(text.joinBrokenWords(names)) { fixWord(it.value, names, anyLetter) }
+
+    private fun fixWord(word: String, names: Set<String>, anyLetter: Boolean): String {
+        // Possessives aren't in the word list, so the owner is checked: "EVERYONE'S" would otherwise be split into
+        // "EVERY ONE'S" and "BONNEY'S" changed into "BONNET'S"
+        if (word.length > MIN_LETTERS && word.last().uppercaseChar() == 'S' && word[word.length - 2] in "'’") {
+            return fixWord(word.dropLast(2), names, anyLetter) + word.takeLast(2)
         }
+        val key = word.key()
+        if (!isCheckable(key) || key in ranks || key in names) return word
+        val fixed = best(misreadings(word, key), names)
+            ?: split(word, key)
+            ?: anyLetterChange(key, anyLetter)
+            ?: return word
+        val cased = if (word.any(Char::isLowerCase) && word.count(Char::isUpperCase) <= 1) {
+            fixed.lowercase().replaceFirstChar { if (word.first().isUpperCase()) it.uppercaseChar() else it }
+        } else {
+            fixed
+        }
+        return if (' ' in fixed) cased else withApostrophes(word, key, cased)
+    }
+
+    /**
+     * Joins words broken across lines, whose halves aren't words and were changed into others, as "TECTING" into
+     * "TESTING": those hyphenated, and those whose hyphen OCR missed, as "PRO" and "TECTING", when joined they make a
+     * known word and the second half isn't one.
+     */
+    private fun String.joinBrokenWords(names: Set<String>): String = joinHyphenatedWords().replace(LINE_BROKEN_WORD) {
+        val (first, second) = it.destructured
+        val isBroken = (first + second).key() in ranks && second.key() !in ranks && second.key() !in names
+        if (isBroken) first + second else it.value
+    }
 
     /** Whether [word] is English. */
     fun isWord(word: String): Boolean = word.key() in ranks
@@ -44,13 +60,6 @@ class OcrSpelling(private val ranks: Map<String, Int>) {
         .map { it.value.key() }
         .filter { isCheckable(it) && it !in ranks }
         .toSet()
-
-    // Possessives aren't in the word list, and "EVERYONE'S" would otherwise be split into "EVERY ONE'S"
-    private fun String.isPossessiveOf(names: Set<String>): Boolean {
-        if (length < 3 || last().uppercaseChar() != 'S' || this[length - 2] !in "'’") return false
-        val owner = dropLast(2).key()
-        return owner in ranks || owner in names
-    }
 
     private fun isCheckable(key: String) =
         key.length >= MIN_LETTERS && key.any(Char::isLetter) && !key.all(Char::isDigit)
@@ -186,6 +195,7 @@ class OcrSpelling(private val ranks: Map<String, Int>) {
         private const val NAME_RANK = -1
         private const val VOWELS = "AEIOU"
         private val WORD = Regex("""[\p{L}\d'’]+""")
+        private val LINE_BROKEN_WORD = Regex("""(\p{L}+)\n(\p{L}+)""")
 
         // What OCR read, and the letters lettering it misreads that way, from misreadings seen on real pages
         private val MISREAD = mapOf(
