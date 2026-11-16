@@ -43,11 +43,11 @@ import eu.kanade.translation.recognizer.TextRecognizer
 import eu.kanade.translation.recognizer.blocksInBoxes
 import eu.kanade.translation.recognizer.blocksOfFoundText
 import eu.kanade.translation.recognizer.bubbleBlocks
+import eu.kanade.translation.recognizer.correctionOf
 import eu.kanade.translation.recognizer.fixLetteringMistakes
 import eu.kanade.translation.recognizer.grownIntoBubble
 import eu.kanade.translation.recognizer.inBubble
 import eu.kanade.translation.recognizer.inReadingOrder
-import eu.kanade.translation.recognizer.isCorrectionOf
 import eu.kanade.translation.recognizer.lightPixels
 import eu.kanade.translation.recognizer.withBackground
 import eu.kanade.translation.recognizer.withOverlapsJoined
@@ -597,9 +597,10 @@ class ChapterTranslator(
         pages.forEach { (name, page) ->
             val fixed = corrections[name].orEmpty()
             times.correctable.addAndGet(page.blocks.size)
-            page.blocks = page.blocks.mapIndexedTo(mutableListOf()) { i, block ->
-                val text = fixed[i]?.takeIf { it != block.text.joinLines() && isCorrectionOf(block.text, it) }
-                    ?: return@mapIndexedTo block
+            page.blocks = page.blocks.mapTo(mutableListOf()) { block ->
+                val text = correctionOf(block.text, fixed.values)
+                    ?.takeIf { it.joinLines() != block.text.joinLines() }
+                    ?: return@mapTo block
                 times.corrected.incrementAndGet()
                 block.copy(text = text)
             }

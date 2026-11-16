@@ -4,6 +4,21 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
+ * Returns which of [corrections], a model's readings of the blocks of a page, is [read] by OCR with its mistakes
+ * fixed: the closest one that [isCorrectionOf] it. Models now and then give a page's blocks in another order, so
+ * all of them are compared.
+ */
+fun correctionOf(read: String, corrections: Collection<String>): String? {
+    val letters = read.lettersAndDigits()
+    return corrections
+        .filter { isCorrectionOf(read, it) }
+        .minByOrNull {
+            val other = it.lettersAndDigits()
+            editDistance(letters, other).toFloat() / max(letters.length, other.length)
+        }
+}
+
+/**
  * Whether [corrected], a model's reading of a block's lettering, is likely the same text as [read] by OCR with its
  * mistakes fixed rather than text from elsewhere on the page or a rewrite: at most [MAX_CHANGED] of their letters and
  * digits differ. A missed line or word is within that, a different bubble isn't.
