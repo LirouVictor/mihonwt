@@ -5,7 +5,13 @@ package eu.kanade.translation
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Rect
+import android.graphics.RectF
 import android.widget.Toast
+import androidx.core.graphics.createBitmap
 import androidx.core.graphics.scale
 import ca.mpreg.imagedecoder.ImageDecoder
 import com.google.mlkit.vision.common.InputImage
@@ -40,8 +46,10 @@ import eu.kanade.translation.recognizer.LightPixels
 import eu.kanade.translation.recognizer.OcrSpelling
 import eu.kanade.translation.recognizer.TextBox
 import eu.kanade.translation.recognizer.TextRecognizer
+import eu.kanade.translation.recognizer.Word
 import eu.kanade.translation.recognizer.blocksInBoxes
 import eu.kanade.translation.recognizer.blocksOfFoundText
+import eu.kanade.translation.recognizer.boxesWithoutWords
 import eu.kanade.translation.recognizer.bubbleBlocks
 import eu.kanade.translation.recognizer.correctionOf
 import eu.kanade.translation.recognizer.fixLetteringMistakes
@@ -102,6 +110,7 @@ import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
@@ -535,8 +544,15 @@ class ChapterTranslator(
                 val pixels = bitmap.lightPixels()
                 times.bubbles.addAndGet(bubblesStart.elapsedNow().inWholeMilliseconds)
                 val (blocks, ocrScale) = ocr
+                var words = wordsOf(blocks, ocrScale)
+                textBoxes?.let { boxesWithoutWords(it, words) }?.forEach { box ->
+                    val rereadStart = TimeSource.Monotonic.markNow()
+                    words =
+                        words + readBox(bitmap, box, ocrScale, firstLine = (words.maxOfOrNull { it.line } ?: -1) + 1)
+                    times.ocr.addAndGet(rereadStart.elapsedNow().inWholeMilliseconds)
+                }
                 val groupStart = TimeSource.Monotonic.markNow()
-                val page = toPageTranslation(blocks, bitmap.width, bitmap.height, ocrScale, pixels, textBoxes)
+                val page = toPageTranslation(words, bitmap.width, bitmap.height, pixels, textBoxes)
                 val found = page.blocks
                 page.blocks = found
                     .map { it.inBubble(bitmap.width, bitmap.height, found, pixels) ?: it.grownIntoBubble(bitmap) }
@@ -793,17 +809,19 @@ class ChapterTranslator(
         }
     }
 
-    /** Returns the [blocks] read on a page enlarged [scale] times, at the size of the page itself. */
-    private fun toPageTranslation(
+    /**
+     * Returns the words of [blocks] read on an image enlarged [scale] times from the page, whose top left corner is at
+     * [left], [top] on the page, at the page's coordinates. Lines are numbered from [firstLine].
+     */
+    private fun wordsOf(
         blocks: List<Text.TextBlock>,
-        width: Int,
-        height: Int,
         scale: Float,
-        pixels: LightPixels,
-        textBoxes: List<TextBox>?,
-    ): PageTranslation {
-        var lineNumber = 0
-        val words = blocks.flatMap { block ->
+        left: Float = 0f,
+        top: Float = 0f,
+        firstLine: Int = 0,
+    ): List<Word> {
+        var lineNumber = firstLine
+        return blocks.flatMap { block ->
             block.lines.flatMap { line ->
                 val number = lineNumber++
                 line.elements.mapNotNull { element ->
@@ -811,8 +829,8 @@ class ChapterTranslator(
                         val bounds = symbol.boundingBox ?: return@mapNotNull null
                         Letter(
                             text = symbol.text,
-                            x = bounds.left / scale,
-                            y = bounds.top / scale,
+                            x = left + bounds.left / scale,
+                            y = top + bounds.top / scale,
                             width = bounds.width() / scale,
                             height = bounds.height() / scale,
                         )
@@ -821,6 +839,57 @@ class ChapterTranslator(
                 }
             }
         }
+    }
+
+    /**
+     * Reads the text in [box] of [page] on its own, more enlarged than the page was for OCR, on a white margin. ML Kit
+     * can miss lettering squeezed into a narrow bubble, like a tall column of short words, while reading the whole page.
+     */
+    private fun readBox(page: Bitmap, box: TextBox, pageScale: Float, firstLine: Int): List<Word> {
+        val crop = Rect(
+            box.left.toInt().coerceIn(0, page.width - 1),
+            box.top.toInt().coerceIn(0, page.height - 1),
+            ceil(box.right).toInt().coerceIn(1, page.width),
+            ceil(box.bottom).toInt().coerceIn(1, page.height),
+        )
+        if (crop.isEmpty) return emptyList()
+        val byMemory = sqrt(MAX_OCR_PIXELS.toFloat() / (crop.width().toLong() * crop.height()))
+        val scale = min(max(pageScale, 1f) * BOX_OCR_SCALE, byMemory)
+        val width = (crop.width() * scale).toInt()
+        val height = (crop.height() * scale).toInt()
+        val image = createBitmap(width + 2 * BOX_OCR_MARGIN, height + 2 * BOX_OCR_MARGIN)
+        return try {
+            Canvas(image).apply {
+                drawColor(Color.WHITE)
+                val target = RectF(
+                    BOX_OCR_MARGIN.toFloat(),
+                    BOX_OCR_MARGIN.toFloat(),
+                    (BOX_OCR_MARGIN + width).toFloat(),
+                    (BOX_OCR_MARGIN + height).toFloat(),
+                )
+                drawBitmap(page, crop, target, Paint(Paint.FILTER_BITMAP_FLAG))
+            }
+            val blocks = textRecognizer.recognize(InputImage.fromBitmap(image, 0)).textBlocks
+            wordsOf(
+                blocks,
+                scale,
+                left = crop.left - BOX_OCR_MARGIN / scale,
+                top = crop.top - BOX_OCR_MARGIN / scale,
+                firstLine = firstLine,
+            )
+        } finally {
+            image.recycle()
+        }
+    }
+
+    /** Returns a page of [width] by [height] with [words] grouped by bubble, or by the detector's [textBoxes]. */
+    private fun toPageTranslation(
+        words: List<Word>,
+        width: Int,
+        height: Int,
+        pixels: LightPixels,
+        textBoxes: List<TextBox>?,
+    ): PageTranslation {
         return PageTranslation(
             blocks = textBoxes?.let { blocksInBoxes(it, words) }?.toMutableList()
                 ?: bubbleBlocks(words, pixels).toMutableList(),
@@ -839,6 +908,8 @@ class ChapterTranslator(
         const val OCR_PAGE_WIDTH = 1600
         const val MAX_OCR_SCALE = 2.5f
         const val MAX_OCR_PIXELS = 16_000_000
+        const val BOX_OCR_SCALE = 1.5f
+        const val BOX_OCR_MARGIN = 32
         const val MAX_GLOSSARY_TERMS = 300
         const val MAX_SEEN_WORDS = 5000
         val LOOKUP_TIMEOUT = 15.seconds

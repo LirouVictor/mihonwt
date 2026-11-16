@@ -111,4 +111,21 @@ class BubbleTextTest {
         val boxes = listOf(TextBox(0f, 0f, 32f, 29f), TextBox(72f, 0f, 96f, 29f), TextBox(0f, -5f, 100f, 40f))
         assertEquals(listOf("DONT\nWAN-", "GOT\nIT!"), blocksInBoxes(boxes, words).map { it.text })
     }
+
+    @Test
+    fun `an outline read as a huge letter joins no box`() {
+        val words = line(0f, "WRONG." to 0f) + line(100f, "GOT" to 0f, "YOU" to 6f) +
+            Word("o", 60f, -150f, 90f, 280f, 280f, line++, 0f)
+        val boxes = listOf(TextBox(0f, 0f, 48f, 13f), TextBox(0f, 100f, 60f, 113f))
+        val blocks = blocksInBoxes(boxes, words)
+        assertEquals(listOf("WRONG.", "GOT YOU"), blocks.map { it.text })
+        assertEquals(listOf(13f, 13f), blocks.map { it.symHeight })
+    }
+
+    @Test
+    fun `boxes without words are the ones OCR missed`() {
+        val words = line(0f, "GOT" to 0f, "YOU" to 6f)
+        val missed = TextBox(200f, 0f, 240f, 100f)
+        assertEquals(listOf(missed), boxesWithoutWords(listOf(TextBox(0f, 0f, 60f, 13f), missed), words))
+    }
 }

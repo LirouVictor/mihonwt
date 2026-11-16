@@ -112,18 +112,37 @@ fun textBoxes(labels: LongArray, boxes: Array<FloatArray>, scores: FloatArray): 
  * like sound effects, are dropped, and so are boxes without words.
  */
 fun blocksInBoxes(boxes: List<TextBox>, words: List<Word>): List<TranslationBlock> {
-    val wordsByBox = words.groupBy { word ->
-        val cx = word.x + word.width / 2
-        val cy = word.y + word.height / 2
-        val margin = word.letterHeight * FOUND_BOX_MARGIN
-        boxes
-            .filter { cx in it.left - margin..it.right + margin && cy in it.top - margin..it.bottom + margin }
-            // Detectors give the same text more than once, in boxes of different sizes
-            .minByOrNull { (it.right - it.left) * (it.bottom - it.top) }
-    }
+    val wordsByBox = wordsByBox(boxes, words)
     return boxes
         .mapNotNull { box -> wordsByBox[box]?.let(::joinedBlock) }
         .filterNot { it.isArt() }
+}
+
+/** Returns the [boxes] that none of [words] is placed in, whose text OCR missed. */
+fun boxesWithoutWords(boxes: List<TextBox>, words: List<Word>): List<TextBox> {
+    val wordsByBox = wordsByBox(boxes, words)
+    return boxes.filter { it !in wordsByBox }
+}
+
+private fun wordsByBox(boxes: List<TextBox>, words: List<Word>): Map<TextBox?, List<Word>> {
+    val pageLetterHeight = words.map { it.letterHeight }.median() ?: 0f
+    return words.groupBy { word ->
+        val cx = word.x + word.width / 2
+        val cy = word.y + word.height / 2
+        // A bubble's outline read as a huge letter would otherwise reach boxes all over the page
+        val margin = min(word.letterHeight, pageLetterHeight) * FOUND_BOX_MARGIN
+        boxes
+            .filter { cx in it.left - margin..it.right + margin && cy in it.top - margin..it.bottom + margin }
+            .filter { word.areaInside(it, margin) >= word.width * word.height * MIN_WORD_SHARE_IN_BOX }
+            // Detectors give the same text more than once, in boxes of different sizes
+            .minByOrNull { (it.right - it.left) * (it.bottom - it.top) }
+    }
+}
+
+private fun Word.areaInside(box: TextBox, margin: Float): Float {
+    val width = min(x + this.width, box.right + margin) - max(x, box.left - margin)
+    val height = min(y + this.height, box.bottom + margin) - max(y, box.top - margin)
+    return max(width, 0f) * max(height, 0f)
 }
 
 // Lines are joined by line breaks, top to bottom, so words hyphenated across them are joined back
@@ -283,6 +302,8 @@ private const val MIN_OUTLINE_SHARE = 0.6f
 private const val FOUND_BOX_MARGIN = 1f
 
 private const val FALLBACK_LINES = 3f
+
+private const val MIN_WORD_SHARE_IN_BOX = 0.5f
 
 private const val LABEL_TEXT_IN_BUBBLE = 1L
 private const val LABEL_TEXT_OUTSIDE_BUBBLE = 2L
