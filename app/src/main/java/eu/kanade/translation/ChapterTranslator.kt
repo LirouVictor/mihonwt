@@ -38,6 +38,7 @@ import eu.kanade.translation.recognizer.TextRecognizer
 import eu.kanade.translation.recognizer.blocksInBoxes
 import eu.kanade.translation.recognizer.blocksOfFoundText
 import eu.kanade.translation.recognizer.bubbleBlocks
+import eu.kanade.translation.recognizer.fixLetteringMistakes
 import eu.kanade.translation.recognizer.grownIntoBubble
 import eu.kanade.translation.recognizer.inBubble
 import eu.kanade.translation.recognizer.lightPixels
@@ -291,7 +292,8 @@ class ChapterTranslator(
                         val names = OcrSpelling.namesOf(glossary.keys) + learnedNames
                         // Only words left unknown after fixing are kept, so a misreading fixed once isn't taken for a name
                         val fixText = { text: String ->
-                            spelling.fix(text, names, anyLetter = names.isNotEmpty())
+                            // Lettering fixes run again on the whole block, as they need the line after an ellipsis
+                            spelling.fix(text.fixLetteringMistakes(), names, anyLetter = names.isNotEmpty())
                                 .also { readWords += spelling.unknownWords(it) }
                         }
                         recognizeChapter(chapterPages, translation, pageImages, detector, fixText, times) {

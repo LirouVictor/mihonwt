@@ -27,6 +27,18 @@ class LetteringFixesTest {
     }
 
     @Test
+    fun `outline strokes read as characters are dropped or fixed`() {
+        assertEquals("REMEM-\nBER IT?", "REMEM-|\nBER IT?".fixLetteringMistakes())
+        assertEquals("THE END OF IT, FOLKS!", "THE END OF IT, FOLKS/".fixLetteringMistakes())
+        assertEquals("FOR A FAVOR?", "FOR A FAVOR?{".fixLetteringMistakes())
+    }
+
+    @Test
+    fun `an ellipsis before a line break is fixed`() {
+        assertEquals("...IS\nBREAKING...", "...15\nBREAKING...".fixLetteringMistakes())
+    }
+
+    @Test
     fun `numbers and slashes between words stay`() {
         assertEquals("CHAPTER 233. AND/OR 1 MORE", "CHAPTER 233. AND/OR 1 MORE".fixLetteringMistakes())
     }
