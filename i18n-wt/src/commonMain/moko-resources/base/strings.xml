@@ -28,8 +28,13 @@
     <string name="pref_model_choose">Tap to choose</string>
     <string name="pref_model_search">Search or type a name</string>
     <string name="pref_model_list_error">Couldn\'t load the models: %1$s</string>
+    <string name="pref_group_reading">Reading the pages</string>
+    <string name="pref_group_review">Text review</string>
+    <string name="pref_group_translation">Translation</string>
+    <string name="pref_group_reader">Reader</string>
+    <string name="pref_correct_text_with_gemini_summary">Gemini looks at the pages and fixes what OCR misread before any translator that doesn\'t see them. Uses the key and model below.</string>
+    <string name="pref_correct_text_with_gemini_skipped">Skipped while Gemini translates, as it already reads the pages.</string>
     <string name="pref_correct_text_with_gemini">Correct the text with Gemini</string>
-    <string name="pref_correct_text_with_gemini_summary">Before DeepL or the offline translator, Gemini looks at the pages and fixes what OCR misread. Uses the key and model set for Gemini.</string>
     <string name="pref_find_text_on_images">Find bubbles with the AI</string>
     <string name="pref_find_text_on_images_summary">The model finds the speech bubbles and captions on each page itself, leaving out sound effects and signs. Places text less precisely than the bubble detector.</string>
     <string name="pref_tap_to_reveal">Translate only the tapped bubble</string>
