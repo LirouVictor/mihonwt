@@ -1,0 +1,15 @@
+{
+  "uniqueId": "net.aspell:scowl",
+  "artifactVersion": "2016",
+  "name": "SCOWL",
+  "description": "English word list that fixes words misread by OCR before translation.",
+  "website": "http://wordlist.aspell.net/",
+  "developers": [
+    {
+      "name": "Kevin Atkinson"
+    }
+  ],
+  "licenses": [
+    "SCOWL"
+  ]
+}
