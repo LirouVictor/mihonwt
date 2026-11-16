@@ -27,6 +27,7 @@ import eu.kanade.translation.model.TranslationBlock
 import eu.kanade.translation.recognizer.BubbleDetector
 import eu.kanade.translation.recognizer.Letter
 import eu.kanade.translation.recognizer.LightPixels
+import eu.kanade.translation.recognizer.OcrSpelling
 import eu.kanade.translation.recognizer.TextBox
 import eu.kanade.translation.recognizer.TextRecognizer
 import eu.kanade.translation.recognizer.blocksInBoxes
@@ -271,7 +272,9 @@ class ChapterTranslator(
                     } else {
                         val pageImages = images.takeIf { translator.readsImages }
                         val detector = bubbleDetector().takeUnless { findsText }
-                        recognizeChapter(chapterDir, translation, pageImages, detector, times) { name, page ->
+                        val names = OcrSpelling.namesOf(glossary.keys)
+                        val fixText = { text: String -> spelling.fix(text, names) }
+                        recognizeChapter(chapterDir, translation, pageImages, detector, fixText, times) { name, page ->
                             recognized.send(name to page)
                         }
                             .also { recognizedChapters[chapterId] = it }
@@ -387,13 +390,15 @@ class ChapterTranslator(
 
     /**
      * Returns the text blocks of each page that has any, keyed by the page's file name, passing each such page to
-     * [onPage] as soon as it is read. Puts a small image of each such page in [images] when given.
+     * [onPage] as soon as it is read, with the blocks' text passed through [fixText]. Puts a small image of each such
+     * page in [images] when given.
      */
     private suspend fun recognizeChapter(
         chapterDir: UniFile,
         translation: Translation,
         images: MutableMap<String, ByteArray>?,
         detector: BubbleDetector?,
+        fixText: (String) -> String,
         times: Times,
         onPage: suspend (String, PageTranslation) -> Unit,
     ): Map<String, PageTranslation> {
@@ -449,6 +454,7 @@ class ChapterTranslator(
                             pixels,
                         ) ?: it.grownIntoBubble(bitmap)
                         ).withBackground(bitmap)
+                        .let { block -> block.copy(text = fixText(block.text)) }
                 }
                 times.bubbles.addAndGet(groupStart.elapsedNow().inWholeMilliseconds)
                 if (page.blocks.isNotEmpty()) {
@@ -481,6 +487,8 @@ class ChapterTranslator(
     private fun Long.seconds() = this / 1000f
 
     private var detector: BubbleDetector? = null
+
+    private val spelling by lazy { OcrSpelling.load(context) }
 
     /**
      * Returns the bubble detector when it is turned on, loading it the first time. When it can't be loaded, as without
