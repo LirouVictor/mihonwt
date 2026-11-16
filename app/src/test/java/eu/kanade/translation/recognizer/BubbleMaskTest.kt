@@ -65,6 +65,20 @@ class BubbleMaskTest {
     }
 
     @Test
+    fun `covers letters touching the outline`() {
+        val page = page()
+        page.dark(82, 142, 160, 158)
+        page.dark(170, 142, 240, 158)
+        val text = block(82f, 142f, 158f, 16f)
+
+        val placed = text.inBubble(width, height, listOf(text), page.pixels())
+
+        assertNotNull(placed)
+        assertTrue(placed!!.covers(100f, 150f))
+        assertFalse(placed.covers(60f, 150f))
+    }
+
+    @Test
     fun `finds nothing around text outside a closed bubble`() {
         val page = Array(height) { BooleanArray(width) { true } }
         page.dark(160, 142, 240, 158)

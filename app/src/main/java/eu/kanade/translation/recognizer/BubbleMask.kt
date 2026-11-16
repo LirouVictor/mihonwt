@@ -103,7 +103,13 @@ private fun TranslationBlock.inBubble(
         }
     }
 
-    // Marks enclosed by the bubble's light space, like letters OCR missed, belong to the bubble too
+    // Marks enclosed by the bubble's light space, like letters OCR missed, belong to the bubble too. So do the
+    // block's own letters where they touch the outline, which would otherwise join the outside and be left unpainted
+    fun isOwnLetter(index: Int): Boolean {
+        val col = index % cols
+        val row = index / cols
+        return !lightCells[index] && col in boxLeft..boxRight && row in boxTop..boxBottom
+    }
     val outside = BooleanArray(cols * rows)
     for (col in 0..<cols) {
         queue.add(col)
@@ -115,7 +121,7 @@ private fun TranslationBlock.inBubble(
     }
     while (queue.isNotEmpty()) {
         val index = queue.removeFirst()
-        if (outside[index] || inside[index]) continue
+        if (outside[index] || inside[index] || isOwnLetter(index)) continue
         outside[index] = true
         val col = index % cols
         val row = index / cols
