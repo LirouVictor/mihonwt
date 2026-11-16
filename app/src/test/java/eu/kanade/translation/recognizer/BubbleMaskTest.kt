@@ -1,6 +1,7 @@
 package eu.kanade.translation.recognizer
 
 import eu.kanade.translation.model.TranslationBlock
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
@@ -102,5 +103,35 @@ class BubbleMaskTest {
         val overlapX = minOf(a.x + a.width, b.x + b.width) - maxOf(a.x, b.x)
         val overlapY = minOf(a.y + a.height, b.y + b.height) - maxOf(a.y, b.y)
         assertTrue(overlapX <= 0 || overlapY <= 0)
+    }
+
+    @Test
+    fun `splits a bubble between two blocks whose boxes overlap`() {
+        val page = page()
+        // A note beside the text, one of whose lines OCR read across both
+        page.dark(110, 110, 170, 190)
+        page.dark(150, 120, 290, 180)
+        val note = block(110f, 110f, 60f, 80f)
+        val text = block(150f, 120f, 140f, 60f)
+        val blocks = listOf(note, text)
+
+        val a = note.inBubble(width, height, blocks, page.pixels())!!
+        val b = text.inBubble(width, height, blocks, page.pixels())!!
+
+        val overlapX = minOf(a.x + a.width, b.x + b.width) - maxOf(a.x, b.x)
+        val overlapY = minOf(a.y + a.height, b.y + b.height) - maxOf(a.y, b.y)
+        assertTrue(overlapX <= 0 || overlapY <= 0)
+    }
+
+    @Test
+    fun `joins blocks placed over each other`() {
+        val note = block(110f, 110f, 60f, 80f).copy(text = "(NOTE)")
+        val text = block(100f, 100f, 140f, 100f).copy(text = "THIS BODY")
+        val apart = block(300f, 100f, 40f, 20f).copy(text = "HEY")
+
+        val joined = listOf(note, text, apart).withOverlapsJoined()
+
+        assertEquals(listOf("(NOTE)\nTHIS BODY", "HEY"), joined.map { it.text })
+        assertEquals(140f, joined[0].width)
     }
 }

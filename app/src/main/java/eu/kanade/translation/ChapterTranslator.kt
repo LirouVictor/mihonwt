@@ -40,6 +40,7 @@ import eu.kanade.translation.recognizer.grownIntoBubble
 import eu.kanade.translation.recognizer.inBubble
 import eu.kanade.translation.recognizer.lightPixels
 import eu.kanade.translation.recognizer.withBackground
+import eu.kanade.translation.recognizer.withOverlapsJoined
 import eu.kanade.translation.recognizer.wordOf
 import eu.kanade.translation.translator.LanguageModelTranslator
 import eu.kanade.translation.translator.PageTranslator
@@ -463,17 +464,12 @@ class ChapterTranslator(
                 val groupStart = TimeSource.Monotonic.markNow()
                 val page = toPageTranslation(blocks, bitmap.width, bitmap.height, ocrScale, pixels, textBoxes)
                 val found = page.blocks
-                page.blocks = found.mapTo(mutableListOf()) {
-                    (
-                        it.inBubble(
-                            bitmap.width,
-                            bitmap.height,
-                            found,
-                            pixels,
-                        ) ?: it.grownIntoBubble(bitmap)
-                        ).withBackground(bitmap)
-                        .let { block -> block.copy(text = fixText(block.text)) }
-                }
+                page.blocks = found
+                    .map { it.inBubble(bitmap.width, bitmap.height, found, pixels) ?: it.grownIntoBubble(bitmap) }
+                    .withOverlapsJoined()
+                    .mapTo(mutableListOf()) { block ->
+                        block.withBackground(bitmap).let { it.copy(text = fixText(it.text)) }
+                    }
                 times.bubbles.addAndGet(groupStart.elapsedNow().inWholeMilliseconds)
                 if (page.blocks.isNotEmpty()) {
                     pages[fileName] = page
@@ -538,16 +534,10 @@ class ChapterTranslator(
         try {
             val pixels = bitmap.lightPixels()
             val found = blocksOfFoundText(texts, words)
-            blocks = found.mapTo(mutableListOf()) {
-                (
-                    it.inBubble(
-                        bitmap.width,
-                        bitmap.height,
-                        found,
-                        pixels,
-                    ) ?: it.grownIntoBubble(bitmap)
-                    ).withBackground(bitmap)
-            }
+            blocks = found
+                .map { it.inBubble(bitmap.width, bitmap.height, found, pixels) ?: it.grownIntoBubble(bitmap) }
+                .withOverlapsJoined()
+                .mapTo(mutableListOf()) { it.withBackground(bitmap) }
         } finally {
             bitmap.recycle()
         }
