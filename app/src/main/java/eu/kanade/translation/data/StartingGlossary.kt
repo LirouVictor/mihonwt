@@ -11,7 +11,7 @@ fun startingGlossary(
     terms: Map<String, String>,
     isWord: (String) -> Boolean,
 ): Map<String, String> {
-    fun isKept(term: String) = term.any(Char::isLetter) && (' ' in term || !isWord(term))
+    fun isKept(term: String) = isGlossaryTerm(term, isWord)
     val names = characters.flatMap { name ->
         val parts = name.split(' ').map { it.trim('.', ',', '"', '\'', '(', ')') }.filter {
             it.length >=
@@ -21,5 +21,12 @@ fun startingGlossary(
     }
     return names.filter(::isKept).associateWith { it } + terms.filterKeys(::isKept)
 }
+
+/**
+ * Whether [term] is worth keeping in a glossary: a single English word isn't, as "Bat" kept as "Morcego" would be
+ * written so, capitalized, wherever the word is used.
+ */
+fun isGlossaryTerm(term: String, isWord: (String) -> Boolean): Boolean =
+    term.any(Char::isLetter) && (' ' in term || !isWord(term))
 
 private const val MIN_PART_LETTERS = 3

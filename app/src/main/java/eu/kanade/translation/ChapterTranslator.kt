@@ -15,14 +15,18 @@ import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import eu.kanade.domain.chapter.model.toSChapter
+import eu.kanade.domain.manga.model.readingMode
 import eu.kanade.tachiyomi.data.download.DownloadProvider
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.online.HttpSource
+import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
+import eu.kanade.tachiyomi.ui.reader.setting.ReadingMode
 import eu.kanade.tachiyomi.util.lang.compareToCaseInsensitiveNaturalOrder
 import eu.kanade.tachiyomi.util.system.toast
 import eu.kanade.translation.data.ApiKeyCipher
 import eu.kanade.translation.data.CharacterLookup
 import eu.kanade.translation.data.TranslationProvider
+import eu.kanade.translation.data.isGlossaryTerm
 import eu.kanade.translation.data.startingGlossary
 import eu.kanade.translation.model.FoundText
 import eu.kanade.translation.model.PageTranslation
@@ -38,8 +42,10 @@ import eu.kanade.translation.recognizer.TextRecognizer
 import eu.kanade.translation.recognizer.blocksInBoxes
 import eu.kanade.translation.recognizer.blocksOfFoundText
 import eu.kanade.translation.recognizer.bubbleBlocks
+import eu.kanade.translation.recognizer.fixLetteringMistakes
 import eu.kanade.translation.recognizer.grownIntoBubble
 import eu.kanade.translation.recognizer.inBubble
+import eu.kanade.translation.recognizer.inReadingOrder
 import eu.kanade.translation.recognizer.lightPixels
 import eu.kanade.translation.recognizer.withBackground
 import eu.kanade.translation.recognizer.withOverlapsJoined
@@ -109,6 +115,7 @@ class ChapterTranslator(
     private val chapterCache: ChapterCache,
     private val sourceManager: SourceManager,
     private val translationPreferences: TranslationPreferences,
+    private val readerPreferences: ReaderPreferences,
 ) {
 
     private val _queueState = MutableStateFlow<List<Translation>>(emptyList())
@@ -261,7 +268,8 @@ class ChapterTranslator(
             val chapterId = translation.chapter.id
             val done = partialTranslations.value[chapterId].orEmpty().toMutableMap()
             val images = recognizedImages.getOrPut(chapterId) { ConcurrentHashMap() }
-            val glossary = provider.getGlossary(mangaDir).toMutableMap()
+            // Glossaries saved before single English words were left out drop them now
+            val glossary = provider.getGlossary(mangaDir).filterKeys(::isGlossaryTerm).toMutableMap()
             // A series is looked up once per run of the app while its glossary is empty, so a series nothing knows
             // isn't asked about again for every chapter
             if (glossary.isEmpty() && lookedUpSeries.add(translation.manga.id)) {
@@ -291,7 +299,13 @@ class ChapterTranslator(
                         val names = OcrSpelling.namesOf(glossary.keys) + learnedNames
                         // Only words left unknown after fixing are kept, so a misreading fixed once isn't taken for a name
                         val fixText = { text: String ->
-                            spelling.fix(text, names, anyLetter = names.isNotEmpty())
+                            // Lettering fixes run again on the whole block, as they need the line after an ellipsis
+                            spelling.fix(
+                                text.fixLetteringMistakes(),
+                                names,
+                                anyLetter = names.isNotEmpty(),
+                                seen = seenWords.keys + readWords,
+                            )
                                 .also { readWords += spelling.unknownWords(it) }
                         }
                         recognizeChapter(chapterPages, translation, pageImages, detector, fixText, times) {
@@ -334,7 +348,9 @@ class ChapterTranslator(
                     results.withLock {
                         // Terms the model gives again move to the end, keeping how they were first translated, so a
                         // full glossary drops those not seen for longest rather than refusing new characters
-                        terms.forEach { (term, translated) -> glossary[term] = glossary.remove(term) ?: translated }
+                        terms.filterKeys(::isGlossaryTerm).forEach { (term, translated) ->
+                            glossary[term] = glossary.remove(term) ?: translated
+                        }
                         glossary.keys.take(max(0, glossary.size - MAX_GLOSSARY_TERMS)).forEach(glossary::remove)
                         done.putAll(batch)
                         translation.updateProgress { it.copy(translated = done.size, retries = 0) }
@@ -504,6 +520,7 @@ class ChapterTranslator(
                 val found = page.blocks
                 page.blocks = found
                     .map { it.inBubble(bitmap.width, bitmap.height, found, pixels) ?: it.grownIntoBubble(bitmap) }
+                    .inReadingOrder(translation.isRightToLeft())
                     .withOverlapsJoined()
                     .mapTo(mutableListOf()) { block ->
                         block.withBackground(bitmap).let { it.copy(text = fixText(it.text)) }
@@ -536,11 +553,20 @@ class ChapterTranslator(
         val translate = AtomicLong()
     }
 
+    /** Whether the reader shows [Translation.manga] right to left, as manga, so its bubbles are read that way too. */
+    private fun Translation.isRightToLeft(): Boolean {
+        val mode = ReadingMode.fromPreference(manga.readingMode.toInt()).takeUnless { it == ReadingMode.DEFAULT }
+            ?: ReadingMode.fromPreference(readerPreferences.defaultReadingMode.get())
+        return mode == ReadingMode.RIGHT_TO_LEFT
+    }
+
     private fun Long.seconds() = this / 1000f
 
     private var detector: BubbleDetector? = null
 
     private val spelling by lazy { OcrSpelling.load(context) }
+
+    private fun isGlossaryTerm(term: String) = isGlossaryTerm(term, spelling::isWord)
 
     private val characterLookup by lazy { CharacterLookup(OkHttpClient.Builder().callTimeout(LOOKUP_TIMEOUT).build()) }
 

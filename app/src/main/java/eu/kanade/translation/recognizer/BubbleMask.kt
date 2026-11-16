@@ -181,6 +181,31 @@ fun List<TranslationBlock>.withOverlapsJoined(): MutableList<TranslationBlock> {
     return joined
 }
 
+/**
+ * Returns these blocks in reading order: in rows from the top, each read [rightToLeft] or left to right. Translators
+ * get a page's blocks as one text, so a sentence running over several bubbles reads in order. A block joins a row
+ * when it overlaps at least half of it or of itself vertically.
+ */
+fun List<TranslationBlock>.inReadingOrder(rightToLeft: Boolean): List<TranslationBlock> {
+    val rows = mutableListOf<MutableList<TranslationBlock>>()
+    var rowTop = 0f
+    var rowBottom = 0f
+    sortedBy { it.y }.forEach { block ->
+        val overlap = rowBottom - block.y
+        if (rows.isNotEmpty() && overlap >= min(block.height, rowBottom - rowTop) / 2) {
+            rows.last() += block
+            rowBottom = max(rowBottom, block.y + block.height)
+        } else {
+            rows += mutableListOf(block)
+            rowTop = block.y
+            rowBottom = block.y + block.height
+        }
+    }
+    return rows.flatMap { row ->
+        if (rightToLeft) row.sortedByDescending { it.x + it.width } else row.sortedBy { it.x }
+    }
+}
+
 private fun TranslationBlock.overlapsMostOf(other: TranslationBlock): Boolean {
     val overlapWidth = min(x + width, other.x + other.width) - max(x, other.x)
     val overlapHeight = min(y + height, other.y + other.height) - max(y, other.y)
