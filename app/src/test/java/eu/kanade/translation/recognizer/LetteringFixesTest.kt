@@ -14,6 +14,12 @@ class LetteringFixesTest {
     }
 
     @Test
+    fun `serifed T misread as 7 is fixed`() {
+        assertEquals("...TO DIE!! THE", "...7O DIE!! 7HE".fixLetteringMistakes())
+        assertEquals("AT 7PM ON THE 7TH, 70 OF THEM", "AT 7PM ON THE 7TH, 70 OF THEM".fixLetteringMistakes())
+    }
+
+    @Test
     fun `words after an ellipsis misread as digits are fixed`() {
         assertEquals("...SO I'M GONNA", "...50 I'M GONNA".fixLetteringMistakes())
         assertEquals("...IS YOU, AIRA!", "...15 YOU, AIRA!".fixLetteringMistakes())

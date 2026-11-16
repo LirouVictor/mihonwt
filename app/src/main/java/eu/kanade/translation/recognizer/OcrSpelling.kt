@@ -33,6 +33,9 @@ class OcrSpelling(private val ranks: Map<String, Int>) {
             if (' ' in fixed) cased else withApostrophes(word, key, cased)
         }
 
+    /** Whether [word] is English. */
+    fun isWord(word: String): Boolean = word.key() in ranks
+
     /** Returns the words of [text] that aren't English, in capitals without apostrophes. */
     fun unknownWords(text: String): Set<String> = WORD.findAll(text)
         .map { it.value.key() }
