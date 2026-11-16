@@ -103,7 +103,13 @@ private fun TranslationBlock.inBubble(
         }
     }
 
-    // Marks enclosed by the bubble's light space, like letters OCR missed, belong to the bubble too
+    // Marks enclosed by the bubble's light space, like letters OCR missed, belong to the bubble too. So do the
+    // block's own letters where they touch the outline, which would otherwise join the outside and be left unpainted
+    fun isOwnLetter(index: Int): Boolean {
+        val col = index % cols
+        val row = index / cols
+        return !lightCells[index] && col in boxLeft..boxRight && row in boxTop..boxBottom
+    }
     val outside = BooleanArray(cols * rows)
     for (col in 0..<cols) {
         queue.add(col)
@@ -115,7 +121,7 @@ private fun TranslationBlock.inBubble(
     }
     while (queue.isNotEmpty()) {
         val index = queue.removeFirst()
-        if (outside[index] || inside[index]) continue
+        if (outside[index] || inside[index] || isOwnLetter(index)) continue
         outside[index] = true
         val col = index % cols
         val row = index / cols
@@ -151,6 +157,35 @@ private fun TranslationBlock.inBubble(
         height = textBottom - textTop,
         bubble = bubbleAreas(bubble, cols, rows, left, top, cell),
     )
+}
+
+/**
+ * Joins blocks whose boxes overlap once placed, as a note beside a bubble's text that OCR read a line across, so their
+ * translations aren't drawn over each other. The larger box holds the joined text, in the order of the blocks.
+ */
+fun List<TranslationBlock>.withOverlapsJoined(): MutableList<TranslationBlock> {
+    val joined = mutableListOf<TranslationBlock>()
+    forEach { block ->
+        val i = joined.indexOfFirst { it.overlapsMostOf(block) }
+        if (i < 0) {
+            joined += block
+            return@forEach
+        }
+        val earlier = joined[i]
+        val larger = if (earlier.width * earlier.height >= block.width * block.height) earlier else block
+        joined[i] = larger.copy(
+            text = earlier.text + "\n" + block.text,
+            bubble = (earlier.bubble + block.bubble).distinct(),
+        )
+    }
+    return joined
+}
+
+private fun TranslationBlock.overlapsMostOf(other: TranslationBlock): Boolean {
+    val overlapWidth = min(x + width, other.x + other.width) - max(x, other.x)
+    val overlapHeight = min(y + height, other.y + other.height) - max(y, other.y)
+    if (overlapWidth <= 0 || overlapHeight <= 0) return false
+    return overlapWidth * overlapHeight > min(width * height, other.width * other.height) * MIN_JOINED_OVERLAP
 }
 
 /**
@@ -288,6 +323,7 @@ private fun TranslationBlock.distanceSquaredTo(px: Float, py: Float): Float {
 }
 
 private const val MAX_ANGLE = 10f
+private const val MIN_JOINED_OVERLAP = 0.25f
 private const val CELLS_PER_LINE = 8f
 private val REACH_LINES = listOf(6f, 12f, 24f)
 private const val TEXT_MARGIN_LINES = 0.25f

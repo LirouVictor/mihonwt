@@ -18,6 +18,7 @@ import androidx.core.graphics.withSave
 import eu.kanade.tachiyomi.R
 import eu.kanade.translation.model.PageTranslation
 import eu.kanade.translation.model.TranslationBlock
+import eu.kanade.translation.model.isInCapitals
 import eu.kanade.translation.model.joinLines
 import java.util.Locale
 import kotlin.math.abs
@@ -36,6 +37,8 @@ class TranslationRenderer(context: Context, translation: PageTranslation, var on
 
     /** Width of the image the blocks are placed on. */
     val imageWidth = translation.imgWidth
+
+    private val imageHeight = translation.imgHeight
 
     private val boxPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
 
@@ -169,9 +172,12 @@ class TranslationRenderer(context: Context, translation: PageTranslation, var on
         )
         // A box outside a bubble grows with text that had to be widened, so the white still covers it
         val box = RectF(0f, 0f, max(boxWidth, text.width.toFloat()), boxHeight)
+        // Text widened past the edge of the page, as in a bubble cut by it, moves in to stay whole
+        val centerX = block.x + block.width / 2
+        val centerY = block.y + block.height / 2
         return Block(
-            centerX = block.x + block.width / 2,
-            centerY = block.y + block.height / 2,
+            centerX = if (isUpright) centerX.keptOnPage(box.width(), imageWidth) else centerX,
+            centerY = if (isUpright) centerY.keptOnPage(box.height(), imageHeight) else centerY,
             angle = block.angle,
             box = box.apply { offset(-centerX(), -centerY()) },
             bubble = bubble,
@@ -182,15 +188,16 @@ class TranslationRenderer(context: Context, translation: PageTranslation, var on
         )
     }
 
+    private fun Float.keptOnPage(size: Float, pageSize: Float): Float =
+        if (size >= pageSize) this else coerceIn(size / 2, pageSize - size / 2)
+
     /**
      * The translation as drawn: in capitals when the original lettering was, as models often answer in sentence case,
      * or with a single word in capitals.
      */
     private fun TranslationBlock.displayedTranslation(): String {
         val text = translation.joinLines()
-        val letters = this.text.filter(Char::isLetter)
-        val isCapitals = letters.isNotEmpty() && letters.count(Char::isUpperCase) >= letters.length * MIN_CAPITALS
-        return if (isCapitals) text.uppercase(textPaint.textLocale) else text
+        return if (this.text.isInCapitals()) text.uppercase(textPaint.textLocale) else text
     }
 
     /**
@@ -362,8 +369,5 @@ class TranslationRenderer(context: Context, translation: PageTranslation, var on
 
         /** Height to width ratio from which a box holding a single word is lettered a letter per line. */
         const val MIN_STACKED_RATIO = 3f
-
-        /** Share of capital letters above which the original counts as lettered in capitals, despite OCR misreads. */
-        const val MIN_CAPITALS = 0.8f
     }
 }

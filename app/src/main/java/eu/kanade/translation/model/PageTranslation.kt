@@ -44,6 +44,15 @@ private val LINE_BREAK = Regex("""\s*\n\s*""")
 /** Joins text broken over lines, including words hyphenated across them, so it can be wrapped anew. */
 fun String.joinLines(): String = replace(HYPHEN_BREAK, "").replace(LINE_BREAK, " ")
 
+/**
+ * Whether this text is lettered in capitals. Most of its letters is enough, as OCR reads some capitals as small
+ * letters, like the "e" of "SMASHED me".
+ */
+fun String.isInCapitals(): Boolean {
+    val letters = filter(Char::isLetter)
+    return letters.count(Char::isUpperCase) * 2 > letters.length
+}
+
 /** Text a language model found on a page image, in a box at page coordinates, with its translation. */
 data class FoundText(
     val left: Float,
