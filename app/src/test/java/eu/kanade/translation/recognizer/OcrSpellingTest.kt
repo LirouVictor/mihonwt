@@ -91,4 +91,10 @@ class OcrSpellingTest {
         assertEquals("PROTECTING", spelling.fix("PRO-\nTECTING", anyLetter = true))
         assertEquals("BE PROTECTING", spelling.fix("BE PRO\nTECTING", anyLetter = true))
     }
+
+    @Test
+    fun `names broken across lines are joined when seen whole`() {
+        assertEquals("IT'S TAKA\nKURA!", spelling.fix("IT'S TAKA\nKURA!"))
+        assertEquals("IT'S TAKAKURA!", spelling.fix("IT'S TAKA\nKURA!", seen = setOf("TAKAKURA")))
+    }
 }

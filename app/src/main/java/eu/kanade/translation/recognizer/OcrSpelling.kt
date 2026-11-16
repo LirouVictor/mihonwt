@@ -16,10 +16,15 @@ class OcrSpelling(private val ranks: Map<String, Int>) {
      * Returns [text] with its misread words fixed. Words of [names], like a series' characters, count as known. With
      * [anyLetter], words of [MIN_LETTERS_ANY_CHANGE] letters or more may also have any one letter changed, added or
      * dropped, and words of [MIN_LETTERS_ADDED] a letter added, which turns names into words too easily unless the
-     * series' names are known.
+     * series' names are known. Words broken across lines are also joined into those of [seen], like a name read
+     * whole elsewhere in the chapter.
      */
-    fun fix(text: String, names: Set<String> = emptySet(), anyLetter: Boolean = false): String =
-        WORD.replace(text.joinBrokenWords(names)) { fixWord(it.value, names, anyLetter) }
+    fun fix(
+        text: String,
+        names: Set<String> = emptySet(),
+        anyLetter: Boolean = false,
+        seen: Set<String> = emptySet(),
+    ): String = WORD.replace(text.joinBrokenWords(names, seen)) { fixWord(it.value, names, anyLetter) }
 
     private fun fixWord(word: String, names: Set<String>, anyLetter: Boolean): String {
         // Possessives aren't in the word list, so the owner is checked: "EVERYONE'S" would otherwise be split into
@@ -44,13 +49,16 @@ class OcrSpelling(private val ranks: Map<String, Int>) {
     /**
      * Joins words broken across lines, whose halves aren't words and were changed into others, as "TECTING" into
      * "TESTING": those hyphenated, and those whose hyphen OCR missed, as "PRO" and "TECTING", when joined they make a
-     * known word and the second half isn't one.
+     * known word, a name or a word of [seen], and the second half isn't one, as "TAKA" and "KURA".
      */
-    private fun String.joinBrokenWords(names: Set<String>): String = joinHyphenatedWords().replace(LINE_BROKEN_WORD) {
-        val (first, second) = it.destructured
-        val isBroken = (first + second).key() in ranks && second.key() !in ranks && second.key() !in names
-        if (isBroken) first + second else it.value
-    }
+    private fun String.joinBrokenWords(names: Set<String>, seen: Set<String>): String =
+        joinHyphenatedWords().replace(LINE_BROKEN_WORD) {
+            val (first, second) = it.destructured
+            val joined = (first + second).key()
+            val isKnown = joined in ranks || joined in names || joined in seen
+            val isBroken = isKnown && second.key() !in ranks && second.key() !in names
+            if (isBroken) first + second else it.value
+        }
 
     /** Whether [word] is English. */
     fun isWord(word: String): Boolean = word.key() in ranks

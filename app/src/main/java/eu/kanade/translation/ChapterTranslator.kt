@@ -293,7 +293,12 @@ class ChapterTranslator(
                         // Only words left unknown after fixing are kept, so a misreading fixed once isn't taken for a name
                         val fixText = { text: String ->
                             // Lettering fixes run again on the whole block, as they need the line after an ellipsis
-                            spelling.fix(text.fixLetteringMistakes(), names, anyLetter = names.isNotEmpty())
+                            spelling.fix(
+                                text.fixLetteringMistakes(),
+                                names,
+                                anyLetter = names.isNotEmpty(),
+                                seen = seenWords.keys + readWords,
+                            )
                                 .also { readWords += spelling.unknownWords(it) }
                         }
                         recognizeChapter(chapterPages, translation, pageImages, detector, fixText, times) {
