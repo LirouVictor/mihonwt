@@ -5,6 +5,9 @@ import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.ui.reader.model.ReaderChapter
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
+import eu.kanade.translation.model.PageTranslation
+import eu.kanade.translation.model.forPage
+import eu.kanade.translation.model.onlinePageName
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -28,6 +31,7 @@ internal class HttpPageLoader(
     private val chapterCache: ChapterCache,
     private val appScope: CoroutineScope,
     private val canLoadAhead: () -> Boolean,
+    private val translations: Map<String, PageTranslation> = emptyMap(),
 ) : PageLoader() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -49,6 +53,8 @@ internal class HttpPageLoader(
             ReaderPage(index, page.url, page.imageUrl).also {
                 // Loading starts below, before ChapterLoader gets to set this, and chapter is a lateinit
                 it.chapter = chapter
+                it.translationKey = onlinePageName(index, pages.size)
+                it.translation = translations.forPage(it.translationKey!!)
             }
         }
             .also {

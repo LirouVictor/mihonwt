@@ -5,6 +5,7 @@ package eu.kanade.translation.model
 
 import eu.kanade.translation.recognizer.Word
 import kotlinx.serialization.Serializable
+import java.util.Locale
 
 /** Text blocks found on one page, in the coordinates of the image they were recognized on. */
 @Serializable
@@ -52,3 +53,22 @@ data class FoundText(
     val text: String,
     val translation: String,
 )
+
+/**
+ * The name a page read online is translated under: its number padded as the downloader names its file, without the
+ * extension only a download knows.
+ */
+fun onlinePageName(index: Int, count: Int): String {
+    val digits = count.toString().length.coerceAtLeast(3)
+    return "%0${digits}d".format(Locale.ENGLISH, index + 1)
+}
+
+/**
+ * Returns the translation of the page named [name], also when the chapter was translated while downloaded and is read
+ * online or the other way round, so the name differs by its extension.
+ */
+fun Map<String, PageTranslation>.forPage(name: String): PageTranslation? {
+    get(name)?.let { return it }
+    val stem = name.substringBeforeLast('.')
+    return entries.firstOrNull { it.key.substringBeforeLast('.') == stem }?.value
+}

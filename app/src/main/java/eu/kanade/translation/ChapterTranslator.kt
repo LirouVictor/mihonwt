@@ -14,7 +14,9 @@ import com.hippo.unifile.UniFile
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
+import eu.kanade.domain.chapter.model.toSChapter
 import eu.kanade.tachiyomi.data.download.DownloadProvider
+import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.lang.compareToCaseInsensitiveNaturalOrder
 import eu.kanade.tachiyomi.util.system.toast
@@ -24,6 +26,7 @@ import eu.kanade.translation.model.FoundText
 import eu.kanade.translation.model.PageTranslation
 import eu.kanade.translation.model.Translation
 import eu.kanade.translation.model.TranslationBlock
+import eu.kanade.translation.model.onlinePageName
 import eu.kanade.translation.recognizer.BubbleDetector
 import eu.kanade.translation.recognizer.Letter
 import eu.kanade.translation.recognizer.LightPixels
@@ -69,6 +72,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import logcat.LogPriority
 import mihon.core.archive.archiveReader
+import mihon.data.cache.ChapterCache
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.util.system.ImageUtil
 import tachiyomi.core.common.util.system.logcat
@@ -79,6 +83,7 @@ import tachiyomi.domain.translation.TranslationPreferences
 import tachiyomi.domain.translation.TranslationService
 import tachiyomi.i18n.wt.WTMR
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
@@ -88,13 +93,14 @@ import kotlin.math.min
 import kotlin.math.sqrt
 import kotlin.time.TimeSource
 
-/** Queue that runs OCR and translation on downloaded chapters and saves the result next to the downloads. */
+/** Queue that runs OCR and translation on chapters, downloaded or online, and saves the result by the downloads. */
 @Inject
 @SingleIn(AppScope::class)
 class ChapterTranslator(
     private val context: Context,
     private val provider: TranslationProvider,
     private val downloadProvider: DownloadProvider,
+    private val chapterCache: ChapterCache,
     private val sourceManager: SourceManager,
     private val translationPreferences: TranslationPreferences,
 ) {
@@ -244,13 +250,7 @@ class ChapterTranslator(
             val translatedWith = translator.name +
                 translationPreferences.model(service).get().takeIf { service.hasModels }?.let { " ($it)" }.orEmpty()
             val mangaDir = provider.getMangaDir(translation.manga.title, translation.source)
-            val chapterDir = downloadProvider.findChapterDir(
-                translation.chapter.name,
-                translation.chapter.scanlator,
-                translation.chapter.url,
-                translation.manga.title,
-                translation.source,
-            ) ?: throw IOException(context.stringResource(WTMR.strings.translation_error_not_downloaded))
+            val chapterPages = chapterPages(translation)
 
             val chapterId = translation.chapter.id
             val done = partialTranslations.value[chapterId].orEmpty().toMutableMap()
@@ -274,7 +274,10 @@ class ChapterTranslator(
                         val detector = bubbleDetector().takeUnless { findsText }
                         val names = OcrSpelling.namesOf(glossary.keys)
                         val fixText = { text: String -> spelling.fix(text, names) }
-                        recognizeChapter(chapterDir, translation, pageImages, detector, fixText, times) { name, page ->
+                        recognizeChapter(chapterPages, translation, pageImages, detector, fixText, times) {
+                                name,
+                                page,
+                            ->
                             recognized.send(name to page)
                         }
                             .also { recognizedChapters[chapterId] = it }
@@ -300,7 +303,7 @@ class ChapterTranslator(
                     if (findsText) {
                         val (found, foundTerms) = (translator as LanguageModelTranslator)
                             .findText(batch, title, images, known, onRetry)
-                        found.forEach { (name, texts) -> batch.getValue(name).useText(chapterDir, name, texts) }
+                        found.forEach { (name, texts) -> batch.getValue(name).useText(chapterPages, name, texts) }
                         terms = foundTerms
                         answered = found.keys
                     }
@@ -394,7 +397,7 @@ class ChapterTranslator(
      * page in [images] when given.
      */
     private suspend fun recognizeChapter(
-        chapterDir: UniFile,
+        chapterPages: ChapterPages,
         translation: Translation,
         images: MutableMap<String, ByteArray>?,
         detector: BubbleDetector?,
@@ -403,7 +406,7 @@ class ChapterTranslator(
         onPage: suspend (String, PageTranslation) -> Unit,
     ): Map<String, PageTranslation> {
         val pages = mutableMapOf<String, PageTranslation>()
-        withChapterPages(chapterDir) { index, count, fileName, openStream ->
+        chapterPages.forEach { index, count, fileName, openStream ->
             currentCoroutineContext().ensureActive()
             translation.updateProgress { it.copy(page = index, pages = count) }
             val decodeStart = TimeSource.Monotonic.markNow()
@@ -515,8 +518,8 @@ class ChapterTranslator(
      * Replaces the blocks OCR grouped on this page with the [texts] a model found on it, each placed in its speech
      * bubble.
      */
-    private fun PageTranslation.useText(chapterDir: UniFile, name: String, texts: List<FoundText>) {
-        val bitmap = withChapterPage(chapterDir, name) { decodePage(it) }
+    private suspend fun PageTranslation.useText(chapterPages: ChapterPages, name: String, texts: List<FoundText>) {
+        val bitmap = chapterPages.open(name) { decodePage(it) }
         try {
             val pixels = bitmap.lightPixels()
             val found = blocksOfFoundText(texts, words)
@@ -533,14 +536,6 @@ class ChapterTranslator(
         } finally {
             bitmap.recycle()
         }
-    }
-
-    private fun <T> withChapterPage(chapterDir: UniFile, name: String, block: (() -> InputStream) -> T): T {
-        if (chapterDir.isFile) {
-            return chapterDir.archiveReader(context).use { reader -> block { reader.getInputStream(name)!! } }
-        }
-        val file = chapterDir.findFile(name) ?: throw IOException("Page $name not found")
-        return block { file.openInputStream() }
     }
 
     /**
@@ -574,26 +569,97 @@ class ChapterTranslator(
         return bitmap.copy(Bitmap.Config.ARGB_8888, false).also { bitmap.recycle() }
     }
 
-    private suspend fun withChapterPages(
-        chapterDir: UniFile,
-        block: suspend (index: Int, count: Int, fileName: String, openStream: () -> InputStream) -> Unit,
-    ) {
-        if (chapterDir.isFile) {
-            chapterDir.archiveReader(context).use { reader ->
-                val names = reader.useEntries { entries ->
-                    entries
-                        .filter { it.isFile && ImageUtil.isImage(it.name) { reader.getInputStream(it.name)!! } }
-                        .map { it.name }
-                        .sortedWith { n1, n2 -> n1.compareToCaseInsensitiveNaturalOrder(n2) }
-                        .toList()
+    /** Returns the pages of the chapter, from its download when it has one, otherwise from its source. */
+    private suspend fun chapterPages(translation: Translation): ChapterPages {
+        val chapter = translation.chapter
+        val chapterDir = downloadProvider.findChapterDir(
+            chapter.name,
+            chapter.scanlator,
+            chapter.url,
+            translation.manga.title,
+            translation.source,
+        )
+        return if (chapterDir != null) DownloadedPages(chapterDir) else OnlinePages(translation.source, chapter)
+    }
+
+    /** The page images of a chapter, each under the name its translation is saved under. */
+    private interface ChapterPages {
+        suspend fun forEach(
+            block: suspend (index: Int, count: Int, name: String, openStream: () -> InputStream) -> Unit,
+        )
+
+        suspend fun <T> open(name: String, block: (() -> InputStream) -> T): T
+    }
+
+    private inner class DownloadedPages(private val chapterDir: UniFile) : ChapterPages {
+
+        override suspend fun forEach(
+            block: suspend (index: Int, count: Int, name: String, openStream: () -> InputStream) -> Unit,
+        ) {
+            if (chapterDir.isFile) {
+                chapterDir.archiveReader(context).use { reader ->
+                    val names = reader.useEntries { entries ->
+                        entries
+                            .filter { it.isFile && ImageUtil.isImage(it.name) { reader.getInputStream(it.name)!! } }
+                            .map { it.name }
+                            .sortedWith { n1, n2 -> n1.compareToCaseInsensitiveNaturalOrder(n2) }
+                            .toList()
+                    }
+                    names.forEachIndexed { i, name -> block(i, names.size, name) { reader.getInputStream(name)!! } }
                 }
-                names.forEachIndexed { i, name -> block(i, names.size, name) { reader.getInputStream(name)!! } }
+            } else {
+                val files = chapterDir.listFiles().orEmpty()
+                    .filter { ImageUtil.isImage(it.name) }
+                    .sortedWith { f1, f2 ->
+                        f1.name.orEmpty().compareToCaseInsensitiveNaturalOrder(f2.name.orEmpty())
+                    }
+                files.forEachIndexed { i, file -> block(i, files.size, file.name!!) { file.openInputStream() } }
             }
-        } else {
-            val files = chapterDir.listFiles().orEmpty()
-                .filter { ImageUtil.isImage(it.name) }
-                .sortedWith { f1, f2 -> f1.name.orEmpty().compareToCaseInsensitiveNaturalOrder(f2.name.orEmpty()) }
-            files.forEachIndexed { i, file -> block(i, files.size, file.name!!) { file.openInputStream() } }
+        }
+
+        override suspend fun <T> open(name: String, block: (() -> InputStream) -> T): T {
+            if (chapterDir.isFile) {
+                return chapterDir.archiveReader(context).use { reader -> block { reader.getInputStream(name)!! } }
+            }
+            val file = chapterDir.findFile(name) ?: throw IOException("Page $name not found")
+            return block { file.openInputStream() }
+        }
+    }
+
+    /**
+     * The pages of a chapter that isn't downloaded, fetched through the cache the reader uses, so reading the chapter
+     * while it is translated or after doesn't fetch them again.
+     */
+    private inner class OnlinePages(private val source: HttpSource, private val chapter: Chapter) : ChapterPages {
+
+        private val pages = mutableMapOf<String, Page>()
+
+        override suspend fun forEach(
+            block: suspend (index: Int, count: Int, name: String, openStream: () -> InputStream) -> Unit,
+        ) {
+            val list = chapterCache.getPageList(chapter)
+                ?: source.getPageList(chapter.toSChapter()).also { chapterCache.putPageList(chapter, it) }
+            list.forEachIndexed { i, page -> pages[onlinePageName(i, list.size)] = page }
+            coroutineScope {
+                // The next page downloads while this one is read
+                var next = list.firstOrNull()?.let { async { imageFile(it) } }
+                list.forEachIndexed { i, page ->
+                    val file = next!!.await()
+                    next = list.getOrNull(i + 1)?.let { async { imageFile(it) } }
+                    block(i, list.size, onlinePageName(i, list.size)) { file.inputStream() }
+                }
+            }
+        }
+
+        override suspend fun <T> open(name: String, block: (() -> InputStream) -> T): T {
+            val file = imageFile(pages[name] ?: throw IOException("Page $name not found"))
+            return block { file.inputStream() }
+        }
+
+        private suspend fun imageFile(page: Page): File {
+            val imageUrl = page.imageUrl?.takeIf { it.isNotEmpty() }
+                ?: source.getImageUrl(page).also { page.imageUrl = it }
+            return chapterCache.getImageFile(imageUrl) ?: chapterCache.putImage(imageUrl, source.getImage(page))
         }
     }
 

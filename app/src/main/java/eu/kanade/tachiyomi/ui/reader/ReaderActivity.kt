@@ -619,6 +619,7 @@ class ReaderActivity : BaseActivity() {
             onClickTranslations = {
                 val shown = !showTranslations.get()
                 showTranslations.set(shown)
+                if (shown) viewModel.translateCurrentChapter()
                 menuToggleToast?.cancel()
                 menuToggleToast = toast(if (shown) MR.strings.on else MR.strings.off)
             }.takeIf { !isWebGpu },

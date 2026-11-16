@@ -4,6 +4,7 @@ import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
 import eu.kanade.tachiyomi.util.lang.compareToCaseInsensitiveNaturalOrder
 import eu.kanade.translation.model.PageTranslation
+import eu.kanade.translation.model.forPage
 import mihon.core.archive.ArchiveReader
 import tachiyomi.core.common.util.system.ImageUtil
 
@@ -24,7 +25,7 @@ internal class ArchivePageLoader(
                 ReaderPage(i).apply {
                     stream = { reader.getInputStream(entry.name)!! }
                     translationKey = entry.name
-                    translation = translations[entry.name]
+                    translation = translations.forPage(entry.name)
                     status = Page.State.Ready
                 }
             }
