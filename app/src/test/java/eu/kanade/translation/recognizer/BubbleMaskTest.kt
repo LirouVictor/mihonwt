@@ -134,4 +134,31 @@ class BubbleMaskTest {
         assertEquals(listOf("(NOTE)\nTHIS BODY", "HEY"), joined.map { it.text })
         assertEquals(140f, joined[0].width)
     }
+
+    @Test
+    fun `blocks are read in rows, right to left for manga`() {
+        fun block(text: String, x: Float, y: Float, width: Float, height: Float) =
+            block(x, y, width, height).copy(text = text)
+        val blocks = listOf(
+            block("NORMAL LIFE", 40f, 615f, 110f, 135f),
+            block("SAVE MY HEART?", 40f, 100f, 110f, 120f),
+            block("I'LL BE A CRIMINAL.", 530f, 650f, 90f, 105f),
+            block("BUT IF I KILL", 640f, 595f, 80f, 73f),
+            block("WHAT DO I DO", 600f, 95f, 100f, 60f),
+            block("I WOULDN'T BE ABLE", 230f, 595f, 110f, 120f),
+        )
+
+        assertEquals(
+            listOf(
+                "WHAT DO I DO",
+                "SAVE MY HEART?",
+                "BUT IF I KILL",
+                "I'LL BE A CRIMINAL.",
+                "I WOULDN'T BE ABLE",
+                "NORMAL LIFE",
+            ),
+            blocks.inReadingOrder(rightToLeft = true).map { it.text },
+        )
+        assertEquals("SAVE MY HEART?", blocks.inReadingOrder(rightToLeft = false).first().text)
+    }
 }

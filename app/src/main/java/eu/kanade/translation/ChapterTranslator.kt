@@ -15,9 +15,12 @@ import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import eu.kanade.domain.chapter.model.toSChapter
+import eu.kanade.domain.manga.model.readingMode
 import eu.kanade.tachiyomi.data.download.DownloadProvider
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.online.HttpSource
+import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
+import eu.kanade.tachiyomi.ui.reader.setting.ReadingMode
 import eu.kanade.tachiyomi.util.lang.compareToCaseInsensitiveNaturalOrder
 import eu.kanade.tachiyomi.util.system.toast
 import eu.kanade.translation.data.ApiKeyCipher
@@ -42,6 +45,7 @@ import eu.kanade.translation.recognizer.bubbleBlocks
 import eu.kanade.translation.recognizer.fixLetteringMistakes
 import eu.kanade.translation.recognizer.grownIntoBubble
 import eu.kanade.translation.recognizer.inBubble
+import eu.kanade.translation.recognizer.inReadingOrder
 import eu.kanade.translation.recognizer.lightPixels
 import eu.kanade.translation.recognizer.withBackground
 import eu.kanade.translation.recognizer.withOverlapsJoined
@@ -111,6 +115,7 @@ class ChapterTranslator(
     private val chapterCache: ChapterCache,
     private val sourceManager: SourceManager,
     private val translationPreferences: TranslationPreferences,
+    private val readerPreferences: ReaderPreferences,
 ) {
 
     private val _queueState = MutableStateFlow<List<Translation>>(emptyList())
@@ -515,6 +520,7 @@ class ChapterTranslator(
                 val found = page.blocks
                 page.blocks = found
                     .map { it.inBubble(bitmap.width, bitmap.height, found, pixels) ?: it.grownIntoBubble(bitmap) }
+                    .inReadingOrder(translation.isRightToLeft())
                     .withOverlapsJoined()
                     .mapTo(mutableListOf()) { block ->
                         block.withBackground(bitmap).let { it.copy(text = fixText(it.text)) }
@@ -545,6 +551,13 @@ class ChapterTranslator(
         val bubbles = AtomicLong()
         val detect = AtomicLong()
         val translate = AtomicLong()
+    }
+
+    /** Whether the reader shows [Translation.manga] right to left, as manga, so its bubbles are read that way too. */
+    private fun Translation.isRightToLeft(): Boolean {
+        val mode = ReadingMode.fromPreference(manga.readingMode.toInt()).takeUnless { it == ReadingMode.DEFAULT }
+            ?: ReadingMode.fromPreference(readerPreferences.defaultReadingMode.get())
+        return mode == ReadingMode.RIGHT_TO_LEFT
     }
 
     private fun Long.seconds() = this / 1000f
