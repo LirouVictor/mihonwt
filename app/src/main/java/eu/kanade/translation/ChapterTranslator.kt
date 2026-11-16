@@ -23,6 +23,7 @@ import eu.kanade.tachiyomi.util.system.toast
 import eu.kanade.translation.data.ApiKeyCipher
 import eu.kanade.translation.data.CharacterLookup
 import eu.kanade.translation.data.TranslationProvider
+import eu.kanade.translation.data.isGlossaryTerm
 import eu.kanade.translation.data.startingGlossary
 import eu.kanade.translation.model.FoundText
 import eu.kanade.translation.model.PageTranslation
@@ -262,7 +263,8 @@ class ChapterTranslator(
             val chapterId = translation.chapter.id
             val done = partialTranslations.value[chapterId].orEmpty().toMutableMap()
             val images = recognizedImages.getOrPut(chapterId) { ConcurrentHashMap() }
-            val glossary = provider.getGlossary(mangaDir).toMutableMap()
+            // Glossaries saved before single English words were left out drop them now
+            val glossary = provider.getGlossary(mangaDir).filterKeys(::isGlossaryTerm).toMutableMap()
             // A series is looked up once per run of the app while its glossary is empty, so a series nothing knows
             // isn't asked about again for every chapter
             if (glossary.isEmpty() && lookedUpSeries.add(translation.manga.id)) {
@@ -341,7 +343,9 @@ class ChapterTranslator(
                     results.withLock {
                         // Terms the model gives again move to the end, keeping how they were first translated, so a
                         // full glossary drops those not seen for longest rather than refusing new characters
-                        terms.forEach { (term, translated) -> glossary[term] = glossary.remove(term) ?: translated }
+                        terms.filterKeys(::isGlossaryTerm).forEach { (term, translated) ->
+                            glossary[term] = glossary.remove(term) ?: translated
+                        }
                         glossary.keys.take(max(0, glossary.size - MAX_GLOSSARY_TERMS)).forEach(glossary::remove)
                         done.putAll(batch)
                         translation.updateProgress { it.copy(translated = done.size, retries = 0) }
@@ -548,6 +552,8 @@ class ChapterTranslator(
     private var detector: BubbleDetector? = null
 
     private val spelling by lazy { OcrSpelling.load(context) }
+
+    private fun isGlossaryTerm(term: String) = isGlossaryTerm(term, spelling::isWord)
 
     private val characterLookup by lazy { CharacterLookup(OkHttpClient.Builder().callTimeout(LOOKUP_TIMEOUT).build()) }
 
