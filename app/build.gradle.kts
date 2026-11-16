@@ -42,8 +42,7 @@ android {
         versionName = providers.gradleProperty("mihonwt.versionName").orNull ?: "0.21.3"
 
         buildConfigField("boolean", "TELEMETRY_INCLUDED", "${Config.includeTelemetry}")
-        // MihonWT updates through Obtainium, and the built-in checker compares against upstream version names
-        buildConfigField("boolean", "UPDATER_ENABLED", "false")
+        buildConfigField("boolean", "UPDATER_ENABLED", "${Config.enableUpdater}")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
