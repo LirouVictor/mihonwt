@@ -1,6 +1,7 @@
 package eu.kanade.translation.recognizer
 
 import android.content.Context
+import eu.kanade.translation.model.joinHyphenatedWords
 
 /**
  * Fixes words OCR misread into something that isn't English, like "PREARY" for "DREARY" or "UST" for "JUST", which a
@@ -14,10 +15,12 @@ class OcrSpelling(private val ranks: Map<String, Int>) {
     /**
      * Returns [text] with its misread words fixed. Words of [names], like a series' characters, count as known. With
      * [anyLetter], words of [MIN_LETTERS_ANY_CHANGE] letters or more may also have any one letter changed, added or
-     * dropped, which turns names into words too easily unless the series' names are known.
+     * dropped, and words of [MIN_LETTERS_ADDED] a letter added, which turns names into words too easily unless the
+     * series' names are known.
      */
     fun fix(text: String, names: Set<String> = emptySet(), anyLetter: Boolean = false): String =
-        WORD.replace(text) { match ->
+        // The halves of a word hyphenated across lines aren't words, and "TECTING" was changed into "TESTING"
+        WORD.replace(text.joinHyphenatedWords()) { match ->
             val word = match.value
             val key = word.key()
             if (!isCheckable(key) || key in ranks || key in names || word.isPossessiveOf(names)) return@replace word
@@ -83,7 +86,13 @@ class OcrSpelling(private val ranks: Map<String, Int>) {
 
     // Names are left out, as a name one letter from another is more likely a different character
     private fun anyLetterChange(key: String, anyLetter: Boolean): String? =
-        if (anyLetter && key.length >= MIN_LETTERS_ANY_CHANGE) best(oneEdit(key), emptySet()) else null
+        when {
+            !anyLetter || key.length < MIN_LETTERS_ADDED -> null
+            // Shorter names are too often one letter from a word, as "BONNEY", "PANZER" or "SATONE", while a thin
+            // letter OCR dropped, as in "CHCKEN", is the likelier mistake
+            key.length < MIN_LETTERS_ANY_CHANGE -> best(oneEdit(key).filter { it.length > key.length }, emptySet())
+            else -> best(oneEdit(key), emptySet())
+        }
 
     private fun best(candidates: Sequence<String>, names: Set<String>): String? {
         val found = candidates.filter { it in ranks || it in names }.distinct()
@@ -142,7 +151,8 @@ class OcrSpelling(private val ranks: Map<String, Int>) {
         val splits = (1 until key.length).filter { at ->
             val first = key.substring(0, at)
             val second = key.substring(at)
-            val withI = (first == "I" && second.isCommon(MIN_SPLIT_I_LETTERS)) ||
+            // A word after a glued "I" may be rarer, as "IFORGED", which a dropped letter would turn into "FORGED"
+            val withI = (first == "I" && (second.isCommon(MIN_SPLIT_I_LETTERS) || second.isKnown(MIN_SPLIT_LETTERS))) ||
                 (second == "I" && first.isCommon(MIN_SPLIT_I_LETTERS))
             val shortFirst = first.isShortCommon() && second.isCommon(MIN_SPLIT_AFTER_SHORT_LETTERS)
             val shortSecond = second.isShortCommon() && second != "IN" && first.isCommon(MIN_SPLIT_LETTERS)
@@ -160,12 +170,15 @@ class OcrSpelling(private val ranks: Map<String, Int>) {
 
     private fun String.isCommon(minLetters: Int) = length >= minLetters && ranks[this] == 0
 
+    private fun String.isKnown(minLetters: Int) = length >= minLetters && this in ranks
+
     private fun String.key() = uppercase().filter { it != '\'' && it != '’' }
 
     companion object {
         private const val MIN_LETTERS = 3
         private const val MIN_LETTERS_TO_CHANGE = 4
-        private const val MIN_LETTERS_ANY_CHANGE = 6
+        private const val MIN_LETTERS_ADDED = 6
+        private const val MIN_LETTERS_ANY_CHANGE = 7
         private const val MIN_SPLIT_LETTERS = 4
         private const val MIN_SPLIT_I_LETTERS = 3
         private const val MIN_SHORT_LETTERS = 2

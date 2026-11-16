@@ -42,7 +42,10 @@ private val HYPHEN_BREAK = Regex("""(?<=\p{L})-\s*\n\s*(?=\p{L})""")
 private val LINE_BREAK = Regex("""\s*\n\s*""")
 
 /** Joins text broken over lines, including words hyphenated across them, so it can be wrapped anew. */
-fun String.joinLines(): String = replace(HYPHEN_BREAK, "").replace(LINE_BREAK, " ")
+fun String.joinLines(): String = joinHyphenatedWords().replace(LINE_BREAK, " ")
+
+/** Joins words hyphenated across lines, as "PRO-\nTECTING". */
+fun String.joinHyphenatedWords(): String = replace(HYPHEN_BREAK, "")
 
 /**
  * Whether this text is lettered in capitals. Most of its letters is enough, as OCR reads some capitals as small

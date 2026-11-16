@@ -12,7 +12,8 @@ class OcrSpellingTest {
             "ONLY" to 0, "OILY" to 2, "WIFE" to 0, "SAID" to 0, "SHOULD" to 0, "READER" to 0, "REQUEST" to 0,
             "NOR" to 0, "MAN" to 0, "TALK" to 0, "IN" to 0, "TALKING" to 0, "CHICKEN" to 0, "MODERN" to 1,
             "ITS" to 0, "OBVIOUS" to 0, "TO" to 0, "NO" to 0, "THIN" to 0, "EVERY" to 0, "ONES" to 0,
-            "EVERYONE" to 0,
+            "EVERYONE" to 0, "STONE" to 0, "BONNET" to 1, "PANDER" to 2, "FORGED" to 2, "TESTING" to 0,
+            "PROTECTING" to 0,
         ),
     )
 
@@ -73,5 +74,20 @@ class OcrSpellingTest {
     @Test
     fun `possessives of known words are kept`() {
         assertEquals("EVERYONE'S", spelling.fix("EVERYONE'S", anyLetter = true))
+    }
+
+    @Test
+    fun `six-letter words only get a dropped letter back`() {
+        assertEquals("SATONE BONNEY PANZER", spelling.fix("SATONE BONNEY PANZER", anyLetter = true))
+    }
+
+    @Test
+    fun `a glued I is split off rather than dropped`() {
+        assertEquals("I FORGED", spelling.fix("IFORGED", anyLetter = true))
+    }
+
+    @Test
+    fun `words hyphenated across lines are checked whole`() {
+        assertEquals("PROTECTING", spelling.fix("PRO-\nTECTING", anyLetter = true))
     }
 }
