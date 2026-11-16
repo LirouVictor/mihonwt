@@ -11,6 +11,8 @@ class OcrSpellingTest {
             "THANK" to 0, "OPEN" to 0, "BAT" to 1, "GRIZZLY" to 2, "THE" to 0, "BEAR" to 1,
             "ONLY" to 0, "OILY" to 2, "WIFE" to 0, "SAID" to 0, "SHOULD" to 0, "READER" to 0, "REQUEST" to 0,
             "NOR" to 0, "MAN" to 0, "TALK" to 0, "IN" to 0, "TALKING" to 0, "CHICKEN" to 0, "MODERN" to 1,
+            "ITS" to 0, "OBVIOUS" to 0, "TO" to 0, "NO" to 0, "THIN" to 0, "EVERY" to 0, "ONES" to 0,
+            "EVERYONE" to 0,
         ),
     )
 
@@ -49,6 +51,7 @@ class OcrSpellingTest {
     @Test
     fun `words OCR ran together are split`() {
         assertEquals("I SAID SHOULD I", spelling.fix("ISAID SHOULDI"))
+        assertEquals("ITS OBVIOUS JUST TO I DON'T", spelling.fix("ITSOBVIOUS JUSTTO IDON'T"))
         assertEquals("READER REQUEST", spelling.fix("READERREQUEST"))
         // Short pairs are as likely a name or a dropped ending
         assertEquals("NORMAN TALKIN", spelling.fix("NORMAN TALKIN"))
@@ -60,5 +63,15 @@ class OcrSpellingTest {
         assertEquals("CHICKEN TALKING", spelling.fix("CHCKEN TALKIN", anyLetter = true))
         assertEquals("TAKAKURA", spelling.fix("TAKAKURA", setOf("TAKAKURA"), anyLetter = true))
         assertEquals("MODERN", spelling.fix("MODEM"))
+    }
+
+    @Test
+    fun `short words are split off only where they aren't a name or an ending`() {
+        assertEquals("NOTHIN TALKIN", spelling.fix("NOTHIN TALKIN"))
+    }
+
+    @Test
+    fun `possessives of known words are kept`() {
+        assertEquals("EVERYONE'S", spelling.fix("EVERYONE'S", anyLetter = true))
     }
 }

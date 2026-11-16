@@ -20,7 +20,7 @@ class OcrSpelling(private val ranks: Map<String, Int>) {
         WORD.replace(text) { match ->
             val word = match.value
             val key = word.key()
-            if (!isCheckable(key) || key in ranks || key in names) return@replace word
+            if (!isCheckable(key) || key in ranks || key in names || word.isPossessiveOf(names)) return@replace word
             val fixed = best(misreadings(word, key), names)
                 ?: split(word, key)
                 ?: anyLetterChange(key, anyLetter)
@@ -38,6 +38,13 @@ class OcrSpelling(private val ranks: Map<String, Int>) {
         .map { it.value.key() }
         .filter { isCheckable(it) && it !in ranks }
         .toSet()
+
+    // Possessives aren't in the word list, and "EVERYONE'S" would otherwise be split into "EVERY ONE'S"
+    private fun String.isPossessiveOf(names: Set<String>): Boolean {
+        if (length < 3 || last().uppercaseChar() != 'S' || this[length - 2] !in "'’") return false
+        val owner = dropLast(2).key()
+        return owner in ranks || owner in names
+    }
 
     private fun isCheckable(key: String) =
         key.length >= MIN_LETTERS && key.any(Char::isLetter) && !key.all(Char::isDigit)
@@ -123,22 +130,30 @@ class OcrSpelling(private val ranks: Map<String, Int>) {
     }
 
     /**
-     * Returns [key] as the two common words it is, as "I SAID" for "ISAID", where OCR missed a space. Only an "I" or
-     * two long words are split off: shorter pairs turn names and dropped endings into words, as "NOR MAN" or "TALK IN".
+     * Returns [word] as the two common words it is, as "I SAID" for "ISAID", where OCR missed a space. Only an "I", two
+     * long words, or a short word before a long one or after a fairly long one are split off: other pairs turn names
+     * and dropped endings into words, as "NOR MAN", "NO THIN" or "TALK IN".
      */
     private fun split(word: String, key: String): String? {
-        if (word.length != key.length || key.any { !it.isLetter() }) return null
-        val splits = (1 until key.length).mapNotNull { at ->
+        if (key.any { !it.isLetter() }) return null
+        val splits = (1 until key.length).filter { at ->
             val first = key.substring(0, at)
             val second = key.substring(at)
             val withI = (first == "I" && second.isCommon(MIN_SPLIT_I_LETTERS)) ||
                 (second == "I" && first.isCommon(MIN_SPLIT_I_LETTERS))
-            "$first $second".takeIf {
-                withI || (first.isCommon(MIN_SPLIT_LETTERS) && second.isCommon(MIN_SPLIT_LETTERS))
-            }
+            val shortFirst = first.isShortCommon() && second.isCommon(MIN_SPLIT_AFTER_SHORT_LETTERS)
+            val shortSecond = second.isShortCommon() && second != "IN" && first.isCommon(MIN_SPLIT_LETTERS)
+            withI || shortFirst || shortSecond ||
+                (first.isCommon(MIN_SPLIT_LETTERS) && second.isCommon(MIN_SPLIT_LETTERS))
         }
-        return splits.singleOrNull()
+        val at = splits.singleOrNull() ?: return null
+        // Apostrophes stay where they were, as in "IDON'T"
+        var letters = 0
+        val wordAt = word.indexOfFirst { c -> c != '\'' && c != '’' && letters++ == at }
+        return word.substring(0, wordAt) + " " + word.substring(wordAt)
     }
+
+    private fun String.isShortCommon() = length in MIN_SHORT_LETTERS..<MIN_SPLIT_LETTERS && ranks[this] == 0
 
     private fun String.isCommon(minLetters: Int) = length >= minLetters && ranks[this] == 0
 
@@ -150,6 +165,8 @@ class OcrSpelling(private val ranks: Map<String, Int>) {
         private const val MIN_LETTERS_ANY_CHANGE = 6
         private const val MIN_SPLIT_LETTERS = 4
         private const val MIN_SPLIT_I_LETTERS = 3
+        private const val MIN_SHORT_LETTERS = 2
+        private const val MIN_SPLIT_AFTER_SHORT_LETTERS = 5
         private const val NAME_RANK = -1
         private const val VOWELS = "AEIOU"
         private val WORD = Regex("""[\p{L}\d'’]+""")
