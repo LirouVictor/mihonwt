@@ -34,7 +34,7 @@ class OcrSpelling(private val ranks: Map<String, Int>) {
         }
         val key = word.key()
         if (!isCheckable(key) || key in ranks || key in names) return word
-        val fixed = best(misreadings(word, key), names)
+        val fixed = best(misreadings(word, key, anyLetter), names)
             ?: split(word, key)
             ?: anyLetterChange(key, anyLetter)
             ?: return word
@@ -119,13 +119,16 @@ class OcrSpelling(private val ranks: Map<String, Int>) {
         return found.filter { it.second == best }.singleOrNull()?.first
     }
 
-    private fun misreadings(word: String, key: String) = sequence {
+    private fun misreadings(word: String, key: String, anyLetter: Boolean) = sequence {
         // A dropped "J" at the start of a word, as in "UST", is the only fix short words get: others too easily turn
         // one word into another, as "CLAK" read as "CAK" into "CAR"
         yield("J$key")
         if (key.length < MIN_LETTERS_TO_CHANGE) return@sequence
         for (i in key.indices) {
             MISREAD[key[i]]?.forEach { yield(key.substring(0, i) + it + key.substring(i + 1)) }
+            // A "P" read as "D", as in "SHID", is as common the other way, so only once the series' names keep
+            // those like "ODEN" from turning into words
+            if (anyLetter && key[i] == 'D') yield(key.substring(0, i) + 'P' + key.substring(i + 1))
         }
         // "RN" and "M" run together or apart
         var i = key.indexOf("RN")
