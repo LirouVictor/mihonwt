@@ -23,8 +23,8 @@ import java.nio.LongBuffer
 /**
  * Finds the text of speech bubbles and captions on a page with ogkalu's comic text and bubble detector, an RT-DETR-v2
  * model trained on manga, webtoons, manhua and western comics, under the Apache License 2.0. The app carries its
- * detector-v4-s_int8.onnx (revision 16e8a622f91fabc6b5b65c96d32d1183f8843546) turned back into float weights, which
- * XNNPACK can run and the integer operators of the original couldn't use.
+ * detector-v4-s_int8.onnx at revision 16e8a622f91fabc6b5b65c96d32d1183f8843546; a float version of it was slower on
+ * phones.
  */
 class BubbleDetector private constructor(private val session: OrtSession) : Closeable {
 
@@ -89,7 +89,7 @@ class BubbleDetector private constructor(private val session: OrtSession) : Clos
         private const val IMAGES_INPUT = "images"
         private const val SIZES_INPUT = "orig_target_sizes"
 
-        private const val MODEL_ASSET = "detector-v4-s_fp32.onnx"
+        private const val MODEL_ASSET = "detector-v4-s_int8.onnx"
 
         // Downloaded by versions before the model came with the app
         private const val OLD_MODEL_FILE = "bubble_detector_v4_s_int8.onnx"
