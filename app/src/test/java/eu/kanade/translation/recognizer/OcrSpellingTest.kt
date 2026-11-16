@@ -9,7 +9,8 @@ class OcrSpellingTest {
             "JUST" to 0, "MUST" to 0, "DREARY" to 1, "NIGHTS" to 0, "DAMN" to 1, "HERE" to 0, "AMAZING" to 1,
             "ASSASSIN" to 2, "CHAIN" to 0, "THEYRE" to 0, "DONT" to 0, "CAR" to 0, "MESS" to 0, "GOOD" to 0,
             "THANK" to 0, "OPEN" to 0, "BAT" to 1, "GRIZZLY" to 2, "THE" to 0, "BEAR" to 1,
-            "ONLY" to 0, "OILY" to 2, "WIFE" to 0,
+            "ONLY" to 0, "OILY" to 2, "WIFE" to 0, "SAID" to 0, "SHOULD" to 0, "READER" to 0, "REQUEST" to 0,
+            "NOR" to 0, "MAN" to 0, "TALK" to 0, "IN" to 0, "TALKING" to 0, "CHICKEN" to 0, "MODERN" to 1,
         ),
     )
 
@@ -43,5 +44,21 @@ class OcrSpellingTest {
         val names = OcrSpelling.namesOf(listOf("Gary Grizzly", "Vamola"))
         assertEquals("GARY GRIZZLY", spelling.fix("GARY GRZZLY", names))
         assertEquals("OPEN", spelling.fix("OPEN", names))
+    }
+
+    @Test
+    fun `words OCR ran together are split`() {
+        assertEquals("I SAID SHOULD I", spelling.fix("ISAID SHOULDI"))
+        assertEquals("READER REQUEST", spelling.fix("READERREQUEST"))
+        // Short pairs are as likely a name or a dropped ending
+        assertEquals("NORMAN TALKIN", spelling.fix("NORMAN TALKIN"))
+    }
+
+    @Test
+    fun `any letter changes once the series' names are known`() {
+        assertEquals("CHCKEN", spelling.fix("CHCKEN"))
+        assertEquals("CHICKEN TALKING", spelling.fix("CHCKEN TALKIN", anyLetter = true))
+        assertEquals("TAKAKURA", spelling.fix("TAKAKURA", setOf("TAKAKURA"), anyLetter = true))
+        assertEquals("MODERN", spelling.fix("MODEM"))
     }
 }

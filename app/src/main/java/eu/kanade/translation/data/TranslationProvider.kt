@@ -87,6 +87,27 @@ class TranslationProvider(
         }
     }
 
+    /**
+     * Returns the words OCR read in a manga that aren't English, each with the chapter it was first read in, so a word
+     * read again in another chapter is taken as one of the manga's names rather than a misreading.
+     */
+    fun getSeenWords(mangaDir: UniFile): Map<String, String> {
+        val file = mangaDir.findFile(SEEN_WORDS_FILE_NAME) ?: return emptyMap()
+        return runCatching {
+            file.openInputStream().use { Json.decodeFromString<Map<String, String>>(it.reader().readText()) }
+        }.getOrElse {
+            logcat(LogPriority.WARN, it) { "Unreadable seen words" }
+            emptyMap()
+        }
+    }
+
+    fun saveSeenWords(mangaDir: UniFile, words: Map<String, String>) {
+        mangaDir.findFile(SEEN_WORDS_FILE_NAME)?.delete()
+        mangaDir.createFile(SEEN_WORDS_FILE_NAME)!!.openOutputStream().use {
+            it.write(Json.encodeToString(words).toByteArray())
+        }
+    }
+
     private fun getSourceDirName(source: Source): String {
         return DiskUtil.buildValidFilename(source.toString())
     }
@@ -105,5 +126,6 @@ class TranslationProvider(
     private companion object {
         // Hidden, and named unlike any chapter's translation file
         const val GLOSSARY_FILE_NAME = ".glossary.json"
+        const val SEEN_WORDS_FILE_NAME = ".ocr_words.json"
     }
 }
