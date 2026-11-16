@@ -83,3 +83,5 @@ jobs:
           target_commitish: ${{ github.sha }}
           name: MihonWT ${{ steps.version.outputs.tag }}
           files: MihonWT-${{ steps.version.outputs.tag }}.apk
+          # The app's update check shows the notes, and reads no release without them on versions before v0.0.40
+          generate_release_notes: true
