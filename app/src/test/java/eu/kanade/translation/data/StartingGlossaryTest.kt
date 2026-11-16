@@ -33,13 +33,17 @@ class StartingGlossaryTest {
         val reply = Json.parseToJsonElement(
             """
             {"data":{"Media":{"characters":{"nodes":[
-              {"name":{"full":"Zoro Roronoa","alternative":["Pirate Hunter",""]}},
-              {"name":{"full":"Nami","alternative":[]}}
+              {"name":{"full":"Zoro Roronoa","alternative":["Pirate Hunter","","Zolo","Lorenor Zorro"]}},
+              {"name":{"full":"Nami","alternative":[]}},
+              {"name":{"full":"Ken Takakura","alternative":["Okarun (オカルン)", "ジジ"]}}
             ]}}}}
             """,
         ) as JsonObject
 
-        assertEquals(listOf("Zoro Roronoa", "Pirate Hunter", "Nami"), CharacterLookup.characterNamesOf(reply))
+        assertEquals(
+            listOf("Zoro Roronoa", "Zolo", "Nami", "Ken Takakura", "Okarun"),
+            CharacterLookup.characterNamesOf(reply),
+        )
         assertEquals(
             emptyList<String>(),
             CharacterLookup.characterNamesOf(Json.parseToJsonElement("""{"data":{"Media":null}}""") as JsonObject),

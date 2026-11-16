@@ -80,13 +80,13 @@ class CharacterLookup(private val client: OkHttpClient) {
             return nodes.flatMap { node ->
                 val name = (node as? JsonObject)?.get("name") as? JsonObject ?: return@flatMap emptyList()
                 val full = (name["full"] as? JsonPrimitive)?.contentOrNull
+                // Other names are often nicknames in English, as "Straw Hat", or in other languages, as "Shanks den
+                // røde", which a translation shouldn't keep, so only one-word names like "Okarun" are taken
                 val alternative = (name["alternative"] as? JsonArray).orEmpty()
-                    .mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+                    .mapNotNull { (it as? JsonPrimitive)?.contentOrNull?.replace(IN_BRACKETS, "")?.trim() }
+                    .filter { ONE_WORD.matches(it) }
                 listOfNotNull(full) + alternative
-            }
-                .map { it.trim() }
-                .filter { it.isNotEmpty() }
-                .distinct()
+            }.cleaned()
         }
 
         /**
@@ -101,8 +101,16 @@ class CharacterLookup(private val client: OkHttpClient) {
                 )
                 .take(MAX_CHARACTERS)
                 .mapNotNull { (it["character"] as? JsonObject)?.get("name")?.jsonPrimitive?.contentOrNull }
-                .map { name -> name.split(", ", limit = 2).reversed().joinToString(" ").trim() }
-                .filter { it.isNotEmpty() }
-                .distinct()
+                .map { name -> name.split(", ", limit = 2).reversed().joinToString(" ") }
+                .cleaned()
+
+        // Names come with their Japanese spelling, as "Okarun (オカルン)" or "ジジ", which English text never has
+        private fun List<String>.cleaned(): List<String> = map { it.replace(IN_BRACKETS, "").trim() }
+            .filter { name -> name.any { it.isLetter() && Character.UnicodeScript.of(it.code) == LATIN } }
+            .distinct()
+
+        private val IN_BRACKETS = Regex("""\s*[(（][^)）]*[)）]""")
+        private val LATIN = Character.UnicodeScript.LATIN
+        private val ONE_WORD = Regex("""[A-Za-z]+""")
     }
 }
