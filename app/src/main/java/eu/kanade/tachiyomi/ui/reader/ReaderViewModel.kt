@@ -53,6 +53,7 @@ import eu.kanade.tachiyomi.util.storage.DiskUtil
 import eu.kanade.tachiyomi.util.storage.cacheImageDir
 import eu.kanade.tachiyomi.util.system.activeNetworkState
 import eu.kanade.translation.TranslationManager
+import eu.kanade.translation.model.forPage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -324,7 +325,7 @@ class ReaderViewModel(
             listOfNotNull(chapters?.prevChapter, chapters?.currChapter, chapters?.nextChapter).forEach { chapter ->
                 val translations = partial[chapter.chapter.id] ?: return@forEach
                 chapter.pages?.forEach { page ->
-                    page.translationKey?.let(translations::get)?.let { page.translation = it }
+                    page.translationKey?.let(translations::forPage)?.let { page.translation = it }
                 }
             }
         }
@@ -578,25 +579,22 @@ class ReaderViewModel(
 
     private var translatedAheadChapterId: Long? = null
 
-    /** Translates the downloaded next chapter while a translated one is read, so it opens already translated. */
+    /** Translates the next chapter while a translated one is read, so it opens already translated. */
     private fun translateNextChapter(pages: List<ReaderPage>) {
         if (pages.none { it.translation != null }) return
         val manga = manga ?: return
         val nextChapter = state.value.viewerChapters?.nextChapter?.chapter ?: return
         if (nextChapter.id == translatedAheadChapterId) return
+        translatedAheadChapterId = nextChapter.id
+        translationManager.translateChapter(manga, nextChapter)
+    }
 
-        viewModelScope.launch(Dispatchers.IO) {
-            val isNextChapterDownloaded = downloadManager.isChapterDownloaded(
-                nextChapter.name,
-                nextChapter.scanlator,
-                nextChapter.url,
-                manga.title,
-                manga.source,
-            )
-            if (!isNextChapterDownloaded) return@launch
-            translatedAheadChapterId = nextChapter.id
-            translationManager.translateChapter(manga, nextChapter)
-        }
+    /** Translates the chapter being read when it has no translation, as when translations are turned on in it. */
+    fun translateCurrentChapter() {
+        val manga = manga ?: return
+        val chapter = getCurrentChapter() ?: return
+        if (chapter.pages.orEmpty().any { it.translation != null }) return
+        translationManager.translateChapter(manga, chapter.chapter)
     }
 
     private fun downloadNextChapters() {

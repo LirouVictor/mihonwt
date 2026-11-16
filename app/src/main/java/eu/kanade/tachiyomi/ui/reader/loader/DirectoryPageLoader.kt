@@ -5,6 +5,7 @@ import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
 import eu.kanade.tachiyomi.util.lang.compareToCaseInsensitiveNaturalOrder
 import eu.kanade.translation.model.PageTranslation
+import eu.kanade.translation.model.forPage
 import tachiyomi.core.common.util.system.ImageUtil
 
 /**
@@ -27,7 +28,7 @@ internal class DirectoryPageLoader(
                 ReaderPage(i).apply {
                     stream = streamFn
                     translationKey = file.name
-                    translation = translations[file.name]
+                    translation = file.name?.let(translations::forPage)
                     status = Page.State.Ready
                 }
             }

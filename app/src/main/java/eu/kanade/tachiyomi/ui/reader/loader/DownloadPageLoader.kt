@@ -10,6 +10,7 @@ import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.ui.reader.model.ReaderChapter
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
 import eu.kanade.translation.model.PageTranslation
+import eu.kanade.translation.model.forPage
 import mihon.core.archive.archiveReader
 import tachiyomi.domain.manga.model.Manga
 
@@ -65,7 +66,7 @@ internal class DownloadPageLoader(
             }.apply {
                 status = Page.State.Ready
                 translationKey = page.uri?.let { UniFile.fromUri(context, it)?.name }
-                translation = translationKey?.let(translations::get)
+                translation = translationKey?.let(translations::forPage)
             }
         }
     }
