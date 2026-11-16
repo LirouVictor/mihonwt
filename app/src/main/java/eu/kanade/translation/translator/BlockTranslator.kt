@@ -1,6 +1,7 @@
 package eu.kanade.translation.translator
 
 import eu.kanade.translation.model.PageTranslation
+import eu.kanade.translation.model.isInCapitals
 import eu.kanade.translation.model.joinLines
 import java.util.Locale
 
@@ -42,8 +43,7 @@ abstract class BlockTranslator : PageTranslator() {
  * translation back in capitals.
  */
 internal fun String.toSentenceCase(): String {
-    val letters = filter(Char::isLetter)
-    if (letters.isEmpty() || letters.count(Char::isUpperCase) < letters.length * MIN_CAPITALS) return this
+    if (!isInCapitals()) return this
     val text = StringBuilder(lowercase(Locale.ENGLISH))
     var sentenceStart = true
     text.indices.forEach { i ->
@@ -57,6 +57,5 @@ internal fun String.toSentenceCase(): String {
     return text.replace(PRONOUN_I, "I")
 }
 
-private const val MIN_CAPITALS = 0.8f
 private const val SENTENCE_ENDS = ".!?"
 private val PRONOUN_I = Regex("""\bi\b""")

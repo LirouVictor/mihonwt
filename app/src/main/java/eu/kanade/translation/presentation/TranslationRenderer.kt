@@ -18,6 +18,7 @@ import androidx.core.graphics.withSave
 import eu.kanade.tachiyomi.R
 import eu.kanade.translation.model.PageTranslation
 import eu.kanade.translation.model.TranslationBlock
+import eu.kanade.translation.model.isInCapitals
 import eu.kanade.translation.model.joinLines
 import java.util.Locale
 import kotlin.math.abs
@@ -188,9 +189,7 @@ class TranslationRenderer(context: Context, translation: PageTranslation, var on
      */
     private fun TranslationBlock.displayedTranslation(): String {
         val text = translation.joinLines()
-        val letters = this.text.filter(Char::isLetter)
-        val isCapitals = letters.isNotEmpty() && letters.count(Char::isUpperCase) >= letters.length * MIN_CAPITALS
-        return if (isCapitals) text.uppercase(textPaint.textLocale) else text
+        return if (this.text.isInCapitals()) text.uppercase(textPaint.textLocale) else text
     }
 
     /**
@@ -362,8 +361,5 @@ class TranslationRenderer(context: Context, translation: PageTranslation, var on
 
         /** Height to width ratio from which a box holding a single word is lettered a letter per line. */
         const val MIN_STACKED_RATIO = 3f
-
-        /** Share of capital letters above which the original counts as lettered in capitals, despite OCR misreads. */
-        const val MIN_CAPITALS = 0.8f
     }
 }
