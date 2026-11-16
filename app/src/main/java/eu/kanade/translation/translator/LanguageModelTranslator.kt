@@ -14,6 +14,7 @@ import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.floatOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
@@ -128,6 +129,46 @@ abstract class LanguageModelTranslator : PageTranslator() {
     }
 
     /**
+     * Returns the English text of each block of [pages] as the model reads it on their [images], fixing what OCR
+     * misread, for a machine translator that can't see the pages: by page name, then by block index. Blocks the
+     * model didn't answer for are left out.
+     */
+    suspend fun correctText(
+        pages: Map<String, PageTranslation>,
+        series: String,
+        images: Map<String, ByteArray>,
+        onRetry: (attempt: Int) -> Unit,
+    ): Map<String, Map<Int, String>> {
+        val pageImages = images.filterKeys { it in pages }
+        val input = buildJsonObject {
+            pages.forEach { (name, page) ->
+                putJsonObject(name) {
+                    page.blocks.forEachIndexed { i, block -> put(i.toString(), block.text.joinLines()) }
+                }
+            }
+        }
+        val prompt = systemPrompt(CORRECT_TEXT_PROMPT, series, emptyMap())
+        val output = try {
+            request(prompt, input.toString(), pageImages, onRetry, CORRECT_TEXT_SCHEMA)
+        } catch (e: TruncatedReplyException) {
+            if (pages.size < 2) throw e
+            return pages.entries.chunked((pages.size + 1) / 2).fold(emptyMap()) { corrected, half ->
+                corrected + correctText(half.associate { it.key to it.value }, series, images, onRetry)
+            }
+        }
+        return (output["pages"] as? JsonArray).orEmpty().filterIsInstance<JsonObject>().mapNotNull { entry ->
+            val name = (entry["page"] as? JsonPrimitive)?.contentOrNull?.takeIf { it in pages }
+                ?: return@mapNotNull null
+            val blocks = (entry["blocks"] as? JsonArray).orEmpty().filterIsInstance<JsonObject>().mapNotNull {
+                val index = (it["n"] as? JsonPrimitive)?.intOrNull ?: return@mapNotNull null
+                val text = (it["text"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
+                index to text
+            }
+            name to blocks.toMap()
+        }.toMap()
+    }
+
+    /**
      * Returns the names and recurring terms of [series] the model knows, as characters, places, groups and attacks,
      * with how translations usually give them, or none when it doesn't know the series.
      */
@@ -237,6 +278,25 @@ abstract class LanguageModelTranslator : PageTranslator() {
                 "translation":{"type":"STRING"}}}}}}
             """,
         ).jsonObject
+
+        private val CORRECT_TEXT_SCHEMA = Json.parseToJsonElement(
+            """
+            {"type":"OBJECT","required":["pages"],"properties":{
+              "pages":{"type":"ARRAY","items":{"type":"OBJECT","required":["page","blocks"],"properties":{
+                "page":{"type":"STRING"},
+                "blocks":{"type":"ARRAY","items":{"type":"OBJECT","required":["n","text"],"properties":{
+                  "n":{"type":"INTEGER"},
+                  "text":{"type":"STRING"}}}}}}}}}
+            """,
+        ).jsonObject
+
+        private val CORRECT_TEXT_PROMPT = """
+            You fix OCR mistakes in comic lettering. You'll receive page images, each after its file name, and a JSON object mapping each file name to numbered blocks of the English text that OCR read on that page; each block is one speech bubble or caption.
+
+            For each block, return its text as it is actually lettered on the page image: fix misread letters (D read for P, 0 for O, 2 for Z or ?), words run together or split, lines OCR skipped inside the same bubble, and punctuation. Keep the text in English and in the same case as lettered; never translate, rephrase, or move text between blocks. If a block is not lettering (sound effects drawn in the art, signs, noise), return it unchanged.
+
+            Under "pages", return an entry per page with its file name as "page" and, under "blocks", each block's number as "n" and its corrected "text".
+        """.trimIndent()
 
         private val SERIES_TERMS_SCHEMA = Json.parseToJsonElement(
             """

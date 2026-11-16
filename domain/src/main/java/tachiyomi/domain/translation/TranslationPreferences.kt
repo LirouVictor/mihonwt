@@ -41,6 +41,13 @@ class TranslationPreferences(
      */
     val findTextOnImages: Preference<Boolean> = preferenceStore.getBoolean("translation_find_text_on_images", false)
 
+    /**
+     * Whether Gemini, given the page images, fixes the text OCR read before a machine translator, which can't see
+     * the pages, translates it.
+     */
+    val correctTextWithGemini: Preference<Boolean> =
+        preferenceStore.getBoolean("translation_correct_text_with_gemini", false)
+
     /** Whether OCR text is grouped by the bubbles an on-device detector finds, rather than by its layout alone. */
     val detectBubbles: Preference<Boolean> = preferenceStore.getBoolean("translation_detect_bubbles", true)
 
