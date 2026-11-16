@@ -3,6 +3,7 @@
 
 package eu.kanade.translation
 
+import android.content.Context
 import com.hippo.unifile.UniFile
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.Inject
@@ -39,6 +40,7 @@ import tachiyomi.domain.source.service.SourceManager
 @Inject
 @SingleIn(AppScope::class)
 class TranslationManager(
+    private val context: Context,
     @AppCoroutineScope private val scope: CoroutineScope,
     private val translator: ChapterTranslator,
     private val provider: TranslationProvider,
@@ -85,7 +87,7 @@ class TranslationManager(
         scope.launch {
             queueing.withLock {
                 translator.queueChapter(manga, chapter)
-                if (!translator.isRunning) translator.start()
+                startTranslator()
             }
         }
     }
@@ -97,7 +99,7 @@ class TranslationManager(
             provider.findTranslationFile(chapter.name, chapter.scanlator, manga.title, source)?.delete()
             queueing.withLock {
                 translator.queueChapter(manga, chapter)
-                if (!translator.isRunning) translator.start()
+                startTranslator()
             }
         }
     }
@@ -175,9 +177,13 @@ class TranslationManager(
             if (queueState.value.isEmpty()) {
                 translator.stop()
             } else {
-                translator.start()
+                startTranslator()
             }
         }
+    }
+
+    private fun startTranslator() {
+        if (translator.start()) TranslationWorker.start(context)
     }
 
     /** Emits each queued translation whenever its status changes. */

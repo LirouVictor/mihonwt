@@ -119,6 +119,7 @@ class ChapterTranslator(
     private val sourceManager: SourceManager,
     private val translationPreferences: TranslationPreferences,
     private val readerPreferences: ReaderPreferences,
+    private val notifier: TranslationNotifier,
 ) {
 
     private val _queueState = MutableStateFlow<List<Translation>>(emptyList())
@@ -416,6 +417,7 @@ class ChapterTranslator(
                 ""
             }
             translation.status = Translation.State.TRANSLATED
+            notifier.onTranslated(translation)
         } catch (e: Throwable) {
             if (e is CancellationException) throw e
             logcat(LogPriority.ERROR, e)
@@ -427,6 +429,7 @@ class ChapterTranslator(
             translation.error = error
             translation.progress = null
             translation.status = Translation.State.ERROR
+            notifier.onFailed(translation, error)
             val message = context.stringResource(WTMR.strings.translation_failed, translation.chapter.name, error)
             withContext(Dispatchers.Main) { context.toast(message, Toast.LENGTH_LONG) }
         }
