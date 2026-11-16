@@ -121,7 +121,14 @@ class TranslationNotifier(
         )
     }
 
-    private fun showList(id: Int, channel: String, icon: Int, title: String, lines: List<String>, intent: PendingIntent) {
+    private fun showList(
+        id: Int,
+        channel: String,
+        icon: Int,
+        title: String,
+        lines: List<String>,
+        intent: PendingIntent,
+    ) {
         context.notify(id, channel) {
             setSmallIcon(icon)
             setContentTitle(title)
@@ -149,7 +156,8 @@ class TranslationNotifier(
 /** Describes where a queued chapter's translation is, or that it waits in the queue when [progress] is null. */
 fun Context.translationProgressText(progress: Translation.Progress?): String = when {
     progress == null -> stringResource(WTMR.strings.translation_queued)
-    progress.page < progress.pages -> stringResource(WTMR.strings.translation_progress_ocr, progress.page + 1, progress.pages)
+    progress.page < progress.pages ->
+        stringResource(WTMR.strings.translation_progress_ocr, progress.page + 1, progress.pages)
     progress.retries > 0 -> stringResource(WTMR.strings.translation_progress_ai_retry, progress.retries)
     else -> stringResource(WTMR.strings.translation_progress_ai, progress.translated, progress.toTranslate)
 }
