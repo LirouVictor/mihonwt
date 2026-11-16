@@ -91,7 +91,7 @@ class OcrSpelling(private val ranks: Map<String, Int>) {
         private val MISREAD = mapOf(
             'P' to "D",
             'K' to "R",
-            'W' to "N",
+            'W' to "NI",
             '0' to "O",
             '1' to "I",
             '5' to "S",
