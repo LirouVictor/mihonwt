@@ -13,7 +13,7 @@ class OcrSpellingTest {
             "NOR" to 0, "MAN" to 0, "TALK" to 0, "IN" to 0, "TALKING" to 0, "CHICKEN" to 0, "MODERN" to 1,
             "ITS" to 0, "OBVIOUS" to 0, "TO" to 0, "NO" to 0, "THIN" to 0, "EVERY" to 0, "ONES" to 0,
             "EVERYONE" to 0, "STONE" to 0, "BONNET" to 1, "PANDER" to 2, "FORGED" to 2, "TESTING" to 0,
-            "PROTECTING" to 0, "PRO" to 0, "BONNETS" to 1,
+            "PROTECTING" to 0, "PRO" to 0, "BONNETS" to 1, "SHIP" to 0,
         ),
     )
 
@@ -90,6 +90,13 @@ class OcrSpellingTest {
     fun `words hyphenated across lines are checked whole`() {
         assertEquals("PROTECTING", spelling.fix("PRO-\nTECTING", anyLetter = true))
         assertEquals("BE PROTECTING", spelling.fix("BE PRO\nTECTING", anyLetter = true))
+    }
+
+    @Test
+    fun `D is read as P once the series' names are known`() {
+        assertEquals("ON THE SHID", spelling.fix("ON THE SHID"))
+        assertEquals("ON THE SHIP", spelling.fix("ON THE SHID", setOf("LOKI"), anyLetter = true))
+        assertEquals("ODEN", spelling.fix("ODEN", setOf("ODEN"), anyLetter = true))
     }
 
     @Test

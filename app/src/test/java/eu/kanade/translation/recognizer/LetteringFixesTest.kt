@@ -31,6 +31,8 @@ class LetteringFixesTest {
         assertEquals("REMEM-\nBER IT?", "REMEM-|\nBER IT?".fixLetteringMistakes())
         assertEquals("THE END OF IT, FOLKS!", "THE END OF IT, FOLKS/".fixLetteringMistakes())
         assertEquals("FOR A FAVOR?", "FOR A FAVOR?{".fixLetteringMistakes())
+        assertEquals("WHO IS THAT?!!", "WHO IS THAT2!!".fixLetteringMistakes())
+        assertEquals("AGE 2! B2!", "AGE 2! B2!".fixLetteringMistakes())
     }
 
     @Test

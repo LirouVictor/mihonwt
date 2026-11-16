@@ -32,6 +32,7 @@ import eu.kanade.translation.model.FoundText
 import eu.kanade.translation.model.PageTranslation
 import eu.kanade.translation.model.Translation
 import eu.kanade.translation.model.TranslationBlock
+import eu.kanade.translation.model.joinLines
 import eu.kanade.translation.model.onlinePageName
 import eu.kanade.translation.recognizer.BubbleDetector
 import eu.kanade.translation.recognizer.Letter
@@ -42,6 +43,7 @@ import eu.kanade.translation.recognizer.TextRecognizer
 import eu.kanade.translation.recognizer.blocksInBoxes
 import eu.kanade.translation.recognizer.blocksOfFoundText
 import eu.kanade.translation.recognizer.bubbleBlocks
+import eu.kanade.translation.recognizer.correctionOf
 import eu.kanade.translation.recognizer.fixLetteringMistakes
 import eu.kanade.translation.recognizer.grownIntoBubble
 import eu.kanade.translation.recognizer.inBubble
@@ -50,6 +52,7 @@ import eu.kanade.translation.recognizer.lightPixels
 import eu.kanade.translation.recognizer.withBackground
 import eu.kanade.translation.recognizer.withOverlapsJoined
 import eu.kanade.translation.recognizer.wordOf
+import eu.kanade.translation.translator.BlockTranslator
 import eu.kanade.translation.translator.GeminiTranslator
 import eu.kanade.translation.translator.LanguageModelTranslator
 import eu.kanade.translation.translator.PageTranslator
@@ -98,6 +101,7 @@ import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.max
 import kotlin.math.min
@@ -280,6 +284,9 @@ class ChapterTranslator(
             val seenWords = provider.getSeenWords(mangaDir).toMutableMap()
             val readWords = ConcurrentHashMap.newKeySet<String>()
             val times = Times()
+            val corrector = gemini().takeIf {
+                translator is BlockTranslator && translationPreferences.correctTextWithGemini.get()
+            }
             val findsText = translator is LanguageModelTranslator &&
                 translator.readsImages &&
                 translationPreferences.findTextOnImages.get()
@@ -293,7 +300,7 @@ class ChapterTranslator(
                         cached.forEach { recognized.send(it.toPair()) }
                         cached
                     } else {
-                        val pageImages = images.takeIf { translator.readsImages }
+                        val pageImages = images.takeIf { translator.readsImages || corrector != null }
                         val detector = bubbleDetector().takeUnless { findsText }
                         val learnedNames = seenWords.filterValues { it != chapterFileName }.keys
                         val names = OcrSpelling.namesOf(glossary.keys) + learnedNames
@@ -343,6 +350,7 @@ class ChapterTranslator(
                     }
                     // Pages the model skipped still get the text OCR grouped translated
                     val left = batch.filterKeys { it !in answered }
+                    if (corrector != null && left.isNotEmpty()) correctText(corrector, left, title, images, times)
                     if (left.isNotEmpty()) terms = terms + translator.translate(left, title, images, known, onRetry)
                     times.translate.addAndGet(batchStart.elapsedNow().inWholeMilliseconds)
                     results.withLock {
@@ -397,7 +405,16 @@ class ChapterTranslator(
                 times.detect.get().seconds(),
                 times.bubbles.get().seconds(),
                 times.translate.get().seconds(),
-            )
+            ) + if (corrector != null) {
+                ". " + context.stringResource(
+                    WTMR.strings.translation_times_corrected,
+                    times.correct.get().seconds(),
+                    times.corrected.get(),
+                    times.correctable.get(),
+                )
+            } else {
+                ""
+            }
             translation.status = Translation.State.TRANSLATED
         } catch (e: Throwable) {
             if (e is CancellationException) throw e
@@ -551,6 +568,43 @@ class ChapterTranslator(
         val bubbles = AtomicLong()
         val detect = AtomicLong()
         val translate = AtomicLong()
+        val correct = AtomicLong()
+        val corrected = AtomicInteger()
+        val correctable = AtomicInteger()
+    }
+
+    /**
+     * Replaces the text of the blocks of [pages] with how [corrector] reads it on their [images], where that is the
+     * same text with OCR's mistakes fixed. The text OCR read stays if the model fails, as it is only a correction.
+     */
+    private suspend fun correctText(
+        corrector: LanguageModelTranslator,
+        pages: Map<String, PageTranslation>,
+        series: String,
+        images: Map<String, ByteArray>,
+        times: Times,
+    ) {
+        val start = TimeSource.Monotonic.markNow()
+        val corrections = try {
+            corrector.correctText(pages, series, images) {}
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logcat(LogPriority.WARN, e) { "Text correction failed" }
+            emptyMap()
+        }
+        times.correct.addAndGet(start.elapsedNow().inWholeMilliseconds)
+        pages.forEach { (name, page) ->
+            val fixed = corrections[name].orEmpty()
+            times.correctable.addAndGet(page.blocks.size)
+            page.blocks = page.blocks.mapTo(mutableListOf()) { block ->
+                val text = correctionOf(block.text, fixed.values)
+                    ?.takeIf { it.joinLines() != block.text.joinLines() }
+                    ?: return@mapTo block
+                times.corrected.incrementAndGet()
+                block.copy(text = text)
+            }
+        }
     }
 
     /** Whether the reader shows [Translation.manga] right to left, as manga, so its bubbles are read that way too. */

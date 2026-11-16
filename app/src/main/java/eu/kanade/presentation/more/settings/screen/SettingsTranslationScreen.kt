@@ -92,6 +92,12 @@ object SettingsTranslationScreen : SearchableSettings {
                 visible = service == TranslationService.GEMINI,
             ),
             Preference.PreferenceItem.SwitchPreference(
+                preference = translationPreferences.correctTextWithGemini,
+                title = stringResource(WTMR.strings.pref_correct_text_with_gemini),
+                subtitle = stringResource(WTMR.strings.pref_correct_text_with_gemini_summary),
+                visible = service == TranslationService.DEEPL || service == TranslationService.OFFLINE,
+            ),
+            Preference.PreferenceItem.SwitchPreference(
                 preference = translationPreferences.detectBubbles,
                 title = stringResource(WTMR.strings.pref_detect_bubbles),
                 subtitle = stringResource(WTMR.strings.pref_detect_bubbles_summary),
