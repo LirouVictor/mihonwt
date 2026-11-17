@@ -108,7 +108,8 @@ class TranslationRenderer(context: Context, translation: PageTranslation, var on
                 right = min(right, other.x)
             }
         }
-        val margin = block.symHeight / 2
+        // Tall, condensed lettering in a narrow bubble would otherwise leave the text only a sliver of it
+        val margin = min(block.symHeight / 2, (right - left) * MAX_MARGIN_SHARE)
         return max(block.width, 2 * (min(centerX - left, right - centerX) - margin))
     }
 
@@ -381,6 +382,7 @@ class TranslationRenderer(context: Context, translation: PageTranslation, var on
 
         /** Tilt in degrees up to which a block is taken as upright, for widening it in its bubble. */
         const val MAX_UPRIGHT_ANGLE = 10f
+        const val MAX_MARGIN_SHARE = 0.1f
 
         /** Height to width ratio from which a box holding a single word is lettered a letter per line. */
         const val MIN_STACKED_RATIO = 3f
