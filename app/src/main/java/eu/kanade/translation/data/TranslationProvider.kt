@@ -81,6 +81,14 @@ class TranslationProvider(
         }
     }
 
+    /** Returns the English terms of a manga's glossaries in every language, names that OCR can then read right. */
+    fun getGlossaryTerms(mangaDir: UniFile): Set<String> {
+        val languages = TargetLanguage.entries.associateBy(::glossaryFileName)
+        return mangaDir.listFiles().orEmpty()
+            .mapNotNull { languages[it.name] }
+            .flatMapTo(HashSet()) { getGlossary(mangaDir, it).keys }
+    }
+
     fun saveGlossary(mangaDir: UniFile, language: TargetLanguage, glossary: Map<String, String>) {
         val fileName = glossaryFileName(language)
         mangaDir.findFile(fileName)?.delete()

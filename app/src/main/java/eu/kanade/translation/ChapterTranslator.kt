@@ -282,14 +282,16 @@ class ChapterTranslator(
             val chapterId = translation.chapter.id
             val done = partialTranslations.value[chapterId].orEmpty().toMutableMap()
             val images = recognizedImages.getOrPut(chapterId) { ConcurrentHashMap() }
-            // Glossaries saved before single English words were left out drop them now
             val language = translationPreferences.targetLanguage.get()
+            // Glossaries saved before single English words were left out drop them now
             val glossary = provider.getGlossary(mangaDir, language).filterKeys(::isGlossaryTerm).toMutableMap()
             // A series is looked up once per run of the app while its glossary is empty, so a series nothing knows
             // isn't asked about again for every chapter
             if (glossary.isEmpty() && lookedUpSeries.add(translation.manga.id)) {
                 glossary += lookUpGlossary(translation.manga.title, translator)
             }
+            // Names are the same in any language, so those a glossary in another language knows fix OCR here too
+            val glossaryTerms = provider.getGlossaryTerms(mangaDir).filter(::isGlossaryTerm) + glossary.keys
             val chapterFileName =
                 provider.getTranslationFileName(translation.chapter.name, translation.chapter.scanlator)
             val seenWords = provider.getSeenWords(mangaDir).toMutableMap()
@@ -315,7 +317,7 @@ class ChapterTranslator(
                         val pageImages = images.takeIf { translator.readsImages || corrector != null }
                         val detector = bubbleDetector().takeUnless { findsText }
                         val learnedNames = seenWords.filterValues { it != chapterFileName }.keys
-                        val names = OcrSpelling.namesOf(glossary.keys) + learnedNames
+                        val names = OcrSpelling.namesOf(glossaryTerms) + learnedNames
                         // Only words left unknown after fixing are kept, so a misreading fixed once isn't taken for a name
                         val fixText = { text: String ->
                             // Lettering fixes run again on the whole block, as they need the line after an ellipsis
