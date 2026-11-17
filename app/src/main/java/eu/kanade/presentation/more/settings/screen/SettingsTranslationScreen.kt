@@ -33,6 +33,8 @@ object SettingsTranslationScreen : SearchableSettings {
         val translationPreferences = remember { context.appGraph.translationPreferences }
         val service by translationPreferences.service.collectAsState()
         val correctsText by translationPreferences.correctTextWithGemini.collectAsState()
+        val bubbleFinder by translationPreferences.bubbleFinder.collectAsState()
+        val geminiTranslates = service == TranslationService.GEMINI
 
         var pickingModelFor by remember { mutableStateOf<TranslationService?>(null) }
         pickingModelFor?.let { picked ->
@@ -59,48 +61,37 @@ object SettingsTranslationScreen : SearchableSettings {
                 preferenceItems = listOf(
                     Preference.PreferenceItem.ListPreference(
                         preference = translationPreferences.bubbleFinder,
-                        entries = mapOf(
-                            BubbleFinder.DETECTOR to stringResource(WTMR.strings.bubble_finder_detector),
-                            BubbleFinder.GEMINI to stringResource(WTMR.strings.bubble_finder_gemini),
-                            BubbleFinder.OCR to stringResource(WTMR.strings.bubble_finder_ocr),
-                        ),
+                        entries = buildMap {
+                            put(BubbleFinder.DETECTOR, stringResource(WTMR.strings.bubble_finder_detector))
+                            // Only Gemini finds bubbles, and only while it translates
+                            if (geminiTranslates || bubbleFinder == BubbleFinder.GEMINI) {
+                                put(BubbleFinder.GEMINI, stringResource(WTMR.strings.bubble_finder_gemini))
+                            }
+                            put(BubbleFinder.OCR, stringResource(WTMR.strings.bubble_finder_ocr))
+                        },
                         title = stringResource(WTMR.strings.pref_bubble_finder),
                         subtitleProvider = { finder, _ ->
-                            val geminiTranslates = service == TranslationService.GEMINI
-                            val finds = when {
+                            when {
                                 finder == BubbleFinder.GEMINI && geminiTranslates ->
                                     stringResource(WTMR.strings.bubble_finder_gemini_summary)
-                                finder == BubbleFinder.OCR -> stringResource(WTMR.strings.bubble_finder_ocr_summary)
                                 finder == BubbleFinder.GEMINI ->
                                     stringResource(WTMR.strings.bubble_finder_gemini_unused_summary)
+                                finder == BubbleFinder.OCR -> stringResource(WTMR.strings.bubble_finder_ocr_summary)
                                 else -> stringResource(WTMR.strings.bubble_finder_detector_summary)
                             }
-                            val reads = if (geminiTranslates) {
-                                stringResource(WTMR.strings.text_reading_gemini_translates)
-                            } else {
-                                stringResource(WTMR.strings.text_reading_ocr)
-                            }
-                            "$finds\n\n$reads"
                         },
                     ),
-                ),
-            ),
-            Preference.PreferenceGroup(
-                title = stringResource(WTMR.strings.pref_group_review),
-                preferenceItems = listOf(
+                    // Gemini translating already reads the pages, so it would only correct what it then translates
                     Preference.PreferenceItem.SwitchPreference(
                         preference = translationPreferences.correctTextWithGemini,
                         title = stringResource(WTMR.strings.pref_correct_text_with_gemini),
-                        subtitle = if (service == TranslationService.GEMINI) {
-                            stringResource(WTMR.strings.pref_correct_text_with_gemini_skipped)
-                        } else {
-                            stringResource(WTMR.strings.pref_correct_text_with_gemini_summary)
-                        },
+                        subtitle = stringResource(WTMR.strings.pref_correct_text_with_gemini_summary),
+                        visible = !geminiTranslates,
                     ),
                 ) + serviceItems(
                     translationPreferences,
                     TranslationService.GEMINI,
-                    visible = correctsText && service != TranslationService.GEMINI,
+                    visible = correctsText && !geminiTranslates,
                     onPickModel = { pickingModelFor = it },
                 ),
             ),
