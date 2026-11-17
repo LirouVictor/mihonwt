@@ -45,4 +45,12 @@ class BlockTranslatorTest {
     fun `letters tacked onto a kept name are dropped`() {
         assertEquals("Vamola, você tá bem?!", "<keep>Vamola</keep>e, você tá bem?!".fromXml())
     }
+
+    @Test
+    fun `a reply cut after a kept name is noticed`() {
+        val sent = "<keep>Yuno</keep>'S NOT THE ONLY ONE WITH THE POPULAR FAN CLUB ANYMORE!!"
+        assertEquals(true, "<keep>Yuno</keep>".lostTextAfterKept(sent))
+        assertEquals(false, "<keep>Yuno</keep> não é mais a única!!".lostTextAfterKept(sent))
+        assertEquals(false, "<keep>Yuno</keep>".lostTextAfterKept("<keep>Yuno</keep>!"))
+    }
 }

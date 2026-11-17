@@ -33,27 +33,43 @@ class DeepLTranslator(private val apiKey: String) : BlockTranslator() {
         val terms = glossaryPattern(glossary.keys)
         val translations = glossary.mapKeys { it.key.lowercase() }
         return texts.chunked(MAX_TEXTS).flatMap { chunk ->
-            val replies = try {
-                request(chunk, texts, terms, translations, onRetry)
-            } catch (e: ApiException) {
-                if (!withExtras || e.status !in REJECTED_CODES) throw e
-                withExtras = false
-                request(chunk, texts, terms, translations, onRetry)
+            val sent = chunk.map { it.withTermsKept(terms, translations) }
+            val replies = requestWithExtrasFallback(sent, texts, onRetry).toMutableList()
+            // DeepL drops everything after a kept name that starts the text and is followed by "'s", as in
+            // "<keep>Yuno</keep>'S NOT THE ONLY ONE...", so such a text is sent again without kept names
+            val truncated = replies.indices.filter { replies[it].lostTextAfterKept(sent[it]) }
+            if (truncated.isNotEmpty()) {
+                val again = requestWithExtrasFallback(truncated.map { chunk[it].escapeXml() }, texts, onRetry)
+                truncated.zip(again).forEach { (i, reply) -> replies[i] = reply }
             }
-            if (replies.size != chunk.size) throw IOException("$name returned ${replies.size} of ${chunk.size}")
-            replies
+            replies.map { it.fromXml() }
         }
+    }
+
+    /** Returns DeepL's XML replies to the XML [chunk], one for each text. */
+    private suspend fun requestWithExtrasFallback(
+        chunk: List<String>,
+        texts: List<String>,
+        onRetry: (attempt: Int) -> Unit,
+    ): List<String> {
+        val replies = try {
+            request(chunk, texts, onRetry)
+        } catch (e: ApiException) {
+            if (!withExtras || e.status !in REJECTED_CODES) throw e
+            withExtras = false
+            request(chunk, texts, onRetry)
+        }
+        if (replies.size != chunk.size) throw IOException("$name returned ${replies.size} of ${chunk.size}")
+        return replies
     }
 
     private suspend fun request(
         chunk: List<String>,
         texts: List<String>,
-        terms: Regex?,
-        translations: Map<String, String>,
         onRetry: (attempt: Int) -> Unit,
     ): List<String> {
         val body = buildJsonObject {
-            putJsonArray("text") { chunk.forEach { add(it.withTermsKept(terms, translations)) } }
+            putJsonArray("text") { chunk.forEach { add(it) } }
             put("source_lang", "EN")
             put("target_lang", "PT-BR")
             put("formality", "prefer_less")
@@ -72,7 +88,7 @@ class DeepLTranslator(private val apiKey: String) : BlockTranslator() {
             .post(body.toString().toRequestBody("application/json".toMediaType()))
             .build()
         return (send(request, onRetry)["translations"] as? JsonArray).orEmpty()
-            .map { it.jsonObject["text"]?.jsonPrimitive?.contentOrNull.orEmpty().fromXml() }
+            .map { it.jsonObject["text"]?.jsonPrimitive?.contentOrNull.orEmpty() }
     }
 
     private companion object {
@@ -126,10 +142,17 @@ internal fun String.fromXml(): String = replace(CONTRACTED_DE, "de ")
     .replace("&apos;", "'")
     .replace("&amp;", "&")
 
+/** Whether this XML reply to the XML text [sent] is only its kept names, while [sent] had words besides them. */
+internal fun String.lostTextAfterKept(sent: String): Boolean {
+    fun String.hasWordsOutsideKept() = replace(KEPT, "").any(Char::isLetter)
+    return KEPT in sent && sent.hasWordsOutsideKept() && !hasWordsOutsideKept()
+}
+
 private fun String.escapeXml() = replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 private const val KEEP_TAG = "keep"
 private val TAG = Regex("</?$KEEP_TAG>")
+private val KEPT = Regex("<$KEEP_TAG>.*?</$KEEP_TAG>")
 private val CONTRACTED_DE = Regex("""\bd(?=<$KEEP_TAG>)""")
 private val GLUED_TO_KEPT = Regex("""(?<=\p{L})(?=<$KEEP_TAG>)""")
 private val GLUED_AFTER_KEPT = Regex("""(?<=</$KEEP_TAG>)\p{L}+""")
