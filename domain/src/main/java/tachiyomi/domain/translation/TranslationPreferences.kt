@@ -41,11 +41,15 @@ class TranslationPreferences(
         TargetLanguage.PT_BR,
     )
 
-    /**
-     * Whether a model that reads page images also finds the text on them, rather than translating the text OCR
-     * grouped, which can't tell lettering from the artwork or touching bubbles apart.
-     */
-    val findTextOnImages: Preference<Boolean> = preferenceStore.getBoolean("translation_find_text_on_images", false)
+    // Replaces two switches, whether the model finds the text and whether the detector runs, starting from their values
+    val bubbleFinder: Preference<BubbleFinder> = preferenceStore.getEnum(
+        "translation_bubble_finder",
+        when {
+            preferenceStore.getBoolean("translation_find_text_on_images", false).get() -> BubbleFinder.GEMINI
+            !preferenceStore.getBoolean("translation_detect_bubbles", true).get() -> BubbleFinder.OCR
+            else -> BubbleFinder.DETECTOR
+        },
+    )
 
     /**
      * Whether Gemini, given the page images, fixes the text OCR read before a translator that can't see the pages
@@ -54,15 +58,24 @@ class TranslationPreferences(
     val correctTextWithGemini: Preference<Boolean> =
         preferenceStore.getBoolean("translation_correct_text_with_gemini", false)
 
-    /** Whether OCR text is grouped by the bubbles an on-device detector finds, rather than by its layout alone. */
-    val detectBubbles: Preference<Boolean> = preferenceStore.getBoolean("translation_detect_bubbles", true)
-
     val translateOnDownload: Preference<Boolean> = preferenceStore.getBoolean("translation_on_download", false)
 
     val showTranslations: Preference<Boolean> = preferenceStore.getBoolean("translation_show_in_reader", true)
 
     /** Whether the reader keeps the original lettering and shows a bubble's translation only when it is tapped. */
     val tapToReveal: Preference<Boolean> = preferenceStore.getBoolean("translation_tap_to_reveal", false)
+}
+
+/** What groups the text OCR read into bubbles. */
+enum class BubbleFinder {
+    /** An on-device detector, which also leaves out sound effects. */
+    DETECTOR,
+
+    /** Gemini, from the page images, when it is the translator. Otherwise the detector does. */
+    GEMINI,
+
+    /** OCR's own layout of lines. */
+    OCR,
 }
 
 /**

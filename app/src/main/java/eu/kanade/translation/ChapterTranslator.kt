@@ -100,6 +100,7 @@ import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.source.service.SourceManager
+import tachiyomi.domain.translation.BubbleFinder
 import tachiyomi.domain.translation.TranslationPreferences
 import tachiyomi.domain.translation.TranslationService
 import tachiyomi.i18n.wt.WTMR
@@ -300,7 +301,7 @@ class ChapterTranslator(
             }
             val findsText = translator is LanguageModelTranslator &&
                 translator.readsImages &&
-                translationPreferences.findTextOnImages.get()
+                translationPreferences.bubbleFinder.get() == BubbleFinder.GEMINI
             val pages = coroutineScope {
                 val recognized = Channel<Pair<String, PageTranslation>>(Channel.UNLIMITED)
                 val ocr = async {
@@ -653,7 +654,7 @@ class ChapterTranslator(
      * a connection for the first download, says why and returns null, so the chapter is grouped without it.
      */
     private suspend fun bubbleDetector(): BubbleDetector? {
-        if (!translationPreferences.detectBubbles.get()) return null
+        if (translationPreferences.bubbleFinder.get() == BubbleFinder.OCR) return null
         detector?.let { return it }
         return try {
             BubbleDetector.load(context).also { detector = it }
