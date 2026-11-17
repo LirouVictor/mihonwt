@@ -53,4 +53,9 @@ class BlockTranslatorTest {
         assertEquals(false, "<keep>Yuno</keep> não é mais a única!!".lostTextAfterKept(sent))
         assertEquals(false, "<keep>Yuno</keep>".lostTextAfterKept("<keep>Yuno</keep>!"))
     }
+
+    @Test
+    fun `a contracted capital D before a kept name is spelled out`() {
+        assertEquals("EU VI O GRIMOIRE de Yuno.", "EU VI O GRIMOIRE D<keep>Yuno</keep>.".fromXml())
+    }
 }

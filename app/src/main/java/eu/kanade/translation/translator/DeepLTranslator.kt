@@ -153,6 +153,6 @@ private fun String.escapeXml() = replace("&", "&amp;").replace("<", "&lt;").repl
 private const val KEEP_TAG = "keep"
 private val TAG = Regex("</?$KEEP_TAG>")
 private val KEPT = Regex("<$KEEP_TAG>.*?</$KEEP_TAG>")
-private val CONTRACTED_DE = Regex("""\bd(?=<$KEEP_TAG>)""")
+private val CONTRACTED_DE = Regex("""\bd(?=<$KEEP_TAG>)""", RegexOption.IGNORE_CASE)
 private val GLUED_TO_KEPT = Regex("""(?<=\p{L})(?=<$KEEP_TAG>)""")
 private val GLUED_AFTER_KEPT = Regex("""(?<=</$KEEP_TAG>)\p{L}+""")
