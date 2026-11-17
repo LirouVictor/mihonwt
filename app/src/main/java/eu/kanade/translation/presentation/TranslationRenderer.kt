@@ -50,8 +50,8 @@ class TranslationRenderer(context: Context, translation: PageTranslation, var on
     private val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.BLACK
         typeface = ResourcesCompat.getFont(context, R.font.comic_neue_bold)
-        // Translations are in Brazilian Portuguese, and hyphenation follows the locale's rules
-        textLocale = Locale.forLanguageTag("pt-BR")
+        // Hyphenation and capitals follow the language's rules
+        textLocale = Locale.forLanguageTag(translation.language)
     }
 
     /** Height of a capital letter as a share of the text size, to match the size of the original letters. */

@@ -15,6 +15,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import tachiyomi.domain.translation.TargetLanguage
 import tachiyomi.domain.translation.TranslationService
 import java.io.IOException
 import kotlin.time.Duration.Companion.minutes
@@ -91,14 +92,20 @@ abstract class PageTranslator {
 
     companion object {
         /** Returns the translator for [service]. [customBaseUrl] is only used by [TranslationService.CUSTOM]. */
-        fun create(service: TranslationService, apiKey: String, model: String, customBaseUrl: String): PageTranslator {
+        fun create(
+            service: TranslationService,
+            apiKey: String,
+            model: String,
+            customBaseUrl: String,
+            language: TargetLanguage,
+        ): PageTranslator {
             return when (service) {
-                TranslationService.GEMINI -> GeminiTranslator(apiKey = apiKey, model = model)
-                TranslationService.DEEPL -> DeepLTranslator(apiKey = apiKey)
-                TranslationService.OFFLINE -> OfflineTranslator()
-                TranslationService.CUSTOM -> OpenAiCompatibleTranslator(customBaseUrl, apiKey, model)
+                TranslationService.GEMINI -> GeminiTranslator(apiKey = apiKey, model = model, language = language)
+                TranslationService.DEEPL -> DeepLTranslator(apiKey = apiKey, language = language)
+                TranslationService.OFFLINE -> OfflineTranslator(language)
+                TranslationService.CUSTOM -> OpenAiCompatibleTranslator(customBaseUrl, apiKey, model, language)
                 TranslationService.GROQ, TranslationService.OPENROUTER, TranslationService.CEREBRAS ->
-                    OpenAiCompatibleTranslator(service.baseUrl!!, apiKey, model)
+                    OpenAiCompatibleTranslator(service.baseUrl!!, apiKey, model, language)
             }
         }
 

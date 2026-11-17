@@ -100,6 +100,7 @@ import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.source.service.SourceManager
+import tachiyomi.domain.translation.BubbleFinder
 import tachiyomi.domain.translation.TranslationPreferences
 import tachiyomi.domain.translation.TranslationService
 import tachiyomi.i18n.wt.WTMR
@@ -281,13 +282,16 @@ class ChapterTranslator(
             val chapterId = translation.chapter.id
             val done = partialTranslations.value[chapterId].orEmpty().toMutableMap()
             val images = recognizedImages.getOrPut(chapterId) { ConcurrentHashMap() }
+            val language = translationPreferences.targetLanguage.get()
             // Glossaries saved before single English words were left out drop them now
-            val glossary = provider.getGlossary(mangaDir).filterKeys(::isGlossaryTerm).toMutableMap()
+            val glossary = provider.getGlossary(mangaDir, language).filterKeys(::isGlossaryTerm).toMutableMap()
             // A series is looked up once per run of the app while its glossary is empty, so a series nothing knows
             // isn't asked about again for every chapter
             if (glossary.isEmpty() && lookedUpSeries.add(translation.manga.id)) {
                 glossary += lookUpGlossary(translation.manga.title, translator)
             }
+            // Names are the same in any language, so those a glossary in another language knows fix OCR here too
+            val glossaryTerms = provider.getGlossaryTerms(mangaDir).filter(::isGlossaryTerm) + glossary.keys
             val chapterFileName =
                 provider.getTranslationFileName(translation.chapter.name, translation.chapter.scanlator)
             val seenWords = provider.getSeenWords(mangaDir).toMutableMap()
@@ -299,7 +303,7 @@ class ChapterTranslator(
             }
             val findsText = translator is LanguageModelTranslator &&
                 translator.readsImages &&
-                translationPreferences.findTextOnImages.get()
+                translationPreferences.bubbleFinder.get() == BubbleFinder.GEMINI
             val pages = coroutineScope {
                 val recognized = Channel<Pair<String, PageTranslation>>(Channel.UNLIMITED)
                 val ocr = async {
@@ -313,7 +317,7 @@ class ChapterTranslator(
                         val pageImages = images.takeIf { translator.readsImages || corrector != null }
                         val detector = bubbleDetector().takeUnless { findsText }
                         val learnedNames = seenWords.filterValues { it != chapterFileName }.keys
-                        val names = OcrSpelling.namesOf(glossary.keys) + learnedNames
+                        val names = OcrSpelling.namesOf(glossaryTerms) + learnedNames
                         // Only words left unknown after fixing are kept, so a misreading fixed once isn't taken for a name
                         val fixText = { text: String ->
                             // Lettering fixes run again on the whole block, as they need the line after an ellipsis
@@ -370,6 +374,7 @@ class ChapterTranslator(
                             glossary[term] = glossary.remove(term) ?: translated
                         }
                         glossary.keys.take(max(0, glossary.size - MAX_GLOSSARY_TERMS)).forEach(glossary::remove)
+                        batch.values.forEach { it.language = language.tag }
                         done.putAll(batch)
                         translation.updateProgress { it.copy(translated = done.size, retries = 0) }
                         _partialTranslations.update { it + (chapterId to done.toMap()) }
@@ -394,7 +399,7 @@ class ChapterTranslator(
             mangaDir.createFile(chapterFileName)!!.openOutputStream().use {
                 it.write(Json.encodeToString(pages).toByteArray())
             }
-            provider.saveGlossary(mangaDir, glossary)
+            provider.saveGlossary(mangaDir, language, glossary)
             if (readWords.isNotEmpty()) {
                 // Words read again move to the end, so a full list drops those not read for longest
                 readWords.forEach { seenWords[it] = seenWords.remove(it) ?: chapterFileName }
@@ -469,7 +474,8 @@ class ChapterTranslator(
     private fun gemini(): GeminiTranslator? {
         val apiKey = ApiKeyCipher.decrypt(translationPreferences.apiKey(TranslationService.GEMINI).get())
         val model = translationPreferences.model(TranslationService.GEMINI).get()
-        return if (apiKey.isBlank() || model.isBlank()) null else GeminiTranslator(apiKey, model)
+        val language = translationPreferences.targetLanguage.get()
+        return if (apiKey.isBlank() || model.isBlank()) null else GeminiTranslator(apiKey, model, language)
     }
 
     private fun createTranslator(): PageTranslator {
@@ -487,7 +493,7 @@ class ChapterTranslator(
         if (service.hasModels && model.isBlank()) {
             throw IOException(context.stringResource(WTMR.strings.translation_error_no_model))
         }
-        return PageTranslator.create(service, apiKey, model, customBaseUrl)
+        return PageTranslator.create(service, apiKey, model, customBaseUrl, prefs.targetLanguage.get())
     }
 
     /**
@@ -650,7 +656,7 @@ class ChapterTranslator(
      * a connection for the first download, says why and returns null, so the chapter is grouped without it.
      */
     private suspend fun bubbleDetector(): BubbleDetector? {
-        if (!translationPreferences.detectBubbles.get()) return null
+        if (translationPreferences.bubbleFinder.get() == BubbleFinder.OCR) return null
         detector?.let { return it }
         return try {
             BubbleDetector.load(context).also { detector = it }

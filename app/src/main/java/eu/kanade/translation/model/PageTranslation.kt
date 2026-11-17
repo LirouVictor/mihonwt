@@ -15,6 +15,8 @@ data class PageTranslation(
     var imgHeight: Float = 0f,
     /** The words OCR read, from which [blocks] were grouped, kept so that grouping can be checked on real pages. */
     val words: List<Word> = emptyList(),
+    /** The language of the translations, as a BCP 47 tag. Chapters translated before there was a choice are in it. */
+    var language: String = "pt-BR",
 )
 
 @Serializable

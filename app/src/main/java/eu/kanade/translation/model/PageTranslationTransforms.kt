@@ -13,6 +13,7 @@ fun PageTranslation.half(side: ImageUtil.Side): PageTranslation {
             .mapTo(mutableListOf()) { it.shifted(-left, 0f) },
         imgWidth = halfWidth,
         imgHeight = imgHeight,
+        language = language,
     )
 }
 
@@ -25,6 +26,7 @@ fun PageTranslation.stackedHalves(upperSide: ImageUtil.Side): PageTranslation {
         blocks = (upper.blocks + lower.blocks.map { it.shifted(0f, imgHeight) }).toMutableList(),
         imgWidth = upper.imgWidth,
         imgHeight = imgHeight * 2,
+        language = language,
     )
 }
 
@@ -53,6 +55,7 @@ fun PageTranslation.rotated(degrees: Float): PageTranslation {
         },
         imgWidth = imgHeight,
         imgHeight = imgWidth,
+        language = language,
     )
 }
 
@@ -62,6 +65,7 @@ fun PageTranslation.cropped(rect: Rect): PageTranslation {
         blocks = blocks.mapTo(mutableListOf()) { it.shifted(-rect.left.toFloat(), -rect.top.toFloat()) },
         imgWidth = rect.width().toFloat(),
         imgHeight = rect.height().toFloat(),
+        language = language,
     )
 }
 

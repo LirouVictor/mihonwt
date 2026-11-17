@@ -13,6 +13,8 @@ import eu.kanade.translation.presentation.ModelPickerDialog
 import eu.kanade.translation.translator.LanguageModelTranslator
 import eu.kanade.translation.translator.PageTranslator
 import mihon.app.di.appGraph
+import tachiyomi.domain.translation.BubbleFinder
+import tachiyomi.domain.translation.TargetLanguage
 import tachiyomi.domain.translation.TranslationPreferences
 import tachiyomi.domain.translation.TranslationService
 import tachiyomi.i18n.wt.WTMR
@@ -42,7 +44,9 @@ object SettingsTranslationScreen : SearchableSettings {
                 loadModels = {
                     val apiKey = ApiKeyCipher.decrypt(translationPreferences.apiKey(picked).get())
                     val customBaseUrl = translationPreferences.customBaseUrl.get()
-                    (PageTranslator.create(picked, apiKey, "", customBaseUrl) as LanguageModelTranslator).models()
+                    val language = translationPreferences.targetLanguage.get()
+                    (PageTranslator.create(picked, apiKey, "", customBaseUrl, language) as LanguageModelTranslator)
+                        .models()
                 },
                 onConfirm = modelPref::set,
                 onDismissRequest = { pickingModelFor = null },
@@ -53,16 +57,31 @@ object SettingsTranslationScreen : SearchableSettings {
             Preference.PreferenceGroup(
                 title = stringResource(WTMR.strings.pref_group_reading),
                 preferenceItems = listOf(
-                    Preference.PreferenceItem.SwitchPreference(
-                        preference = translationPreferences.detectBubbles,
-                        title = stringResource(WTMR.strings.pref_detect_bubbles),
-                        subtitle = stringResource(WTMR.strings.pref_detect_bubbles_summary),
-                    ),
-                    Preference.PreferenceItem.SwitchPreference(
-                        preference = translationPreferences.findTextOnImages,
-                        title = stringResource(WTMR.strings.pref_find_text_on_images),
-                        subtitle = stringResource(WTMR.strings.pref_find_text_on_images_summary),
-                        visible = service == TranslationService.GEMINI,
+                    Preference.PreferenceItem.ListPreference(
+                        preference = translationPreferences.bubbleFinder,
+                        entries = mapOf(
+                            BubbleFinder.DETECTOR to stringResource(WTMR.strings.bubble_finder_detector),
+                            BubbleFinder.GEMINI to stringResource(WTMR.strings.bubble_finder_gemini),
+                            BubbleFinder.OCR to stringResource(WTMR.strings.bubble_finder_ocr),
+                        ),
+                        title = stringResource(WTMR.strings.pref_bubble_finder),
+                        subtitleProvider = { finder, _ ->
+                            val geminiTranslates = service == TranslationService.GEMINI
+                            val finds = when {
+                                finder == BubbleFinder.GEMINI && geminiTranslates ->
+                                    stringResource(WTMR.strings.bubble_finder_gemini_summary)
+                                finder == BubbleFinder.OCR -> stringResource(WTMR.strings.bubble_finder_ocr_summary)
+                                finder == BubbleFinder.GEMINI ->
+                                    stringResource(WTMR.strings.bubble_finder_gemini_unused_summary)
+                                else -> stringResource(WTMR.strings.bubble_finder_detector_summary)
+                            }
+                            val reads = if (geminiTranslates) {
+                                stringResource(WTMR.strings.text_reading_gemini_translates)
+                            } else {
+                                stringResource(WTMR.strings.text_reading_ocr)
+                            }
+                            "$finds\n\n$reads"
+                        },
                     ),
                 ),
             ),
@@ -88,6 +107,12 @@ object SettingsTranslationScreen : SearchableSettings {
             Preference.PreferenceGroup(
                 title = stringResource(WTMR.strings.pref_group_translation),
                 preferenceItems = listOf(
+                    Preference.PreferenceItem.ListPreference(
+                        preference = translationPreferences.targetLanguage,
+                        entries = TargetLanguage.entries.associateWith { it.displayName },
+                        title = stringResource(WTMR.strings.pref_target_language),
+                        subtitle = stringResource(WTMR.strings.pref_target_language_summary),
+                    ),
                     Preference.PreferenceItem.ListPreference(
                         preference = translationPreferences.service,
                         entries = TranslationService.entries.associateWith {

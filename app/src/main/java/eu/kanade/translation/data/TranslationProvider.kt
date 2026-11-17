@@ -16,6 +16,7 @@ import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.storage.displayablePath
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.storage.service.StorageManager
+import tachiyomi.domain.translation.TargetLanguage
 import tachiyomi.i18n.MR
 import java.io.IOException
 
@@ -69,9 +70,9 @@ class TranslationProvider(
         return findMangaDir(mangaTitle, source)?.listFiles().orEmpty().mapNotNullTo(HashSet()) { it.name }
     }
 
-    /** Returns how a manga's names and recurring terms were translated, so later chapters keep them. */
-    fun getGlossary(mangaDir: UniFile): Map<String, String> {
-        val file = mangaDir.findFile(GLOSSARY_FILE_NAME) ?: return emptyMap()
+    /** Returns how a manga's names and recurring terms were translated into [language], so later chapters keep them. */
+    fun getGlossary(mangaDir: UniFile, language: TargetLanguage): Map<String, String> {
+        val file = mangaDir.findFile(glossaryFileName(language)) ?: return emptyMap()
         return runCatching {
             file.openInputStream().use { Json.decodeFromString<Map<String, String>>(it.reader().readText()) }
         }.getOrElse {
@@ -80,9 +81,18 @@ class TranslationProvider(
         }
     }
 
-    fun saveGlossary(mangaDir: UniFile, glossary: Map<String, String>) {
-        mangaDir.findFile(GLOSSARY_FILE_NAME)?.delete()
-        mangaDir.createFile(GLOSSARY_FILE_NAME)!!.openOutputStream().use {
+    /** Returns the English terms of a manga's glossaries in every language, names that OCR can then read right. */
+    fun getGlossaryTerms(mangaDir: UniFile): Set<String> {
+        val languages = TargetLanguage.entries.associateBy(::glossaryFileName)
+        return mangaDir.listFiles().orEmpty()
+            .mapNotNull { languages[it.name] }
+            .flatMapTo(HashSet()) { getGlossary(mangaDir, it).keys }
+    }
+
+    fun saveGlossary(mangaDir: UniFile, language: TargetLanguage, glossary: Map<String, String>) {
+        val fileName = glossaryFileName(language)
+        mangaDir.findFile(fileName)?.delete()
+        mangaDir.createFile(fileName)!!.openOutputStream().use {
             it.write(Json.encodeToString(glossary).toByteArray())
         }
     }
@@ -123,9 +133,12 @@ class TranslationProvider(
         )
     }
 
+    // Hidden, and named unlike any chapter's translation file. Brazilian Portuguese, the first language, keeps the
+    // name glossaries had before there were others
+    private fun glossaryFileName(language: TargetLanguage) =
+        if (language == TargetLanguage.PT_BR) ".glossary.json" else ".glossary.${language.tag}.json"
+
     private companion object {
-        // Hidden, and named unlike any chapter's translation file
-        const val GLOSSARY_FILE_NAME = ".glossary.json"
         const val SEEN_WORDS_FILE_NAME = ".ocr_words.json"
     }
 }
