@@ -810,12 +810,14 @@ class ChapterTranslator(
     }
 
     /**
-     * Returns the words of [blocks] read on an image enlarged [scale] times from the page, whose top left corner is at
-     * [left], [top] on the page, at the page's coordinates. Lines are numbered from [firstLine].
+     * Returns the words of [blocks] read on an image enlarged [scale] times from the page, and [scaleX] times across,
+     * whose top left corner is at [left], [top] on the page, at the page's coordinates. Lines are numbered from
+     * [firstLine].
      */
     private fun wordsOf(
         blocks: List<Text.TextBlock>,
         scale: Float,
+        scaleX: Float = scale,
         left: Float = 0f,
         top: Float = 0f,
         firstLine: Int = 0,
@@ -829,9 +831,9 @@ class ChapterTranslator(
                         val bounds = symbol.boundingBox ?: return@mapNotNull null
                         Letter(
                             text = symbol.text,
-                            x = left + bounds.left / scale,
+                            x = left + bounds.left / scaleX,
                             y = top + bounds.top / scale,
-                            width = bounds.width() / scale,
+                            width = bounds.width() / scaleX,
                             height = bounds.height() / scale,
                         )
                     }
@@ -844,6 +846,8 @@ class ChapterTranslator(
     /**
      * Reads the text in [box] of [page] on its own, more enlarged than the page was for OCR, on a white margin. ML Kit
      * can miss lettering squeezed into a narrow bubble, like a tall column of short words, while reading the whole page.
+     * Such lettering is often condensed too, which ML Kit reads better stretched across, so the box is also read
+     * stretched and the reading with more English is kept.
      */
     private fun readBox(page: Bitmap, box: TextBox, pageScale: Float, firstLine: Int): List<Word> {
         val crop = Rect(
@@ -853,9 +857,20 @@ class ChapterTranslator(
             ceil(box.bottom).toInt().coerceIn(1, page.height),
         )
         if (crop.isEmpty) return emptyList()
-        val byMemory = sqrt(MAX_OCR_PIXELS.toFloat() / (crop.width().toLong() * crop.height()))
+        return listOf(1f, BOX_OCR_STRETCH)
+            .map { stretch -> readCrop(page, crop, pageScale, stretch, firstLine) }
+            .maxBy { words ->
+                words.sumOf { it.englishLetters() } * ENGLISH_LETTER_WEIGHT +
+                    words.sumOf { it.text.length }
+            }
+    }
+
+    private fun Word.englishLetters(): Int = text.filter(Char::isLetter).takeIf(spelling::isWord)?.length ?: 0
+
+    private fun readCrop(page: Bitmap, crop: Rect, pageScale: Float, stretch: Float, firstLine: Int): List<Word> {
+        val byMemory = sqrt(MAX_OCR_PIXELS.toFloat() / (crop.width().toLong() * crop.height() * stretch))
         val scale = min(max(pageScale, 1f) * BOX_OCR_SCALE, byMemory)
-        val width = (crop.width() * scale).toInt()
+        val width = (crop.width() * scale * stretch).toInt()
         val height = (crop.height() * scale).toInt()
         val image = createBitmap(width + 2 * BOX_OCR_MARGIN, height + 2 * BOX_OCR_MARGIN)
         return try {
@@ -873,7 +888,8 @@ class ChapterTranslator(
             wordsOf(
                 blocks,
                 scale,
-                left = crop.left - BOX_OCR_MARGIN / scale,
+                scaleX = scale * stretch,
+                left = crop.left - BOX_OCR_MARGIN / (scale * stretch),
                 top = crop.top - BOX_OCR_MARGIN / scale,
                 firstLine = firstLine,
             )
@@ -910,6 +926,10 @@ class ChapterTranslator(
         const val MAX_OCR_PIXELS = 16_000_000
         const val BOX_OCR_SCALE = 1.5f
         const val BOX_OCR_MARGIN = 32
+        const val BOX_OCR_STRETCH = 2f
+
+        // Letters of English words count far more than other letters, which a bubble's outline also gives
+        const val ENGLISH_LETTER_WEIGHT = 10
         const val MAX_GLOSSARY_TERMS = 300
         const val MAX_SEEN_WORDS = 5000
         val LOOKUP_TIMEOUT = 15.seconds
