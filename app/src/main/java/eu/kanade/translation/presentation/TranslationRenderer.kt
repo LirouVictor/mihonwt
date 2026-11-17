@@ -204,8 +204,20 @@ class TranslationRenderer(context: Context, translation: PageTranslation, var on
      * Lays [text] out in the largest whole text size that fits [width] by [height], up to [maxSize]. Words are kept
      * whole unless hyphenating them allows a much larger size, as in a narrow bubble with a long word. Words are never
      * cut between letters: when the box is too narrow for them at a readable size, the text widens up to [maxWidth].
+     * Text still too small there gets narrower letters when they make it much larger.
      */
     private fun fitText(text: String, width: Int, maxWidth: Int, height: Float, maxSize: Float): StaticLayout {
+        textPaint.textScaleX = 1f
+        val normal = fitTextAtScale(text, width, maxWidth, height, maxSize)
+        if (normal.paint.textSize >= maxSize * MIN_READABLE_SIZE) return normal
+        // Letterers squeeze the lettering of a narrow bubble the same way
+        textPaint.textScaleX = CONDENSED_SCALE_X
+        val condensed = fitTextAtScale(text, width, maxWidth, height, maxSize)
+        textPaint.textScaleX = 1f
+        return if (condensed.paint.textSize >= normal.paint.textSize * MIN_CONDENSED_GAIN) condensed else normal
+    }
+
+    private fun fitTextAtScale(text: String, width: Int, maxWidth: Int, height: Float, maxSize: Float): StaticLayout {
         val words = text.split(WORD_BREAK)
         // Checked on the layout itself, as a word measured just narrow enough on its own was still cut, as "VENC EMOS"
         val whole = largestFitting(text, { width }, height, maxSize, hyphenate = false) { _, layout ->
@@ -358,6 +370,9 @@ class TranslationRenderer(context: Context, translation: PageTranslation, var on
 
         /** Share of the original letter size below which text is let out of its box rather than shrunk further. */
         const val MIN_READABLE_SIZE = 0.6f
+
+        const val CONDENSED_SCALE_X = 0.7f
+        const val MIN_CONDENSED_GAIN = 1.2f
 
         const val MIN_SYLLABLE = 3
 
