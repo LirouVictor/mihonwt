@@ -11,10 +11,14 @@ import kotlinx.serialization.json.putJsonArray
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import tachiyomi.domain.translation.TargetLanguage
 import java.io.IOException
 
-/** Translates with DeepL's API. */
-class DeepLTranslator(private val apiKey: String) : BlockTranslator() {
+/** Translates with DeepL's API into [language]. */
+class DeepLTranslator(
+    private val apiKey: String,
+    private val language: TargetLanguage,
+) : BlockTranslator() {
 
     override val name = "DeepL"
 
@@ -71,7 +75,7 @@ class DeepLTranslator(private val apiKey: String) : BlockTranslator() {
         val body = buildJsonObject {
             putJsonArray("text") { chunk.forEach { add(it) } }
             put("source_lang", "EN")
-            put("target_lang", "PT-BR")
+            put("target_lang", language.deepLCode)
             put("formality", "prefer_less")
             // Each block is otherwise translated on its own. Context isn't billed
             put("context", texts.joinToString("\n"))
@@ -79,7 +83,7 @@ class DeepLTranslator(private val apiKey: String) : BlockTranslator() {
             putJsonArray("ignore_tags") { add(KEEP_TAG) }
             if (withExtras) {
                 put("model_type", "quality_optimized")
-                putJsonArray("custom_instructions") { CUSTOM_INSTRUCTIONS.forEach { add(it) } }
+                putJsonArray("custom_instructions") { customInstructions().forEach { add(it) } }
             }
         }
         val request = Request.Builder()
@@ -91,15 +95,15 @@ class DeepLTranslator(private val apiKey: String) : BlockTranslator() {
             .map { it.jsonObject["text"]?.jsonPrimitive?.contentOrNull.orEmpty() }
     }
 
+    private fun customInstructions() = listOf(
+        "This is manga dialogue: use natural, colloquial ${language.englishName} as people speak it today.",
+    ) + language.styleNotes + listOf(
+        "Keep character names, nicknames, titles of techniques and honorifics such as -chan or -san untranslated.",
+    )
+
     private companion object {
         const val MAX_TEXTS = 50
         val REJECTED_CODES = setOf(400, 403)
-
-        val CUSTOM_INSTRUCTIONS = listOf(
-            "This is manga dialogue: use natural, colloquial Brazilian Portuguese as people speak it today.",
-            "Use Brazilian spelling and vocabulary, never European Portuguese forms.",
-            "Keep character names, nicknames, titles of techniques and honorifics such as -chan or -san untranslated.",
-        )
     }
 }
 

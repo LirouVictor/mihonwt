@@ -7,9 +7,13 @@ import com.google.mlkit.nl.translate.Translation
 import com.google.mlkit.nl.translate.TranslatorOptions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import tachiyomi.domain.translation.TargetLanguage
 
-/** Translates on the device with ML Kit, which downloads the language models, about 30 MB each, on first use. */
-class OfflineTranslator : BlockTranslator() {
+/**
+ * Translates on the device with ML Kit into [language], downloading the language models, about 30 MB each, on first
+ * use.
+ */
+class OfflineTranslator(private val language: TargetLanguage) : BlockTranslator() {
 
     override val name = "ML Kit"
 
@@ -21,7 +25,8 @@ class OfflineTranslator : BlockTranslator() {
         return withContext(Dispatchers.IO) {
             val options = TranslatorOptions.Builder()
                 .setSourceLanguage(TranslateLanguage.ENGLISH)
-                .setTargetLanguage(TranslateLanguage.PORTUGUESE)
+                // ML Kit has one model per language, named by its code without the region
+                .setTargetLanguage(language.tag.substringBefore('-'))
                 .build()
             Translation.getClient(options).use { translator ->
                 Tasks.await(translator.downloadModelIfNeeded(DownloadConditions.Builder().build()))

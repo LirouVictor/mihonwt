@@ -19,10 +19,11 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
+import tachiyomi.domain.translation.TargetLanguage
 import java.io.IOException
 
-/** Translates every page of a chapter in a single request to a language model. */
-abstract class LanguageModelTranslator : PageTranslator() {
+/** Translates every page of a chapter in a single request to a language model, into [language]. */
+abstract class LanguageModelTranslator(private val language: TargetLanguage) : PageTranslator() {
 
     /**
      * Also drops blocks the model marks as watermarks. The [series] title lets the model use the names and tone it
@@ -64,7 +65,7 @@ abstract class LanguageModelTranslator : PageTranslator() {
                 }
             }
         }
-        val systemPrompt = systemPrompt(SYSTEM_PROMPT, series, glossary)
+        val systemPrompt = systemPrompt(translationPrompt(language), series, glossary)
         val pageImages = images.filterKeys { it in pages }
         var output = request(systemPrompt, input.toString(), pageImages, onRetry)
         // Models now and then skip a block, which would stay in English; a second answer is usually complete
@@ -102,7 +103,7 @@ abstract class LanguageModelTranslator : PageTranslator() {
                 putJsonArray(name) { pages.getValue(name).blocks.forEach { add(it.text.joinLines()) } }
             }
         }
-        val prompt = systemPrompt(FIND_TEXT_PROMPT, series, glossary)
+        val prompt = systemPrompt(findTextPrompt(language), series, glossary)
         val output = try {
             try {
                 request(prompt, input.toString(), pageImages, onRetry, FIND_TEXT_SCHEMA)
@@ -173,7 +174,7 @@ abstract class LanguageModelTranslator : PageTranslator() {
      * with how translations usually give them, or none when it doesn't know the series.
      */
     suspend fun seriesTerms(series: String): Map<String, String> =
-        request(SERIES_TERMS_PROMPT, series, emptyMap(), {}, SERIES_TERMS_SCHEMA).terms()
+        request(seriesTermsPrompt(language), series, emptyMap(), {}, SERIES_TERMS_SCHEMA).terms()
 
     private fun JsonObject.terms(): Map<String, String> =
         (this["glossary"] as? JsonArray).orEmpty().filterIsInstance<JsonObject>().mapNotNull { entry ->
@@ -307,18 +308,18 @@ abstract class LanguageModelTranslator : PageTranslator() {
             """,
         ).jsonObject
 
-        private val SERIES_TERMS_PROMPT = """
-            You help translate a comic from English into Brazilian Portuguese. The user gives its title. Under "glossary", list the names and recurring terms of this series that a translation must keep consistent: its main and recurring characters, by their full names and by the short names they are usually called, and its places, groups, ships, powers and attacks.
-            Give each "term" as English releases write it, and its "translation" as Brazilian Portuguese releases usually give it; names usually stay as they are.
+        private fun seriesTermsPrompt(language: TargetLanguage) = """
+            You help translate a comic from English into ${language.englishName}. The user gives its title. Under "glossary", list the names and recurring terms of this series that a translation must keep consistent: its main and recurring characters, by their full names and by the short names they are usually called, and its places, groups, ships, powers and attacks.
+            Give each "term" as English releases write it, and its "translation" as ${language.englishName} releases usually give it; names usually stay as they are.
             List at most 150, the most important first. If you don't know this series, return an empty list rather than guessing.
         """.trimIndent()
 
-        private val FIND_TEXT_PROMPT = """
+        private fun findTextPrompt(language: TargetLanguage) = """
             You translate comics (manga, manhwa, manhua) from their page images.
 
             You'll receive page images, each after its file name, and a JSON object mapping each file name to the text that OCR read on that page. OCR misreads letters, and splits or joins text across bubbles, so use its text only to help you read small letters; the image is what counts.
 
-            On each page, find every speech bubble, thought bubble, caption box and narration box, and translate its text to `Brazilian Portuguese`, as a good fan translator would today: natural, colloquial speech that suits each character, with current everyday words. Avoid formal, old-fashioned or overly literal wording and false cognates. Keep the names of characters, places, attacks and powers as in the original, unless the series has a well-known Brazilian Portuguese name for them, and keep honorifics such as "-san".
+            On each page, find every speech bubble, thought bubble, caption box and narration box, and translate its text to `${language.englishName}`, as a good fan translator would today: natural, colloquial speech that suits each character, with current everyday words. Avoid formal, old-fashioned or overly literal wording and false cognates.${language.styleNotesText} Keep the names of characters, places, attacks and powers as in the original, unless the series has a well-known ${language.englishName} name for them, and keep honorifics such as "-san".
 
             Leave out text that is part of the artwork rather than lettering for the reader: sound effects, signs, labels, prices, writing on clothes or objects, and also watermarks, site links and credits. Text written vertically one letter per line is still a bubble's text.
 
@@ -329,7 +330,7 @@ abstract class LanguageModelTranslator : PageTranslator() {
             Under "glossary", return each name and recurring term on these pages (characters, places, attacks, powers, invented words) as "term", with how you translated it as "translation".
         """.trimIndent()
 
-        private val SYSTEM_PROMPT = """
+        private fun translationPrompt(language: TargetLanguage) = """
             ## System Prompt for Manhwa/Manga/Manhua Translation
 
             You are a highly skilled AI tasked with translating text from scanned images of comics (manhwa, manga, manhua) while preserving the original structure and removing any watermarks or site links.
@@ -338,9 +339,9 @@ abstract class LanguageModelTranslator : PageTranslator() {
 
             1. **Input:** You'll receive a JSON object where keys are image filenames (e.g., "001.jpg") and values are objects mapping a block number to the text extracted from one speech bubble or caption.
 
-            2. **Translation:** Translate every block to the target language `Brazilian Portuguese`, as a good fan translator would today: natural, colloquial speech that suits each character, with current everyday words. Avoid formal, old-fashioned or overly literal wording and false cognates (e.g. "amusing" is "divertido", never "amusante"). Adapt idioms and expressions to fit the target language's cultural context.
+            2. **Translation:** Translate every block to the target language `${language.englishName}`, as a good fan translator would today: natural, colloquial speech that suits each character, with current everyday words. Avoid formal, old-fashioned or overly literal wording and false cognates.${language.styleNotesText} Adapt idioms and expressions to fit the target language's cultural context.
 
-            3. **Names:** Keep the names of characters, places, attacks and powers as in the original (e.g. "Acrobatic Silky" stays "Acrobatic Silky"), unless the series has a well-known Brazilian Portuguese name for them. Keep honorifics such as "-san" and "-sama".
+            3. **Names:** Keep the names of characters, places, attacks and powers as in the original (e.g. "Acrobatic Silky" stays "Acrobatic Silky"), unless the series has a well-known ${language.englishName} name for them. Keep honorifics such as "-san" and "-sama".
 
             4. **One block, one translation:** The text was read by OCR, so a sentence may be split across consecutive blocks. Translate each block on its own, keeping each part of the sentence in its own block. Never merge blocks or move text from one block to another. Fix obvious OCR mistakes using the context.
 
@@ -363,7 +364,7 @@ abstract class LanguageModelTranslator : PageTranslator() {
             **Output:**
 
             ```json
-            {"001.jpg":{"0":"OLHA SÓ","1":"SE NÃO É A SRTA. VAMOLA!","2":"PODERIA ME AJUDAR?"},"002.jpg":{"0":"portuguese3","1":"$WATERMARK_PLACEHOLDER","2":"$WATERMARK_PLACEHOLDER"},"$GLOSSARY_KEY":{"Vamola":"Vamola"}}
+            {"001.jpg":{"0":"${language.example[0]}","1":"${language.example[1]}","2":"${language.example[2]}"},"002.jpg":{"0":"${language.example[3]}","1":"$WATERMARK_PLACEHOLDER","2":"$WATERMARK_PLACEHOLDER"},"$GLOSSARY_KEY":{"Vamola":"Vamola"}}
             ```
 
             Return {[filename:string]:{[block:string]:string}, "$GLOSSARY_KEY":{[term:string]:string}}

@@ -13,6 +13,7 @@ import eu.kanade.translation.presentation.ModelPickerDialog
 import eu.kanade.translation.translator.LanguageModelTranslator
 import eu.kanade.translation.translator.PageTranslator
 import mihon.app.di.appGraph
+import tachiyomi.domain.translation.TargetLanguage
 import tachiyomi.domain.translation.TranslationPreferences
 import tachiyomi.domain.translation.TranslationService
 import tachiyomi.i18n.wt.WTMR
@@ -42,7 +43,9 @@ object SettingsTranslationScreen : SearchableSettings {
                 loadModels = {
                     val apiKey = ApiKeyCipher.decrypt(translationPreferences.apiKey(picked).get())
                     val customBaseUrl = translationPreferences.customBaseUrl.get()
-                    (PageTranslator.create(picked, apiKey, "", customBaseUrl) as LanguageModelTranslator).models()
+                    val language = translationPreferences.targetLanguage.get()
+                    (PageTranslator.create(picked, apiKey, "", customBaseUrl, language) as LanguageModelTranslator)
+                        .models()
                 },
                 onConfirm = modelPref::set,
                 onDismissRequest = { pickingModelFor = null },
@@ -88,6 +91,12 @@ object SettingsTranslationScreen : SearchableSettings {
             Preference.PreferenceGroup(
                 title = stringResource(WTMR.strings.pref_group_translation),
                 preferenceItems = listOf(
+                    Preference.PreferenceItem.ListPreference(
+                        preference = translationPreferences.targetLanguage,
+                        entries = TargetLanguage.entries.associateWith { it.displayName },
+                        title = stringResource(WTMR.strings.pref_target_language),
+                        subtitle = stringResource(WTMR.strings.pref_target_language_summary),
+                    ),
                     Preference.PreferenceItem.ListPreference(
                         preference = translationPreferences.service,
                         entries = TranslationService.entries.associateWith {

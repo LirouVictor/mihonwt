@@ -282,7 +282,8 @@ class ChapterTranslator(
             val done = partialTranslations.value[chapterId].orEmpty().toMutableMap()
             val images = recognizedImages.getOrPut(chapterId) { ConcurrentHashMap() }
             // Glossaries saved before single English words were left out drop them now
-            val glossary = provider.getGlossary(mangaDir).filterKeys(::isGlossaryTerm).toMutableMap()
+            val language = translationPreferences.targetLanguage.get()
+            val glossary = provider.getGlossary(mangaDir, language).filterKeys(::isGlossaryTerm).toMutableMap()
             // A series is looked up once per run of the app while its glossary is empty, so a series nothing knows
             // isn't asked about again for every chapter
             if (glossary.isEmpty() && lookedUpSeries.add(translation.manga.id)) {
@@ -370,6 +371,7 @@ class ChapterTranslator(
                             glossary[term] = glossary.remove(term) ?: translated
                         }
                         glossary.keys.take(max(0, glossary.size - MAX_GLOSSARY_TERMS)).forEach(glossary::remove)
+                        batch.values.forEach { it.language = language.tag }
                         done.putAll(batch)
                         translation.updateProgress { it.copy(translated = done.size, retries = 0) }
                         _partialTranslations.update { it + (chapterId to done.toMap()) }
@@ -394,7 +396,7 @@ class ChapterTranslator(
             mangaDir.createFile(chapterFileName)!!.openOutputStream().use {
                 it.write(Json.encodeToString(pages).toByteArray())
             }
-            provider.saveGlossary(mangaDir, glossary)
+            provider.saveGlossary(mangaDir, language, glossary)
             if (readWords.isNotEmpty()) {
                 // Words read again move to the end, so a full list drops those not read for longest
                 readWords.forEach { seenWords[it] = seenWords.remove(it) ?: chapterFileName }
@@ -469,7 +471,8 @@ class ChapterTranslator(
     private fun gemini(): GeminiTranslator? {
         val apiKey = ApiKeyCipher.decrypt(translationPreferences.apiKey(TranslationService.GEMINI).get())
         val model = translationPreferences.model(TranslationService.GEMINI).get()
-        return if (apiKey.isBlank() || model.isBlank()) null else GeminiTranslator(apiKey, model)
+        val language = translationPreferences.targetLanguage.get()
+        return if (apiKey.isBlank() || model.isBlank()) null else GeminiTranslator(apiKey, model, language)
     }
 
     private fun createTranslator(): PageTranslator {
@@ -487,7 +490,7 @@ class ChapterTranslator(
         if (service.hasModels && model.isBlank()) {
             throw IOException(context.stringResource(WTMR.strings.translation_error_no_model))
         }
-        return PageTranslator.create(service, apiKey, model, customBaseUrl)
+        return PageTranslator.create(service, apiKey, model, customBaseUrl, prefs.targetLanguage.get())
     }
 
     /**

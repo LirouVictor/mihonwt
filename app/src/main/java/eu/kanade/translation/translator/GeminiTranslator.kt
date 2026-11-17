@@ -19,6 +19,7 @@ import kotlinx.serialization.json.putJsonObject
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import tachiyomi.domain.translation.TargetLanguage
 import java.io.IOException
 import java.util.Base64
 import kotlin.time.Duration.Companion.seconds
@@ -31,7 +32,8 @@ import kotlin.time.Duration.Companion.seconds
 class GeminiTranslator(
     private val apiKey: String,
     private val model: String,
-) : LanguageModelTranslator() {
+    language: TargetLanguage,
+) : LanguageModelTranslator(language) {
 
     override val name = "Gemini"
 

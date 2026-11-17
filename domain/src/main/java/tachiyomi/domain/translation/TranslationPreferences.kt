@@ -35,6 +35,12 @@ class TranslationPreferences(
     /** Address of the API used by [TranslationService.CUSTOM]. */
     val customBaseUrl: Preference<String> = preferenceStore.getString("translation_custom_base_url", "")
 
+    /** The language chapters are translated into. */
+    val targetLanguage: Preference<TargetLanguage> = preferenceStore.getEnum(
+        "translation_target_language",
+        TargetLanguage.PT_BR,
+    )
+
     /**
      * Whether a model that reads page images also finds the text on them, rather than translating the text OCR
      * grouped, which can't tell lettering from the artwork or touching bubbles apart.
@@ -57,6 +63,24 @@ class TranslationPreferences(
 
     /** Whether the reader keeps the original lettering and shows a bubble's translation only when it is tapped. */
     val tapToReveal: Preference<Boolean> = preferenceStore.getBoolean("translation_tap_to_reveal", false)
+}
+
+/**
+ * A language chapters are translated into, with its [tag] (BCP 47), its own [displayName], its [englishName] for
+ * prompts and its code in DeepL's API.
+ */
+enum class TargetLanguage(
+    val tag: String,
+    val displayName: String,
+    val englishName: String,
+    val deepLCode: String,
+) {
+    PT_BR("pt-BR", "Português (Brasil)", "Brazilian Portuguese", "PT-BR"),
+    ES_419("es-419", "Español (Latinoamérica)", "Latin American Spanish", "ES-419"),
+    ES_ES("es-ES", "Español (España)", "European Spanish", "ES"),
+    FR("fr", "Français", "French", "FR"),
+    IT("it", "Italiano", "Italian", "IT"),
+    DE("de", "Deutsch", "German", "DE"),
 }
 
 /**
