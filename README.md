@@ -1,70 +1,98 @@
-> **MihonWT** is an unofficial personal fork of [Mihon](https://github.com/mihonapp/mihon) that adds speech bubble translation to the reader. It is not affiliated with the Mihon project, so report its issues here, not upstream.
-
 <div align="center">
 
-<a href="https://mihon.app">
-    <img src="./.github/assets/logo.png" alt="Mihon logo" title="Mihon logo" width="80"/>
-</a>
+<img src="./.github/assets/logo.png" alt="MihonWT logo" title="MihonWT logo" width="80"/>
 
-# Mihon [App](#)
+# MihonWT
 
-### Full-featured reader
-Discover and read manga, webtoons, comics, and more – easier than ever on your Android device.
+### Mihon with speech bubble translation
 
-[![Discord server](https://img.shields.io/discord/1195734228319617024.svg?label=&labelColor=6A7EC2&color=7389D8&logo=discord&logoColor=FFFFFF)](https://discord.gg/mihon)
-[![GitHub downloads](https://img.shields.io/github/downloads/mihonapp/mihon/total?label=downloads&labelColor=27303D&color=0D1117&logo=github&logoColor=FFFFFF&style=flat)](https://mihon.app/download)
-
-[![CI](https://img.shields.io/github/actions/workflow/status/mihonapp/mihon/build.yml?labelColor=27303D)](https://github.com/mihonapp/mihon/actions/workflows/build_push.yml)
-[![License: Apache-2.0](https://img.shields.io/github/license/mihonapp/mihon?labelColor=27303D&color=0877d2)](/LICENSE)
-[![Translation status](https://img.shields.io/weblate/progress/mihon?labelColor=27303D&color=946300)](https://hosted.weblate.org/engage/mihon/)
-
-## Download
-
-[![Mihon Stable](https://img.shields.io/github/release/mihonapp/mihon.svg?maxAge=3600&label=Stable&labelColor=06599d&color=043b69)](https://mihon.app/download)
-[![Mihon Beta](https://img.shields.io/github/v/release/mihonapp/mihon-preview.svg?maxAge=3600&label=Beta&labelColor=2c2c47&color=1c1c39)](https://mihon.app/download)
-
-*Requires Android 8.0 or higher.*
-
-## Features
-
-<div align="left">
-
-* Local reading of content.
-* A configurable reader with multiple viewers, reading directions and other settings.
-* Tracker support: [MangaBaka](https://mangabaka.org), [MyAnimeList](https://myanimelist.net/), [AniList](https://anilist.co/), [Kitsu](https://kitsu.app/), [MangaUpdates](https://mangaupdates.com), [Shikimori](https://shikimori.one), [Bangumi](https://bgm.tv/), and [Hikka](https://hikka.io/) support.
-* Categories to organize your library.
-* Light and dark themes.
-* Schedule updating your library for new chapters.
-* Create backups locally to read offline or to your desired cloud service.
-* Plus much more...
+[![Latest release](https://img.shields.io/github/v/release/LirouVictor/mihonwt?labelColor=27303D&color=043b69)](https://github.com/LirouVictor/mihonwt/releases/latest)
+[![License: Apache-2.0](https://img.shields.io/github/license/LirouVictor/mihonwt?labelColor=27303D&color=0877d2)](/LICENSE)
 
 </div>
 
-## Contributing
+MihonWT is an unofficial personal fork of [Mihon](https://github.com/mihonapp/mihon) that reads the English text in
+manga, webtoon and comic pages and draws a Brazilian Portuguese translation over each speech bubble, right in the
+reader. Everything else works as in Mihon. It is not affiliated with the Mihon project, so report its issues here, not
+upstream.
 
-[Code of conduct](./CODE_OF_CONDUCT.md) · [Contributing guide](./CONTRIBUTING.md)
+## Download
 
-Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
+Get `MihonWT-vX.Y.Z.apk` from the [latest release](https://github.com/LirouVictor/mihonwt/releases/latest). Once
+installed, the app checks this repository for new versions and updates itself, keeping your library and settings.
+[Obtainium](https://github.com/ImranR98/Obtainium) pointed at this repository works too.
 
-Before reporting a new issue, take a look at the [FAQ](https://mihon.app/docs/faq/general), the [changelog](https://mihon.app/changelogs/) and the already opened [issues](https://github.com/mihonapp/mihon/issues); if you got any questions, join our [Discord server](https://discord.gg/mihon).
+MihonWT installs beside Mihon (its package is `app.mihonwt`), so you can keep both. It is built for arm64 phones and
+requires Android 8.0 or higher.
 
+## Translation
 
-### Repositories
+### How a chapter is translated
 
-[![mihonapp/website - GitHub](https://github-stats-extended.vercel.app/api/pin/?username=mihonapp&repo=website&bg_color=161B22&text_color=c9d1d9&title_color=0877d2&icon_color=0877d2&border_radius=8&hide_border=true&description_lines_count=2)](https://github.com/mihonapp/website/)
-[![mihonapp/bitmap.kt - GitHub](https://github-stats-extended.vercel.app/api/pin/?username=mihonapp&repo=bitmap.kt&bg_color=161B22&text_color=c9d1d9&title_color=0877d2&icon_color=0877d2&border_radius=8&hide_border=true&description_lines_count=2)](https://github.com/mihonapp/bitmap.kt/)
+1. **Reading the pages.** ML Kit's on-device OCR reads the text, and a bundled bubble detector groups it by speech
+   bubble and caption, leaving out sound effects and signs. Common OCR mistakes in lettering (`1`/`I`, `0`/`O`, glued
+   or line-broken words) are fixed against an English word list and the names already seen in the series.
+2. **Translating.** The text of each page goes to the service of your choice, in reading order, together with a
+   per-series glossary so names and terms stay the same from chapter to chapter.
+3. **Drawing.** Each bubble is painted over and the translation is laid out inside it, as large as the bubble allows,
+   with Portuguese hyphenation and without breaking words mid-word. Text outside bubbles is drawn with an outline.
 
-### Credits
+### Services
 
-Thank you to all the people who have contributed!
+| Service | Key | Notes |
+| --- | --- | --- |
+| Google Gemini | Free key from [Google AI Studio](https://aistudio.google.com/apikey) | Default. Sees the page images, so it gets context and fixes OCR slips |
+| DeepL | Free key from [DeepL](https://www.deepl.com/pro-api) | Fast and faithful, translates the text OCR read |
+| Groq, OpenRouter, Cerebras | Key from the service | Any chat model they offer, picked from a list |
+| Other OpenAI-compatible API | Address and key | For services not listed |
+| On this device (offline) | None | ML Kit's translator, no internet needed, lower quality |
 
-<a href="https://github.com/mihonapp/mihon/graphs/contributors">
-    <img src="https://contrib.rocks/image?repo=mihonapp/mihon" alt="Mihon app contributors" title="Mihon app contributors" width="800"/>
-</a>
+Each service keeps its own key and model. Keys are encrypted with the Android Keystore and left out of backups, so they
+need to be entered again after reinstalling.
+
+### Features
+
+* Translate a chapter from its menu in the chapter list, downloaded or not, and toggle the translation on and off from
+  the reader's bottom bar.
+* Translate chapters automatically after they download, with a queue and progress notifications.
+* The next chapter is translated ahead once you're halfway through a translated one.
+* A tap mode that keeps the original lettering and shows the translation of the tapped bubble in a popup.
+* Optional text review by Gemini, which looks at the pages and fixes what OCR misread before DeepL or another
+  translator that can't see them.
+* Optional bubble finding by the AI instead of the on-device detector.
+* A starting glossary of each series' characters from [AniList](https://anilist.co/), filled before its first chapter.
+* Per-step times and errors with retry in each chapter's translation menu.
+
+Settings are under **Settings › Translation**.
+
+### Current limits
+
+* Source text must be English, and the translation is Brazilian Portuguese only.
+* Text written one letter per line is not read.
+* Local chapters can't be translated yet.
+
+## Building
+
+MihonWT builds like Mihon: `./gradlew assembleRelease` with JDK 21 and the Android SDK. Releases are built by the
+`Release` workflow in GitHub Actions.
+
+## Credits
+
+* [Mihon](https://github.com/mihonapp/mihon), the app this fork is built on, by Javier Tomás and the Mihon Open Source
+  Project.
+* [TachiyomiAT](https://github.com/mannu691/TachiyomiAT), where the translation module started.
+* [comic-text-and-bubble-detector](https://huggingface.co/ogkalu/comic-text-and-bubble-detector) by ogkalu
+  (Apache-2.0), the bundled bubble detector, run with [ONNX Runtime](https://onnxruntime.ai/).
+* [Comic Neue](https://github.com/crozynski/comicneue) (SIL Open Font License), the font of the translations.
+* [SCOWL](http://wordlist.aspell.net/) word lists, used to fix OCR mistakes.
+* [ML Kit](https://developers.google.com/ml-kit) text recognition and translation.
+
+Their licences are in the app under **More › About › Open source licenses**.
 
 ### Disclaimer
 
-The developer(s) of this application does not have any affiliation with the content providers available, and this application hosts zero content.
+The developer(s) of this application does not have any affiliation with the content providers available, and this
+application hosts zero content.
 
 ### License
 
@@ -84,5 +112,3 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 </pre>
-
-</div>
