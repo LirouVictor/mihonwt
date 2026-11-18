@@ -1,0 +1,15 @@
+{
+  "uniqueId": "huggingface.co:PaddlePaddle:PP-OCRv6_small",
+  "artifactVersion": "28fe589, b8f84f0",
+  "name": "PP-OCRv6 small",
+  "description": "Text detection and recognition models from PaddleOCR, bundled with the app.",
+  "website": "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx",
+  "developers": [
+    {
+      "name": "PaddlePaddle Authors"
+    }
+  ],
+  "licenses": [
+    "Apache-2.0"
+  ]
+}

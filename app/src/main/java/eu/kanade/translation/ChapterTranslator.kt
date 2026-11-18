@@ -44,6 +44,7 @@ import eu.kanade.translation.recognizer.BubbleDetector
 import eu.kanade.translation.recognizer.Letter
 import eu.kanade.translation.recognizer.LightPixels
 import eu.kanade.translation.recognizer.OcrSpelling
+import eu.kanade.translation.recognizer.PaddleOcr
 import eu.kanade.translation.recognizer.TextBox
 import eu.kanade.translation.recognizer.TextRecognizer
 import eu.kanade.translation.recognizer.Word
@@ -101,6 +102,7 @@ import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.translation.BubbleFinder
+import tachiyomi.domain.translation.OcrEngine
 import tachiyomi.domain.translation.TranslationPreferences
 import tachiyomi.domain.translation.TranslationService
 import tachiyomi.i18n.wt.WTMR
@@ -316,6 +318,10 @@ class ChapterTranslator(
                     } else {
                         val pageImages = images.takeIf { translator.readsImages || corrector != null }
                         val detector = bubbleDetector().takeUnless { findsText }
+                        val ocr = paddleOcr()
+                        times.ocrEngine = context.stringResource(
+                            if (ocr != null) WTMR.strings.ocr_engine_pp_ocr else WTMR.strings.ocr_engine_ml_kit,
+                        )
                         val learnedNames = seenWords.filterValues { it != chapterFileName }.keys
                         val names = OcrSpelling.namesOf(glossaryTerms) + learnedNames
                         // Only words left unknown after fixing are kept, so a misreading fixed once isn't taken for a name
@@ -329,7 +335,7 @@ class ChapterTranslator(
                             )
                                 .also { readWords += spelling.unknownWords(it) }
                         }
-                        recognizeChapter(chapterPages, translation, pageImages, detector, fixText, times) {
+                        recognizeChapter(chapterPages, translation, pageImages, detector, ocr, fixText, times) {
                                 name,
                                 page,
                             ->
@@ -420,6 +426,7 @@ class ChapterTranslator(
                 times.detect.get().seconds(),
                 times.bubbles.get().seconds(),
                 times.translate.get().seconds(),
+                times.ocrEngine,
             ) + if (corrector != null) {
                 ". " + context.stringResource(
                     WTMR.strings.translation_times_corrected,
@@ -506,6 +513,7 @@ class ChapterTranslator(
         translation: Translation,
         images: MutableMap<String, ByteArray>?,
         detector: BubbleDetector?,
+        paddleOcr: PaddleOcr?,
         fixText: (String) -> String,
         times: Times,
         onPage: suspend (String, PageTranslation) -> Unit,
@@ -519,7 +527,7 @@ class ChapterTranslator(
             times.decode.addAndGet(decodeStart.elapsedNow().inWholeMilliseconds)
             try {
                 val (ocr, textBoxes) = coroutineScope {
-                    // The detector runs on the CPU while ML Kit reads the page on its own threads
+                    // The detector reads the page while OCR does
                     val detection = detector?.let {
                         async(Dispatchers.Default) {
                             val detectStart = TimeSource.Monotonic.markNow()
@@ -528,33 +536,31 @@ class ChapterTranslator(
                             }
                         }
                     }
-                    val ocrScale = bitmap.ocrScale()
-                    val ocrBitmap = if (ocrScale > 1f) {
-                        bitmap.scale((bitmap.width * ocrScale).toInt(), (bitmap.height * ocrScale).toInt())
-                    } else {
-                        bitmap
-                    }
                     val ocrStart = TimeSource.Monotonic.markNow()
-                    val blocks = try {
-                        textRecognizer.recognize(InputImage.fromBitmap(ocrBitmap, 0)).textBlocks
+                    val ocr = try {
+                        if (paddleOcr != null) {
+                            paddleOcr.read(bitmap) to 1f
+                        } else {
+                            readWithMlKit(bitmap)
+                        }
                     } finally {
                         times.ocr.addAndGet(ocrStart.elapsedNow().inWholeMilliseconds)
-                        if (ocrBitmap !== bitmap) ocrBitmap.recycle()
                     }
-                        // Single letters are kept: an "I" alone on its line would stay in English beside the
-                        // translation
-                        .filter { it.boundingBox != null && it.text.isNotBlank() }
-                    (blocks to ocrScale) to detection?.await()
+                    ocr to detection?.await()
                 }
                 val bubblesStart = TimeSource.Monotonic.markNow()
                 val pixels = bitmap.lightPixels()
                 times.bubbles.addAndGet(bubblesStart.elapsedNow().inWholeMilliseconds)
-                val (blocks, ocrScale) = ocr
-                var words = wordsOf(blocks, ocrScale)
+                val (pageWords, ocrScale) = ocr
+                var words = pageWords
                 textBoxes?.let { boxesWithoutWords(it, words) }?.forEach { box ->
                     val rereadStart = TimeSource.Monotonic.markNow()
-                    words =
-                        words + readBox(bitmap, box, ocrScale, firstLine = (words.maxOfOrNull { it.line } ?: -1) + 1)
+                    val firstLine = (words.maxOfOrNull { it.line } ?: -1) + 1
+                    words = words + if (paddleOcr != null) {
+                        readBox(bitmap, box, paddleOcr, firstLine)
+                    } else {
+                        readBox(bitmap, box, ocrScale, firstLine)
+                    }
                     times.ocr.addAndGet(rereadStart.elapsedNow().inWholeMilliseconds)
                 }
                 val groupStart = TimeSource.Monotonic.markNow()
@@ -581,6 +587,24 @@ class ChapterTranslator(
         return pages
     }
 
+    /** Returns the words ML Kit reads on [page], at its coordinates, and how much the page was enlarged for it. */
+    private fun readWithMlKit(page: Bitmap): Pair<List<Word>, Float> {
+        val ocrScale = page.ocrScale()
+        val ocrBitmap = if (ocrScale > 1f) {
+            page.scale((page.width * ocrScale).toInt(), (page.height * ocrScale).toInt())
+        } else {
+            page
+        }
+        val blocks = try {
+            textRecognizer.recognize(InputImage.fromBitmap(ocrBitmap, 0)).textBlocks
+        } finally {
+            if (ocrBitmap !== page) ocrBitmap.recycle()
+        }
+            // Single letters are kept: an "I" alone on its line would stay in English beside the translation
+            .filter { it.boundingBox != null && it.text.isNotBlank() }
+        return wordsOf(blocks, ocrScale) to ocrScale
+    }
+
     /**
      * Milliseconds a chapter spent on each step, shown in its menu to see which step to speed up. Batches run in
      * parallel with each other and with reading, so the steps add up to more than the whole.
@@ -596,6 +620,9 @@ class ChapterTranslator(
         val correct = AtomicLong()
         val corrected = AtomicInteger()
         val correctable = AtomicInteger()
+
+        @Volatile
+        var ocrEngine = "-"
     }
 
     /**
@@ -643,6 +670,8 @@ class ChapterTranslator(
 
     private var detector: BubbleDetector? = null
 
+    private var paddleOcr: PaddleOcr? = null
+
     private val spelling by lazy { OcrSpelling.load(context) }
 
     private fun isGlossaryTerm(term: String) = isGlossaryTerm(term, spelling::isWord)
@@ -650,6 +679,24 @@ class ChapterTranslator(
     private val characterLookup by lazy { CharacterLookup(OkHttpClient.Builder().callTimeout(LOOKUP_TIMEOUT).build()) }
 
     private val lookedUpSeries = ConcurrentHashMap.newKeySet<Long>()
+
+    /**
+     * Returns PP-OCRv6 when it is chosen to read the pages, loading it the first time. When it can't be loaded, says
+     * why and returns null, so ML Kit reads the chapter.
+     */
+    private suspend fun paddleOcr(): PaddleOcr? {
+        if (translationPreferences.ocrEngine.get() != OcrEngine.PP_OCR) return null
+        paddleOcr?.let { return it }
+        return try {
+            PaddleOcr.load(context).also { paddleOcr = it }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            logcat(LogPriority.ERROR, e)
+            val message = context.stringResource(WTMR.strings.translation_ocr_unavailable, e.message ?: e.toString())
+            withContext(Dispatchers.Main) { context.toast(message, Toast.LENGTH_LONG) }
+            null
+        }
+    }
 
     /**
      * Returns the bubble detector when it is turned on, loading it the first time. When it can't be loaded, as without
@@ -869,6 +916,20 @@ class ChapterTranslator(
                 words.sumOf { it.englishLetters() } * ENGLISH_LETTER_WEIGHT +
                     words.sumOf { it.text.length }
             }
+    }
+
+    /** Reads the text in [box] of [page] on its own with [paddleOcr], which enlarges small images itself. */
+    private fun readBox(page: Bitmap, box: TextBox, paddleOcr: PaddleOcr, firstLine: Int): List<Word> {
+        val left = box.left.toInt().coerceIn(0, page.width - 1)
+        val top = box.top.toInt().coerceIn(0, page.height - 1)
+        val right = ceil(box.right).toInt().coerceIn(left + 1, page.width)
+        val bottom = ceil(box.bottom).toInt().coerceIn(top + 1, page.height)
+        val crop = Bitmap.createBitmap(page, left, top, right - left, bottom - top)
+        return try {
+            paddleOcr.read(crop, firstLine).map { it.copy(x = it.x + left, y = it.y + top) }
+        } finally {
+            if (crop !== page) crop.recycle()
+        }
     }
 
     private fun Word.englishLetters(): Int = text.filter(Char::isLetter).takeIf(spelling::isWord)?.length ?: 0

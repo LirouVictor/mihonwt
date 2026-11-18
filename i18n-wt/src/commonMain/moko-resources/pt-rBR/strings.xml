@@ -6,7 +6,7 @@
     <string name="action_translate_chapter">Traduzir capítulo</string>
     <string name="action_delete_translation">Excluir tradução</string>
     <string name="translation_failed">Não foi possível traduzir %1$s: %2$s</string>
-    <string name="translation_times">Traduzido com %1$s em %2$.1f s. Leitura das páginas: %3$.1f s (abrir imagens %4$.1f s, OCR %5$.1f s, detector de balões %6$.1f s, achar balões %7$.1f s). Tradução: %8$.1f s, somando os lotes em paralelo</string>
+    <string name="translation_times">Traduzido com %1$s em %2$.1f s. Leitura das páginas: %3$.1f s (abrir imagens %4$.1f s, OCR com %9$s %5$.1f s, detector de balões %6$.1f s, achar balões %7$.1f s). Tradução: %8$.1f s, somando os lotes em paralelo</string>
     <string name="translation_times_corrected">O Gemini corrigiu o texto em %1$.1f s, mudando %2$d de %3$d blocos.</string>
     <string name="translation_error_quota">O limite do %1$s acabou por enquanto. Escolha outro serviço em Configurações › Tradução</string>
     <string name="translation_error_no_api_key">Adicione uma chave de API em Configurações › Tradução</string>
@@ -31,6 +31,12 @@
     <string name="pref_model_search">Buscar ou digitar o nome</string>
     <string name="pref_model_list_error">Não foi possível buscar os modelos: %1$s</string>
     <string name="pref_group_reading">Leitura das páginas</string>
+    <string name="pref_ocr_engine">Quem lê o texto</string>
+    <string name="ocr_engine_ml_kit">ML Kit</string>
+    <string name="ocr_engine_pp_ocr">PP-OCRv6 (teste)</string>
+    <string name="ocr_engine_ml_kit_summary">O ML Kit do Google, no aparelho, feito para fotos e documentos. Rápido, mas erra mais a letra dos quadrinhos.</string>
+    <string name="ocr_engine_pp_ocr_summary">O PP-OCRv6 da PaddleOCR, no aparelho, que errou cerca de um quarto das palavras que o ML Kit errou nas páginas de teste. Mais lento; o menu do capítulo mostra quanto tempo levou.</string>
+    <string name="translation_ocr_unavailable">PP-OCRv6 indisponível, lendo com o ML Kit: %1$s</string>
     <string name="pref_bubble_finder">Quem encontra os balões</string>
     <string name="bubble_finder_detector">Detector no aparelho</string>
     <string name="bubble_finder_gemini">Gemini, pela imagem</string>

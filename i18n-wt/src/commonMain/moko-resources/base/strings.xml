@@ -6,7 +6,7 @@
     <string name="action_translate_chapter">Translate chapter</string>
     <string name="action_delete_translation">Delete translation</string>
     <string name="translation_failed">Couldn\'t translate %1$s: %2$s</string>
-    <string name="translation_times">Translated with %1$s in %2$.1f s. Reading pages: %3$.1f s (opening images %4$.1f s, OCR %5$.1f s, bubble detector %6$.1f s, finding bubbles %7$.1f s). Translating: %8$.1f s, adding up batches run in parallel</string>
+    <string name="translation_times">Translated with %1$s in %2$.1f s. Reading pages: %3$.1f s (opening images %4$.1f s, OCR with %9$s %5$.1f s, bubble detector %6$.1f s, finding bubbles %7$.1f s). Translating: %8$.1f s, adding up batches run in parallel</string>
     <string name="translation_times_corrected">Gemini corrected the text in %1$.1f s, changing %2$d of %3$d blocks.</string>
     <string name="translation_error_quota">%1$s won\'t take more requests for now. Choose another service in Settings › Translation</string>
     <string name="translation_error_no_api_key">Add an API key in Settings › Translation</string>
@@ -31,6 +31,12 @@
     <string name="pref_model_search">Search or type a name</string>
     <string name="pref_model_list_error">Couldn\'t load the models: %1$s</string>
     <string name="pref_group_reading">Reading the pages</string>
+    <string name="pref_ocr_engine">Who reads the text</string>
+    <string name="ocr_engine_ml_kit">ML Kit</string>
+    <string name="ocr_engine_pp_ocr">PP-OCRv6 (test)</string>
+    <string name="ocr_engine_ml_kit_summary">Google\'s ML Kit on this device, made for photos and documents. Fast, but misreads comic lettering more often.</string>
+    <string name="ocr_engine_pp_ocr_summary">PaddleOCR\'s PP-OCRv6 on this device, which misread about a quarter as many words as ML Kit on test pages. Slower; the chapter\'s menu shows how long it took.</string>
+    <string name="translation_ocr_unavailable">PP-OCRv6 unavailable, reading with ML Kit: %1$s</string>
     <string name="pref_bubble_finder">Who finds the bubbles</string>
     <string name="bubble_finder_detector">Detector on this device</string>
     <string name="bubble_finder_gemini">Gemini, from the image</string>

@@ -14,6 +14,7 @@ import eu.kanade.translation.translator.LanguageModelTranslator
 import eu.kanade.translation.translator.PageTranslator
 import mihon.app.di.appGraph
 import tachiyomi.domain.translation.BubbleFinder
+import tachiyomi.domain.translation.OcrEngine
 import tachiyomi.domain.translation.TargetLanguage
 import tachiyomi.domain.translation.TranslationPreferences
 import tachiyomi.domain.translation.TranslationService
@@ -59,6 +60,20 @@ object SettingsTranslationScreen : SearchableSettings {
             Preference.PreferenceGroup(
                 title = stringResource(WTMR.strings.pref_group_reading),
                 preferenceItems = listOf(
+                    Preference.PreferenceItem.ListPreference(
+                        preference = translationPreferences.ocrEngine,
+                        entries = mapOf(
+                            OcrEngine.ML_KIT to stringResource(WTMR.strings.ocr_engine_ml_kit),
+                            OcrEngine.PP_OCR to stringResource(WTMR.strings.ocr_engine_pp_ocr),
+                        ),
+                        title = stringResource(WTMR.strings.pref_ocr_engine),
+                        subtitleProvider = { engine, _ ->
+                            when (engine) {
+                                OcrEngine.ML_KIT -> stringResource(WTMR.strings.ocr_engine_ml_kit_summary)
+                                OcrEngine.PP_OCR -> stringResource(WTMR.strings.ocr_engine_pp_ocr_summary)
+                            }
+                        },
+                    ),
                     Preference.PreferenceItem.ListPreference(
                         preference = translationPreferences.bubbleFinder,
                         entries = buildMap {
