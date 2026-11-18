@@ -590,6 +590,7 @@ class ChapterTranslator(
                     times.ocr.addAndGet(rereadStart.elapsedNow().inWholeMilliseconds)
                 }
                 val groupStart = TimeSource.Monotonic.markNow()
+                var rereadMs = 0L
                 val page = toPageTranslation(words, bitmap.width, bitmap.height, pixels, textBoxes)
                 val found = page.blocks
                 page.blocks = found
@@ -600,12 +601,14 @@ class ChapterTranslator(
                         if (baberu == null || textBoxes == null) return@let blocks
                         val rereadStart = TimeSource.Monotonic.markNow()
                         rereadWithBaberu(bitmap, blocks, textBoxes, baberu)
-                            .also { times.ocr.addAndGet(rereadStart.elapsedNow().inWholeMilliseconds) }
+                            .also { rereadMs = rereadStart.elapsedNow().inWholeMilliseconds }
                     }
                     .mapTo(mutableListOf()) { block ->
                         block.withBackground(bitmap).let { it.copy(text = fixText(it.text)) }
                     }
-                times.bubbles.addAndGet(groupStart.elapsedNow().inWholeMilliseconds)
+                // Baberu's rereading counts as OCR rather than finding bubbles
+                times.ocr.addAndGet(rereadMs)
+                times.bubbles.addAndGet(groupStart.elapsedNow().inWholeMilliseconds - rereadMs)
                 if (page.blocks.isNotEmpty()) {
                     pages[fileName] = page
                     images?.put(fileName, bitmap.toSmallJpeg())
