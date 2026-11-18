@@ -115,6 +115,8 @@ class BubbleDetector private constructor(private val session: OrtSession) : Clos
 /** Options for an ONNX Runtime session of a model run on the CPU, with [xnnpack] or without it. */
 internal fun ortSessionOptions(xnnpack: Boolean) = OrtSession.SessionOptions().apply {
     setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+    // Idle threads would otherwise spin waiting for work, taking the cores OCR reads on at the same time
+    addConfigEntry("session.intra_op.allow_spinning", "0")
     if (xnnpack) addXnnpack(mapOf("intra_op_num_threads" to fastThreads().toString()))
 }
 
