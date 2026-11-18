@@ -40,6 +40,7 @@ abstract class PageTranslator {
     /**
      * Fills [eu.kanade.translation.model.TranslationBlock.translation] of every block on [pages], keyed by page name,
      * and returns how the names and recurring terms on these pages were translated, when the translator can tell.
+     * [before] is the page read just before them, whose last words a sentence on the first page may go on from.
      */
     abstract suspend fun translate(
         pages: Map<String, PageTranslation>,
@@ -47,6 +48,7 @@ abstract class PageTranslator {
         images: Map<String, ByteArray> = emptyMap(),
         glossary: Map<String, String> = emptyMap(),
         onRetry: (attempt: Int) -> Unit = {},
+        before: PageTranslation? = null,
     ): Map<String, String>
 
     /**

@@ -17,24 +17,34 @@ abstract class BlockTranslator : PageTranslator() {
         images: Map<String, ByteArray>,
         glossary: Map<String, String>,
         onRetry: (attempt: Int) -> Unit,
+        before: PageTranslation?,
     ): Map<String, String> {
+        var previous = before?.blocks?.map { it.text.joinLines().toSentenceCase() }.orEmpty()
         pages.values.forEach { page ->
-            val translations =
-                translatePage(page.blocks.map { it.text.joinLines().toSentenceCase() }, glossary, onRetry)
+            val texts = page.blocks.map { it.text.joinLines().toSentenceCase() }
+            // A sentence can go on from the previous page, as "And you..." then "...are already doing that"
+            val translations = translatePage(texts, previous.takeLast(CONTEXT_BLOCKS) + texts, glossary, onRetry)
             page.blocks.forEachIndexed { i, block -> block.translation = translations[i] }
+            previous = texts
         }
         return emptyMap()
     }
 
     /**
      * Returns the translation of each of [texts], the blocks of one page in reading order, keeping the terms of the
-     * series' [glossary] as it gives them when the service can.
+     * series' [glossary] as it gives them when the service can. [context] is the text around them, to translate them
+     * as parts of one conversation when the service can.
      */
     protected abstract suspend fun translatePage(
         texts: List<String>,
+        context: List<String>,
         glossary: Map<String, String>,
         onRetry: (attempt: Int) -> Unit,
     ): List<String>
+
+    private companion object {
+        const val CONTEXT_BLOCKS = 3
+    }
 }
 
 /**
