@@ -35,6 +35,8 @@ class PaddleOcrTest {
         assertEquals(736 to 1088, detectorInputSize(400, 590))
         assertEquals(1280 to 1984, detectorInputSize(1280, 2000))
         assertEquals(992 to 1984, detectorInputSize(1000, 2048))
+        // A caption cropped from a page is enlarged only as far as its length allows
+        assertEquals(1984 to 96, detectorInputSize(1000, 47))
     }
 
     @Test

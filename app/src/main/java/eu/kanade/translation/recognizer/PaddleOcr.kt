@@ -177,14 +177,14 @@ internal class Decoded(val indices: IntArray, val starts: IntArray, val ends: In
 
 /**
  * Returns the size the detector reads a page of [width] by [height] at: sides a multiple of 32, the shorter at least
- * [DET_MIN_SIDE] and the longer at most [DET_MAX_SIDE], as PaddleOCR reads pages.
+ * [DET_MIN_SIDE] where the longer can stay at most [DET_MAX_SIDE], as PaddleOCR reads pages.
  */
 internal fun detectorInputSize(width: Int, height: Int): Pair<Int, Int> {
-    val scale = when {
-        max(width, height) > DET_MAX_SIDE -> DET_MAX_SIDE.toFloat() / max(width, height)
-        min(width, height) < DET_MIN_SIDE -> DET_MIN_SIDE.toFloat() / min(width, height)
-        else -> 1f
-    }
+    // Unlike PaddleOCR, a long thin crop isn't enlarged past the longest side, which took gigabytes for a caption
+    val scale = min(
+        DET_MAX_SIDE.toFloat() / max(width, height),
+        max(1f, DET_MIN_SIDE.toFloat() / min(width, height)),
+    )
 
     // Halves round to even, as in PaddleOCR's Python
     fun side(length: Int) = max(32, round(length * scale / 32.0).toInt() * 32)
