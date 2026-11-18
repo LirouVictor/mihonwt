@@ -36,3 +36,15 @@ private val T_AS_SEVEN = Regex("""(?<![\p{L}\d])7(?=[OH]\p{Lu}*(?![\p{L}\d]))"""
 // Lettering in capitals seldom puts a number right after an ellipsis, so only these two common words are restored
 private val DIGIT_WORDS = mapOf("15" to "IS", "50" to "SO")
 private val DIGITS_AFTER_ELLIPSIS = Regex("""(?<=\.\.\.|…)(?:15|50)(?=\s\p{Lu})""")
+
+/**
+ * Returns this block's text without the marks OCR reads where a bubble's text begins: dots of an ellipsis lost or
+ * doubled, as in ".DEVOURED" or ".…WILL", and a lone letter from a stroke of art, as in "L ANYTHING", which a
+ * translator would keep. A whole block runs through it, as a line can start with a letter, as in "PLAN\nB".
+ */
+fun String.withoutStrayMarks(): String = replace(STRAY_LETTER, "")
+    .replace(BROKEN_ELLIPSIS) { if (it.value == "..." || it.value == "…") it.value else "..." }
+
+// "I", "A" and "O" are words
+private val STRAY_LETTER = Regex("""^[\p{Lu}&&[^IAO]]\s+(?=\S)""")
+private val BROKEN_ELLIPSIS = Regex("""^[.…]+(?=\s*\p{L})""")

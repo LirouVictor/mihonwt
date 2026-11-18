@@ -60,6 +60,7 @@ import eu.kanade.translation.recognizer.inReadingOrder
 import eu.kanade.translation.recognizer.lightPixels
 import eu.kanade.translation.recognizer.withBackground
 import eu.kanade.translation.recognizer.withOverlapsJoined
+import eu.kanade.translation.recognizer.withoutStrayMarks
 import eu.kanade.translation.recognizer.wordOf
 import eu.kanade.translation.translator.GeminiTranslator
 import eu.kanade.translation.translator.LanguageModelTranslator
@@ -328,7 +329,7 @@ class ChapterTranslator(
                         val fixText = { text: String ->
                             // Lettering fixes run again on the whole block, as they need the line after an ellipsis
                             spelling.fix(
-                                text.fixLetteringMistakes(),
+                                text.fixLetteringMistakes().withoutStrayMarks(),
                                 names,
                                 anyLetter = names.isNotEmpty(),
                                 seen = seenWords.keys + readWords,
