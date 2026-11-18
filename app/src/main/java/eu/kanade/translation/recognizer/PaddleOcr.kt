@@ -5,7 +5,6 @@ package eu.kanade.translation.recognizer
 
 import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
-import ai.onnxruntime.OrtException
 import ai.onnxruntime.OrtSession
 import android.content.Context
 import android.graphics.Bitmap
@@ -13,8 +12,6 @@ import android.graphics.Matrix
 import androidx.core.graphics.scale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import logcat.LogPriority
-import tachiyomi.core.common.util.system.logcat
 import java.io.Closeable
 import java.nio.FloatBuffer
 import kotlin.math.ceil
@@ -145,15 +142,13 @@ class PaddleOcr private constructor(
         /** Loads the models that come with the app. */
         suspend fun load(context: Context): PaddleOcr = withContext(Dispatchers.IO) {
             val environment = OrtEnvironment.getEnvironment()
-            fun session(asset: String): OrtSession {
-                val model = context.assets.open(asset).use { it.readBytes() }
-                return try {
-                    environment.createSession(model, ortSessionOptions(xnnpack = true))
-                } catch (e: OrtException) {
-                    logcat(LogPriority.WARN, e)
-                    environment.createSession(model, ortSessionOptions(xnnpack = false))
-                }
-            }
+
+            // Without XNNPACK, which crashed the app on a phone in the middle of reading a page's lines, whose
+            // sizes change on every run unlike the bubble detector's
+            fun session(asset: String): OrtSession = environment.createSession(
+                context.assets.open(asset).use { it.readBytes() },
+                ortSessionOptions(xnnpack = false),
+            )
             // The recognizer's classes are a blank, the characters of the file and a space
             val characters = listOf("") +
                 context.assets.open(CHARACTERS_ASSET).bufferedReader().readLines().filter { it.isNotEmpty() } +
