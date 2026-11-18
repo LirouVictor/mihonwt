@@ -94,9 +94,6 @@ class BubbleDetector private constructor(private val session: OrtSession) : Clos
         // Downloaded by versions before the model came with the app
         private const val OLD_MODEL_FILE = "bubble_detector_v4_s_int8.onnx"
 
-        // Phones pair a few fast cores with slower ones, which would hold the fast ones back
-        private const val XNNPACK_MAX_THREADS = 4
-
         /** Loads the detector from the model that comes with the app. */
         suspend fun load(context: Context): BubbleDetector = withContext(Dispatchers.IO) {
             File(context.noBackupFilesDir, OLD_MODEL_FILE).delete()
@@ -105,20 +102,24 @@ class BubbleDetector private constructor(private val session: OrtSession) : Clos
             // XNNPACK runs the model's convolutions with ARM's vector instructions; the rest stays on the default CPU
             // provider, which also takes over when XNNPACK can't load
             val session = try {
-                environment.createSession(model, sessionOptions(xnnpack = true))
+                environment.createSession(model, ortSessionOptions(xnnpack = true))
             } catch (e: OrtException) {
                 logcat(LogPriority.WARN, e)
-                environment.createSession(model, sessionOptions(xnnpack = false))
+                environment.createSession(model, ortSessionOptions(xnnpack = false))
             }
             BubbleDetector(session)
         }
-
-        private fun sessionOptions(xnnpack: Boolean) = OrtSession.SessionOptions().apply {
-            setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
-            if (xnnpack) {
-                val threads = Runtime.getRuntime().availableProcessors().coerceAtMost(XNNPACK_MAX_THREADS)
-                addXnnpack(mapOf("intra_op_num_threads" to threads.toString()))
-            }
-        }
     }
 }
+
+/** Options for an ONNX Runtime session of a model run on the CPU, with [xnnpack] or without it. */
+internal fun ortSessionOptions(xnnpack: Boolean) = OrtSession.SessionOptions().apply {
+    setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+    if (xnnpack) {
+        val threads = Runtime.getRuntime().availableProcessors().coerceAtMost(XNNPACK_MAX_THREADS)
+        addXnnpack(mapOf("intra_op_num_threads" to threads.toString()))
+    }
+}
+
+// Phones pair a few fast cores with slower ones, which would hold the fast ones back
+private const val XNNPACK_MAX_THREADS = 4
