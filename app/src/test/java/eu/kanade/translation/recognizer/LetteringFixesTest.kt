@@ -44,4 +44,18 @@ class LetteringFixesTest {
     fun `numbers and slashes between words stay`() {
         assertEquals("CHAPTER 233. AND/OR 1 MORE", "CHAPTER 233. AND/OR 1 MORE".fixLetteringMistakes())
     }
+
+    @Test
+    fun `stray marks where a bubble's text begins are dropped`() {
+        assertEquals("...DEVOURED BY AN ONI", ".DEVOURED BY AN ONI".withoutStrayMarks())
+        assertEquals("...DEVOURED", "..DEVOURED".withoutStrayMarks())
+        assertEquals("...WILL ALSO", ".…WILL ALSO".withoutStrayMarks())
+        assertEquals("... YOU CAN", "... YOU CAN".withoutStrayMarks())
+        assertEquals("…WILL", "…WILL".withoutStrayMarks())
+        assertEquals("ANYTHING.", "L ANYTHING.".withoutStrayMarks())
+        assertEquals("LIKE...", "N\nLIKE...".withoutStrayMarks())
+        assertEquals("I DID. A DOG. O MY", "I DID. A DOG. O MY".withoutStrayMarks())
+        assertEquals("PLAN\nB", "PLAN\nB".withoutStrayMarks())
+        assertEquals("B", "B".withoutStrayMarks())
+    }
 }
