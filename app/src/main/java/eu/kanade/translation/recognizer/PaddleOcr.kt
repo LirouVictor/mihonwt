@@ -133,7 +133,9 @@ class PaddleOcr private constructor(
         private const val CHARACTERS_ASSET = "ppocrv6_keys.txt"
 
         private const val REC_HEIGHT = 48
-        private const val MIN_REC_WIDTH = 320
+
+        // PaddleOCR pads lines to 320, but short ones read as well and much faster padded less on comic pages
+        private const val MIN_REC_WIDTH = 200
 
         // Wider lines are squeezed, as a run of thousands of pixels is no line of a bubble
         private const val MAX_REC_WIDTH = 3200
@@ -172,7 +174,8 @@ internal class Decoded(val indices: IntArray, val starts: IntArray, val ends: In
 
 /**
  * Returns the size the detector reads a page of [width] by [height] at: sides a multiple of 32, the shorter at least
- * [DET_MIN_SIDE] where the longer can stay at most [DET_MAX_SIDE], as PaddleOCR reads pages.
+ * [DET_MIN_SIDE] where the longer can stay at most [DET_MAX_SIDE], as PaddleOCR reads pages. Its own limit of 2000
+ * read large comic pages no better and much slower.
  */
 internal fun detectorInputSize(width: Int, height: Int): Pair<Int, Int> {
     // Unlike PaddleOCR, a long thin crop isn't enlarged past the longest side, which took gigabytes for a caption
@@ -317,7 +320,7 @@ internal fun decodeCtc(probabilities: FloatArray, steps: Int, classes: Int): Dec
 }
 
 private const val DET_MIN_SIDE = 736
-private const val DET_MAX_SIDE = 2000
+private const val DET_MAX_SIDE = 1280
 private const val TEXT_THRESHOLD = 0.3f
 private const val MIN_LINE_SCORE = 0.5f
 private const val MIN_TEXT_SCORE = 0.5f
