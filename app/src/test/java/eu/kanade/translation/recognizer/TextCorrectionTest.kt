@@ -27,6 +27,12 @@ class TextCorrectionTest {
     }
 
     @Test
+    fun `letters of another script aren't a fix`() {
+        assertFalse(isCorrectionOf("THEY'LL FALL ALL THE WAY", "THEY'لل FALL ALL THE WAY"))
+        assertTrue(isCorrectionOf("CONGRATULATIONS", "CONGRATULATIÓNS"))
+    }
+
+    @Test
     fun `other text or nothing isn't`() {
         assertFalse(isCorrectionOf("HEY! LOOK!", "WE FOUND 'IM!"))
         assertFalse(isCorrectionOf("MOMMY", ""))
