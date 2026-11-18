@@ -36,6 +36,7 @@ abstract class LanguageModelTranslator(private val language: TargetLanguage) : P
         images: Map<String, ByteArray>,
         glossary: Map<String, String>,
         onRetry: (attempt: Int) -> Unit,
+        before: PageTranslation?,
     ): Map<String, String> {
         return try {
             translateBatch(pages, series, images, glossary, onRetry)

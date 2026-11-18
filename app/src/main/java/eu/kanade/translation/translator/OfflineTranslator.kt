@@ -19,6 +19,7 @@ class OfflineTranslator(private val language: TargetLanguage) : BlockTranslator(
 
     override suspend fun translatePage(
         texts: List<String>,
+        context: List<String>,
         glossary: Map<String, String>,
         onRetry: (attempt: Int) -> Unit,
     ): List<String> {

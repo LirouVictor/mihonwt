@@ -31,6 +31,7 @@ class DeepLTranslator(
 
     override suspend fun translatePage(
         texts: List<String>,
+        context: List<String>,
         glossary: Map<String, String>,
         onRetry: (attempt: Int) -> Unit,
     ): List<String> {
@@ -38,12 +39,12 @@ class DeepLTranslator(
         val translations = glossary.mapKeys { it.key.lowercase() }
         return texts.chunked(MAX_TEXTS).flatMap { chunk ->
             val sent = chunk.map { it.withTermsKept(terms, translations) }
-            val replies = requestWithExtrasFallback(sent, texts, onRetry).toMutableList()
+            val replies = requestWithExtrasFallback(sent, context, onRetry).toMutableList()
             // DeepL drops everything after a kept name that starts the text and is followed by "'s", as in
             // "<keep>Yuno</keep>'S NOT THE ONLY ONE...", so such a text is sent again without kept names
             val truncated = replies.indices.filter { replies[it].lostTextAfterKept(sent[it]) }
             if (truncated.isNotEmpty()) {
-                val again = requestWithExtrasFallback(truncated.map { chunk[it].escapeXml() }, texts, onRetry)
+                val again = requestWithExtrasFallback(truncated.map { chunk[it].escapeXml() }, context, onRetry)
                 truncated.zip(again).forEach { (i, reply) -> replies[i] = reply }
             }
             replies.map { it.fromXml() }
@@ -53,15 +54,15 @@ class DeepLTranslator(
     /** Returns DeepL's XML replies to the XML [chunk], one for each text. */
     private suspend fun requestWithExtrasFallback(
         chunk: List<String>,
-        texts: List<String>,
+        context: List<String>,
         onRetry: (attempt: Int) -> Unit,
     ): List<String> {
         val replies = try {
-            request(chunk, texts, onRetry)
+            request(chunk, context, onRetry)
         } catch (e: ApiException) {
             if (!withExtras || e.status !in REJECTED_CODES) throw e
             withExtras = false
-            request(chunk, texts, onRetry)
+            request(chunk, context, onRetry)
         }
         if (replies.size != chunk.size) throw IOException("$name returned ${replies.size} of ${chunk.size}")
         return replies
@@ -69,7 +70,7 @@ class DeepLTranslator(
 
     private suspend fun request(
         chunk: List<String>,
-        texts: List<String>,
+        context: List<String>,
         onRetry: (attempt: Int) -> Unit,
     ): List<String> {
         val body = buildJsonObject {
@@ -78,7 +79,7 @@ class DeepLTranslator(
             put("target_lang", language.deepLCode)
             put("formality", "prefer_less")
             // Each block is otherwise translated on its own. Context isn't billed
-            put("context", texts.joinToString("\n"))
+            put("context", context.joinToString("\n"))
             put("tag_handling", "xml")
             putJsonArray("ignore_tags") { add(KEEP_TAG) }
             if (withExtras) {

@@ -356,7 +356,10 @@ class ChapterTranslator(
                 }
                 val inFlight = Semaphore(PARALLEL_BATCHES)
                 val results = Mutex()
-                suspend fun translateBatch(batch: Map<String, PageTranslation>) = inFlight.withPermit {
+                suspend fun translateBatch(
+                    batch: Map<String, PageTranslation>,
+                    before: PageTranslation?,
+                ) = inFlight.withPermit {
                     val batchStart = TimeSource.Monotonic.markNow()
                     val title = translation.manga.title
                     val known = results.withLock { glossary.toMap() }
@@ -372,7 +375,10 @@ class ChapterTranslator(
                     // Pages the model skipped still get the text OCR grouped translated
                     val left = batch.filterKeys { it !in answered }
                     if (corrector != null && left.isNotEmpty()) correctText(corrector, left, title, images, times)
-                    if (left.isNotEmpty()) terms = terms + translator.translate(left, title, images, known, onRetry)
+                    if (left.isNotEmpty()) {
+                        terms =
+                            terms + translator.translate(left, title, images, known, onRetry, before)
+                    }
                     times.translate.addAndGet(batchStart.elapsedNow().inWholeMilliseconds)
                     results.withLock {
                         // Terms the model gives again move to the end, keeping how they were first translated, so a
@@ -389,17 +395,26 @@ class ChapterTranslator(
                 }
                 val alreadyDone = done.keys.toSet()
                 var batch = mutableMapOf<String, PageTranslation>()
+                var lastPage: PageTranslation? = null
+                var beforeBatch: PageTranslation? = null
                 for ((name, page) in recognized) {
                     translation.updateProgress { it.copy(toTranslate = it.toTranslate + 1) }
+                    val previous = lastPage
+                    lastPage = page
                     if (name in alreadyDone) continue
+                    if (batch.isEmpty()) beforeBatch = previous
                     batch[name] = page
                     if (batch.size == BATCH_SIZE) {
                         val full = batch
-                        launch { translateBatch(full) }
+                        val before = beforeBatch
+                        launch { translateBatch(full, before) }
                         batch = mutableMapOf()
                     }
                 }
-                if (batch.isNotEmpty()) launch { translateBatch(batch) }
+                if (batch.isNotEmpty()) {
+                    val before = beforeBatch
+                    launch { translateBatch(batch, before) }
+                }
                 ocr.await()
             }
 
