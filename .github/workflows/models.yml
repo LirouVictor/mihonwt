@@ -1,0 +1,42 @@
+name: Models
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  baberu:
+    name: Baberu vision encoder in int8
+    runs-on: 'ubuntu-26.04'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Convert
+        run: |
+          set -e
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install onnx==1.23.2 onnxruntime==1.29.0 numpy==2.5.3
+          curl -fsSL -o "$RUNNER_TEMP/vision_fp16.onnx" \
+            "https://huggingface.co/genshiai-daichi/baberu-ocr/resolve/$REVISION/onnx/vision_fp16.onnx"
+          "$RUNNER_TEMP/venv/bin/python" .github/scripts/baberu_vision_int8.py \
+            "$RUNNER_TEMP/vision_fp16.onnx" "$RUNNER_TEMP/vision_fp32.onnx" vision_int8.onnx
+          # The app checks the file it downloads against this
+          echo "$SHA256  vision_int8.onnx" | sha256sum -c
+        env:
+          REVISION: b9868433dbda3ed9ba1357d008599ff4ada873d5
+          SHA256: 0b26d492dd075797fc7d6400d8433d3f9ceae435f8139564692eeed6ffaada9b
+
+      - name: Publish
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
+        with:
+          tag_name: models-baberu-b9868433
+          target_commitish: ${{ github.sha }}
+          name: Baberu OCR vision encoder, int8
+          body: >-
+            Baberu OCR's vision encoder (https://huggingface.co/genshiai-daichi/baberu-ocr, revision b9868433,
+            Apache License 2.0) quantized to int8 by .github/scripts/baberu_vision_int8.py, for the app to download.
+          prerelease: true
+          files: vision_int8.onnx

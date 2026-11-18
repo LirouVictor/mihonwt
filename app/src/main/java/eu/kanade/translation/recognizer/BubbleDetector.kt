@@ -115,11 +115,10 @@ class BubbleDetector private constructor(private val session: OrtSession) : Clos
 /** Options for an ONNX Runtime session of a model run on the CPU, with [xnnpack] or without it. */
 internal fun ortSessionOptions(xnnpack: Boolean) = OrtSession.SessionOptions().apply {
     setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
-    if (xnnpack) {
-        val threads = Runtime.getRuntime().availableProcessors().coerceAtMost(XNNPACK_MAX_THREADS)
-        addXnnpack(mapOf("intra_op_num_threads" to threads.toString()))
-    }
+    if (xnnpack) addXnnpack(mapOf("intra_op_num_threads" to fastThreads().toString()))
 }
 
-// Phones pair a few fast cores with slower ones, which would hold the fast ones back
-private const val XNNPACK_MAX_THREADS = 4
+/** How many threads to run a model on: phones pair a few fast cores with slower ones, which would hold them back. */
+internal fun fastThreads() = Runtime.getRuntime().availableProcessors().coerceAtMost(MAX_FAST_THREADS)
+
+private const val MAX_FAST_THREADS = 4

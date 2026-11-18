@@ -26,7 +26,8 @@ import java.text.Normalizer
 /**
  * Baberu OCR, under the Apache License 2.0: a model trained on manga and comic lettering that reads the whole text
  * of one bubble from its image. It gives no positions, so it only rereads the bubbles another OCR found. Its models,
- * about 122 MB, are downloaded the first time from genshiai-daichi/baberu-ocr at revision [REVISION].
+ * about 158 MB, are downloaded the first time from genshiai-daichi/baberu-ocr at revision [REVISION], except its vision
+ * encoder, which this repository's Models workflow makes int8 from the float16 one, as the int4 one runs half as fast.
  */
 class BaberuOcr private constructor(
     private val vision: OrtSession,
@@ -137,8 +138,12 @@ class BaberuOcr private constructor(
         private val MEAN = floatArrayOf(0.485f, 0.456f, 0.406f)
         private val STD = floatArrayOf(0.229f, 0.224f, 0.225f)
 
+        private const val VISION = "onnx/vision_int8.onnx"
+        private const val VISION_URL =
+            "https://github.com/LirouVictor/mihonwt/releases/download/models-baberu-b9868433/vision_int8.onnx"
+
         private val FILES = mapOf(
-            "onnx/vision_int4.onnx" to 52_293_486L,
+            VISION to 87_667_320L,
             "onnx/decoder_prefill_int8.onnx" to 35_133_596L,
             "onnx/decoder_step_int8.onnx" to 34_715_466L,
             "tokenizer/vocab.json" to 130_761L,
@@ -149,6 +154,8 @@ class BaberuOcr private constructor(
 
         /** Loads the model, first downloading its files if they aren't on the device yet. */
         suspend fun load(context: Context): BaberuOcr = withContext(Dispatchers.IO) {
+            // Downloaded by the version that read with it
+            file(context, "onnx/vision_int4.onnx").delete()
             FILES.forEach { (path, size) ->
                 val file = file(context, path)
                 if (file.length() != size) download(path, size, file)
@@ -156,11 +163,13 @@ class BaberuOcr private constructor(
             val environment = OrtEnvironment.getEnvironment()
 
             // Without XNNPACK, as its decoder's inputs grow with every letter, like the PP-OCRv6 lines that crashed it
-            fun session(path: String) =
-                environment.createSession(file(context, path).path, ortSessionOptions(xnnpack = false))
+            fun session(path: String) = environment.createSession(
+                file(context, path).path,
+                ortSessionOptions(xnnpack = false).apply { setIntraOpNumThreads(fastThreads()) },
+            )
             val characters = Json.decodeFromString<List<String>>(file(context, "tokenizer/vocab.json").readText())
             BaberuOcr(
-                session("onnx/vision_int4.onnx"),
+                session(VISION),
                 session("onnx/decoder_prefill_int8.onnx"),
                 session("onnx/decoder_step_int8.onnx"),
                 characters,
@@ -173,7 +182,13 @@ class BaberuOcr private constructor(
         private suspend fun download(path: String, size: Long, file: File) {
             file.parentFile?.mkdirs()
             val partial = File(file.path + ".part")
-            val url = "https://huggingface.co/genshiai-daichi/baberu-ocr/resolve/$REVISION/$path"
+            val url = if (path ==
+                VISION
+            ) {
+                VISION_URL
+            } else {
+                "https://huggingface.co/genshiai-daichi/baberu-ocr/resolve/$REVISION/$path"
+            }
             OkHttpClient().newCall(Request.Builder().url(url).build()).await().use { response ->
                 if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
                 partial.outputStream().use { response.body.byteStream().copyTo(it) }
