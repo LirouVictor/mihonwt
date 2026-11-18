@@ -33,7 +33,7 @@
     <string name="pref_group_reading">Leitura das páginas</string>
     <string name="pref_ocr_engine">Quem lê o texto</string>
     <string name="ocr_engine_ml_kit">ML Kit</string>
-    <string name="ocr_engine_pp_ocr">PP-OCRv6 (teste)</string>
+    <string name="ocr_engine_pp_ocr">PP-OCRv6</string>
     <string name="ocr_engine_ml_kit_summary">O ML Kit do Google, no aparelho, feito para fotos e documentos. Rápido, mas erra mais a letra dos quadrinhos.</string>
     <string name="ocr_engine_pp_ocr_summary">O PP-OCRv6 da PaddleOCR, no aparelho, que errou cerca de um quarto das palavras que o ML Kit errou nas páginas de teste. Mais lento; o menu do capítulo mostra quanto tempo levou.</string>
     <string name="translation_ocr_unavailable">PP-OCRv6 indisponível, lendo com o ML Kit: %1$s</string>
