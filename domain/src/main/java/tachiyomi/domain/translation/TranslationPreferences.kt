@@ -41,6 +41,9 @@ class TranslationPreferences(
         TargetLanguage.PT_BR,
     )
 
+    /** What reads the text on the pages. */
+    val ocrEngine: Preference<OcrEngine> = preferenceStore.getEnum("translation_ocr_engine", OcrEngine.ML_KIT)
+
     // Replaces two switches, whether the model finds the text and whether the detector runs, starting from their values
     val bubbleFinder: Preference<BubbleFinder> = preferenceStore.getEnum(
         "translation_bubble_finder",
@@ -64,6 +67,15 @@ class TranslationPreferences(
 
     /** Whether the reader keeps the original lettering and shows a bubble's translation only when it is tapped. */
     val tapToReveal: Preference<Boolean> = preferenceStore.getBoolean("translation_tap_to_reveal", false)
+}
+
+/** What reads the text on the pages. */
+enum class OcrEngine {
+    /** Google's ML Kit, made for photos and documents. */
+    ML_KIT,
+
+    /** PaddleOCR's PP-OCRv6 small, which reads comic lettering better but is slower. */
+    PP_OCR,
 }
 
 /** What groups the text OCR read into bubbles. */
