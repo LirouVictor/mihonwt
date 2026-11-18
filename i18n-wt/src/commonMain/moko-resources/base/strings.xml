@@ -33,10 +33,14 @@
     <string name="pref_group_reading">Reading the pages</string>
     <string name="pref_ocr_engine">Who reads the text</string>
     <string name="ocr_engine_ml_kit">ML Kit</string>
-    <string name="ocr_engine_pp_ocr">PP-OCRv6 (test)</string>
+    <string name="ocr_engine_pp_ocr">PP-OCRv6</string>
     <string name="ocr_engine_ml_kit_summary">Google\'s ML Kit on this device, made for photos and documents. Fast, but misreads comic lettering more often.</string>
     <string name="ocr_engine_pp_ocr_summary">PaddleOCR\'s PP-OCRv6 on this device, which misread about a quarter as many words as ML Kit on test pages. Slower; the chapter\'s menu shows how long it took.</string>
     <string name="translation_ocr_unavailable">PP-OCRv6 unavailable, reading with ML Kit: %1$s</string>
+    <string name="ocr_engine_baberu">ML Kit + Baberu</string>
+    <string name="ocr_engine_baberu_summary">ML Kit finds the lines, and Baberu, a model trained on manga lettering, reads each bubble the detector found again. Needs the bubble detector. Downloads about 122 MB the first time; slow.</string>
+    <string name="translation_baberu_downloading">Downloading Baberu (about 122 MB)…</string>
+    <string name="translation_baberu_unavailable">Baberu unavailable, reading with ML Kit only: %1$s</string>
     <string name="pref_bubble_finder">Who finds the bubbles</string>
     <string name="bubble_finder_detector">Detector on this device</string>
     <string name="bubble_finder_gemini">Gemini, from the image</string>

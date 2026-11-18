@@ -1,0 +1,15 @@
+{
+  "uniqueId": "huggingface.co:genshiai-daichi:baberu-ocr",
+  "artifactVersion": "b986843",
+  "name": "Baberu OCR",
+  "description": "Manga and comic lettering OCR model, downloaded on first use.",
+  "website": "https://huggingface.co/genshiai-daichi/baberu-ocr",
+  "developers": [
+    {
+      "name": "genshiai-daichi"
+    }
+  ],
+  "licenses": [
+    "Apache-2.0"
+  ]
+}

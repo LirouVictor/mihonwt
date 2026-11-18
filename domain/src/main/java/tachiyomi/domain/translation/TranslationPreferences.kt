@@ -76,6 +76,9 @@ enum class OcrEngine {
 
     /** PaddleOCR's PP-OCRv6 small, which reads comic lettering better but is slower. */
     PP_OCR,
+
+    /** ML Kit's lines with the text of each bubble read again by Baberu, a model trained on manga lettering. */
+    BABERU,
 }
 
 /** What groups the text OCR read into bubbles. */

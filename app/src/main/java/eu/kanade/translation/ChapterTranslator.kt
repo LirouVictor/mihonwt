@@ -40,6 +40,7 @@ import eu.kanade.translation.model.Translation
 import eu.kanade.translation.model.TranslationBlock
 import eu.kanade.translation.model.joinLines
 import eu.kanade.translation.model.onlinePageName
+import eu.kanade.translation.recognizer.BaberuOcr
 import eu.kanade.translation.recognizer.BubbleDetector
 import eu.kanade.translation.recognizer.Letter
 import eu.kanade.translation.recognizer.LightPixels
@@ -50,6 +51,7 @@ import eu.kanade.translation.recognizer.TextRecognizer
 import eu.kanade.translation.recognizer.Word
 import eu.kanade.translation.recognizer.blocksInBoxes
 import eu.kanade.translation.recognizer.blocksOfFoundText
+import eu.kanade.translation.recognizer.boxesToReread
 import eu.kanade.translation.recognizer.boxesWithoutWords
 import eu.kanade.translation.recognizer.bubbleBlocks
 import eu.kanade.translation.recognizer.correctionOf
@@ -57,6 +59,7 @@ import eu.kanade.translation.recognizer.fixLetteringMistakes
 import eu.kanade.translation.recognizer.grownIntoBubble
 import eu.kanade.translation.recognizer.inBubble
 import eu.kanade.translation.recognizer.inReadingOrder
+import eu.kanade.translation.recognizer.isCorrectionOf
 import eu.kanade.translation.recognizer.lightPixels
 import eu.kanade.translation.recognizer.withBackground
 import eu.kanade.translation.recognizer.withOverlapsJoined
@@ -320,8 +323,14 @@ class ChapterTranslator(
                         val pageImages = images.takeIf { translator.readsImages || corrector != null }
                         val detector = bubbleDetector().takeUnless { findsText }
                         val ocr = paddleOcr()
+                        // Baberu only rereads bubbles the detector found
+                        val baberu = detector?.let { baberuOcr() }
                         times.ocrEngine = context.stringResource(
-                            if (ocr != null) WTMR.strings.ocr_engine_pp_ocr else WTMR.strings.ocr_engine_ml_kit,
+                            when {
+                                ocr != null -> WTMR.strings.ocr_engine_pp_ocr
+                                baberu != null -> WTMR.strings.ocr_engine_baberu
+                                else -> WTMR.strings.ocr_engine_ml_kit
+                            },
                         )
                         val learnedNames = seenWords.filterValues { it != chapterFileName }.keys
                         val names = OcrSpelling.namesOf(glossaryTerms) + learnedNames
@@ -336,7 +345,7 @@ class ChapterTranslator(
                             )
                                 .also { readWords += spelling.unknownWords(it) }
                         }
-                        recognizeChapter(chapterPages, translation, pageImages, detector, ocr, fixText, times) {
+                        recognizeChapter(chapterPages, translation, pageImages, detector, ocr, baberu, fixText, times) {
                                 name,
                                 page,
                             ->
@@ -530,6 +539,7 @@ class ChapterTranslator(
         images: MutableMap<String, ByteArray>?,
         detector: BubbleDetector?,
         paddleOcr: PaddleOcr?,
+        baberu: BaberuOcr?,
         fixText: (String) -> String,
         times: Times,
         onPage: suspend (String, PageTranslation) -> Unit,
@@ -586,6 +596,12 @@ class ChapterTranslator(
                     .map { it.inBubble(bitmap.width, bitmap.height, found, pixels) ?: it.grownIntoBubble(bitmap) }
                     .inReadingOrder(translation.isRightToLeft())
                     .withOverlapsJoined()
+                    .let { blocks ->
+                        if (baberu == null || textBoxes == null) return@let blocks
+                        val rereadStart = TimeSource.Monotonic.markNow()
+                        rereadWithBaberu(bitmap, blocks, textBoxes, baberu)
+                            .also { times.ocr.addAndGet(rereadStart.elapsedNow().inWholeMilliseconds) }
+                    }
                     .mapTo(mutableListOf()) { block ->
                         block.withBackground(bitmap).let { it.copy(text = fixText(it.text)) }
                     }
@@ -688,6 +704,8 @@ class ChapterTranslator(
 
     private var paddleOcr: PaddleOcr? = null
 
+    private var baberuOcr: BaberuOcr? = null
+
     private val spelling by lazy { OcrSpelling.load(context) }
 
     private fun isGlossaryTerm(term: String) = isGlossaryTerm(term, spelling::isWord)
@@ -709,6 +727,28 @@ class ChapterTranslator(
             if (e is CancellationException) throw e
             logcat(LogPriority.ERROR, e)
             val message = context.stringResource(WTMR.strings.translation_ocr_unavailable, e.message ?: e.toString())
+            withContext(Dispatchers.Main) { context.toast(message, Toast.LENGTH_LONG) }
+            null
+        }
+    }
+
+    /**
+     * Returns Baberu when it is chosen to read the bubbles, loading it the first time, which downloads its models. When
+     * it can't be loaded, as without a connection, says why and returns null, so ML Kit's reading stays.
+     */
+    private suspend fun baberuOcr(): BaberuOcr? {
+        if (translationPreferences.ocrEngine.get() != OcrEngine.BABERU) return null
+        baberuOcr?.let { return it }
+        if (!BaberuOcr.isDownloaded(context)) {
+            val message = context.stringResource(WTMR.strings.translation_baberu_downloading)
+            withContext(Dispatchers.Main) { context.toast(message, Toast.LENGTH_LONG) }
+        }
+        return try {
+            BaberuOcr.load(context).also { baberuOcr = it }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            logcat(LogPriority.ERROR, e)
+            val message = context.stringResource(WTMR.strings.translation_baberu_unavailable, e.message ?: e.toString())
             withContext(Dispatchers.Main) { context.toast(message, Toast.LENGTH_LONG) }
             null
         }
@@ -934,6 +974,33 @@ class ChapterTranslator(
             }
     }
 
+    /**
+     * Returns [blocks] with the text of each one alone in a box of [boxes] read again by [baberu], where its reading is
+     * the same text as OCR's with mistakes fixed. Otherwise, as when it answers in Japanese, OCR's text stays.
+     */
+    private fun rereadWithBaberu(
+        page: Bitmap,
+        blocks: List<TranslationBlock>,
+        boxes: List<TextBox>,
+        baberu: BaberuOcr,
+    ): List<TranslationBlock> {
+        val reread = boxesToReread(blocks, boxes)
+        return blocks.mapIndexed { i, block ->
+            val box = reread[i] ?: return@mapIndexed block
+            val left = (box.left - BABERU_MARGIN).toInt().coerceIn(0, page.width - 1)
+            val top = (box.top - BABERU_MARGIN).toInt().coerceIn(0, page.height - 1)
+            val right = ceil(box.right + BABERU_MARGIN).toInt().coerceIn(left + 1, page.width)
+            val bottom = ceil(box.bottom + BABERU_MARGIN).toInt().coerceIn(top + 1, page.height)
+            val crop = Bitmap.createBitmap(page, left, top, right - left, bottom - top)
+            val text = try {
+                baberu.read(crop)
+            } finally {
+                if (crop !== page) crop.recycle()
+            }
+            if (isCorrectionOf(block.text, text)) block.copy(text = text) else block
+        }
+    }
+
     /** Reads the text in [box] of [page] on its own with [paddleOcr], which enlarges small images itself. */
     private fun readBox(page: Bitmap, box: TextBox, paddleOcr: PaddleOcr, firstLine: Int): List<Word> {
         val left = box.left.toInt().coerceIn(0, page.width - 1)
@@ -1010,6 +1077,9 @@ class ChapterTranslator(
         const val BOX_OCR_SCALE = 1.5f
         const val BOX_OCR_MARGIN = 32
         const val BOX_OCR_STRETCH = 2f
+
+        // As much room around a box as Baberu was tested with
+        const val BABERU_MARGIN = 4
 
         // Letters of English words count far more than other letters, which a bubble's outline also gives
         const val ENGLISH_LETTER_WEIGHT = 10
