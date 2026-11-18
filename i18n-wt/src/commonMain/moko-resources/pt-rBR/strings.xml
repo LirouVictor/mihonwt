@@ -37,6 +37,10 @@
     <string name="ocr_engine_ml_kit_summary">O ML Kit do Google, no aparelho, feito para fotos e documentos. Rápido, mas erra mais a letra dos quadrinhos.</string>
     <string name="ocr_engine_pp_ocr_summary">O PP-OCRv6 da PaddleOCR, no aparelho, que errou cerca de um quarto das palavras que o ML Kit errou nas páginas de teste. Mais lento; o menu do capítulo mostra quanto tempo levou.</string>
     <string name="translation_ocr_unavailable">PP-OCRv6 indisponível, lendo com o ML Kit: %1$s</string>
+    <string name="ocr_engine_baberu">ML Kit + Baberu</string>
+    <string name="ocr_engine_baberu_summary">O ML Kit acha as linhas, e o Baberu, um modelo treinado com letreiro de mangá, relê cada balão que o detector encontrou. Precisa do detector de balões. Baixa cerca de 122 MB na primeira vez; lento.</string>
+    <string name="translation_baberu_downloading">Baixando o Baberu (cerca de 122 MB)…</string>
+    <string name="translation_baberu_unavailable">Baberu indisponível, lendo só com o ML Kit: %1$s</string>
     <string name="pref_bubble_finder">Quem encontra os balões</string>
     <string name="bubble_finder_detector">Detector no aparelho</string>
     <string name="bubble_finder_gemini">Gemini, pela imagem</string>

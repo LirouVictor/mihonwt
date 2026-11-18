@@ -65,12 +65,14 @@ object SettingsTranslationScreen : SearchableSettings {
                         entries = mapOf(
                             OcrEngine.ML_KIT to stringResource(WTMR.strings.ocr_engine_ml_kit),
                             OcrEngine.PP_OCR to stringResource(WTMR.strings.ocr_engine_pp_ocr),
+                            OcrEngine.BABERU to stringResource(WTMR.strings.ocr_engine_baberu),
                         ),
                         title = stringResource(WTMR.strings.pref_ocr_engine),
                         subtitleProvider = { engine, _ ->
                             when (engine) {
                                 OcrEngine.ML_KIT -> stringResource(WTMR.strings.ocr_engine_ml_kit_summary)
                                 OcrEngine.PP_OCR -> stringResource(WTMR.strings.ocr_engine_pp_ocr_summary)
+                                OcrEngine.BABERU -> stringResource(WTMR.strings.ocr_engine_baberu_summary)
                             }
                         },
                     ),
