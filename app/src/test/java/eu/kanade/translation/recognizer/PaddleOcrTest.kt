@@ -29,14 +29,14 @@ class PaddleOcrTest {
     }
 
     @Test
-    fun `pages are read at a multiple of 32 with the short side at least 736 and the long one at most 2000`() {
+    fun `pages are read at a multiple of 32 with the short side at least 736 and the long one at most 1280`() {
         assertEquals(768 to 1152, detectorInputSize(784, 1145))
-        assertEquals(1216 to 1888, detectorInputSize(1200, 1885))
+        assertEquals(800 to 1280, detectorInputSize(1200, 1885))
         assertEquals(736 to 1088, detectorInputSize(400, 590))
-        assertEquals(1280 to 1984, detectorInputSize(1280, 2000))
-        assertEquals(992 to 1984, detectorInputSize(1000, 2048))
+        assertEquals(832 to 1280, detectorInputSize(1280, 2000))
+        assertEquals(640 to 1280, detectorInputSize(1000, 2048))
         // A caption cropped from a page is enlarged only as far as its length allows
-        assertEquals(1984 to 96, detectorInputSize(1000, 47))
+        assertEquals(1280 to 64, detectorInputSize(1000, 47))
     }
 
     @Test
