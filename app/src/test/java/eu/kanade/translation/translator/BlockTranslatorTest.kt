@@ -58,4 +58,35 @@ class BlockTranslatorTest {
     fun `a contracted capital D before a kept name is spelled out`() {
         assertEquals("EU VI O GRIMOIRE de Yuno.", "EU VI O GRIMOIRE D<keep>Yuno</keep>.".fromXml())
     }
+
+    @Test
+    fun `a translation holding words of another block is found`() {
+        val sources = listOf(
+            "Don't worry about momo.",
+            "Worry about whether you're going to be stuck with that dumb expression forever.",
+            "Soon enough, you're gonna be...",
+            "...Devoured by an oni and become an oni yourself.",
+        )
+        val translations = listOf(
+            "Para com essa cara de bobo, senão você vai virar um oni também.",
+            "Se preocupa se você vai ficar com essa cara de bobo pra sempre.",
+            "Em breve, você vai ficar...",
+            "...devorado por um oni e virar um oni também.",
+        )
+        assertEquals(setOf(0, 1, 3), leakedTranslations(sources, translations))
+    }
+
+    @Test
+    fun `a translation that lost its words to another block is found`() {
+        val sources = listOf("You can understand physical wounds by looking at them.", "It's easy to figure out...")
+        val translations = listOf("É só olhar.", "É fácil perceber...")
+        assertEquals(setOf(0), leakedTranslations(sources, translations))
+    }
+
+    @Test
+    fun `translations of blocks repeating each other's words are kept`() {
+        val sources = listOf("Lend me your power!!", "Please, turbo granny!!", "Lend me your power!!")
+        val translations = listOf("Me empresta seu poder!!", "Por favor, vovó turbo!!", "Me empresta seu poder!!")
+        assertEquals(emptySet<Int>(), leakedTranslations(sources, translations))
+    }
 }
