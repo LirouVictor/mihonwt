@@ -211,6 +211,7 @@ class WebtoonPageHolder(
                         context,
                         viewer.simpleLongStrip.page.processStripTranslation(translation),
                         context.appGraph.translationPreferences.tapToReveal.get(),
+                        context.appGraph.translationPreferences.shortHyphenation.get(),
                     )
                 }
             }

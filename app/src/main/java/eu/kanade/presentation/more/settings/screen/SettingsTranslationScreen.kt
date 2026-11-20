@@ -156,6 +156,11 @@ object SettingsTranslationScreen : SearchableSettings {
                         subtitle = stringResource(WTMR.strings.pref_tap_to_reveal_summary),
                     ),
                     Preference.PreferenceItem.SwitchPreference(
+                        preference = translationPreferences.shortHyphenation,
+                        title = stringResource(WTMR.strings.pref_short_hyphenation),
+                        subtitle = stringResource(WTMR.strings.pref_short_hyphenation_summary),
+                    ),
+                    Preference.PreferenceItem.SwitchPreference(
                         preference = translationPreferences.translateOnDownload,
                         title = stringResource(WTMR.strings.pref_translate_on_download),
                         subtitle = stringResource(WTMR.strings.pref_translate_on_download_summary),
