@@ -91,9 +91,10 @@ class TranslationRenderer(context: Context, translation: PageTranslation, var on
     /**
      * Width the upright [block] may take in its bubble: as far as the bubble reaches on both sides of its center along
      * its height, short of the other [blocks] beside it. A bubble shared by several blocks otherwise kept each to the
-     * width of its original letters, as a narrow "SAY WHAT?!" in a wide bubble.
+     * width of its original letters, as a narrow "SAY WHAT?!" in a wide bubble. Without [margin], all of it up to the
+     * outline.
      */
-    private fun roomInBubble(block: TranslationBlock, blocks: List<TranslationBlock>): Float {
+    private fun roomInBubble(block: TranslationBlock, blocks: List<TranslationBlock>, margin: Boolean = true): Float {
         val centerX = block.x + block.width / 2
         val top = block.y
         val bottom = block.y + block.height
@@ -109,8 +110,8 @@ class TranslationRenderer(context: Context, translation: PageTranslation, var on
             }
         }
         // Tall, condensed lettering in a narrow bubble would otherwise leave the text only a sliver of it
-        val margin = min(block.symHeight / 2, (right - left) * MAX_MARGIN_SHARE)
-        return max(block.width, 2 * (min(centerX - left, right - centerX) - margin))
+        val gap = if (margin) min(block.symHeight / 2, (right - left) * MAX_MARGIN_SHARE) else 0f
+        return max(block.width, 2 * (min(centerX - left, right - centerX) - gap))
     }
 
     /** Draws onto [canvas] with the image scaled by [scale] and its top left corner at [left], [top]. */
@@ -159,7 +160,10 @@ class TranslationRenderer(context: Context, translation: PageTranslation, var on
         val bubble = block.bubble.map { RectF(it.x, it.y, it.x + it.width, it.y + it.height) }
         // A word too long for the box may take some of the bubble's width beside it, but never the art's
         val bubbleWidth = bubble.maxOfOrNull { it.right }?.minus(bubble.minOf { it.left })
-        val maxWidth = min(boxWidth * MAX_WIDENING, bubbleWidth ?: Float.MAX_VALUE).coerceAtLeast(boxWidth)
+        // Upright text is widened only as far as its bubble reaches at its height, as two bubbles joined into one
+        // painted area are as wide as both together and text widened over that ran across the outline between them
+        val widest = if (isUpright) roomInBubble(block, blocks, margin = false) else bubbleWidth
+        val maxWidth = min(boxWidth * MAX_WIDENING, widest ?: Float.MAX_VALUE).coerceAtLeast(boxWidth)
         val translation = block.displayedTranslation()
         // Never larger than the original lettering, which a short reply in a big bubble would otherwise dwarf
         val maxSize = symHeight / capHeightRatio
