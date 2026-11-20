@@ -151,7 +151,19 @@ class TranslationRenderer(
         // Text sideways on the image, as on a page rotated to fit, is laid out along the long side of its block
         val isSideways = abs(block.angle % 180) in 45f..135f
         val isUpright = abs(block.angle) < MAX_UPRIGHT_ANGLE
+        val bubble = block.bubble.map { RectF(it.x, it.y, it.x + it.width, it.y + it.height) }
+        val own = RectF(block.x, block.y, block.x + block.width, block.y + block.height)
+        val sharers = if (isUpright) block.bubbleSharers(blocks) else emptyList()
+        val sharedWidth = if (sharers.isNotEmpty()) {
+            widthAt(bubble, own, sharers, own.centerX(), own.top, own.bottom, margin = 0f, minWidth = 1f)
+                ?.let { 2 * min(own.centerX() - it.start, it.endInclusive - own.centerX()) }
+        } else {
+            null
+        }
+        // Rotating a fitted line can move it across the boundary with a neighboring block.
+        val angle = if (sharers.isEmpty()) block.angle else 0f
         val width = when {
+            sharedWidth != null -> min(roomInBubble(block, blocks), sharedWidth)
             isSideways -> block.height
             isUpright -> roomInBubble(block, blocks)
             else -> block.width
@@ -165,12 +177,11 @@ class TranslationRenderer(
         val padding = if (block.bubble.isEmpty()) 1f else 0f
         val boxWidth = width + padding * symWidth / 2
         val boxHeight = height + padding * symHeight / 2
-        val bubble = block.bubble.map { RectF(it.x, it.y, it.x + it.width, it.y + it.height) }
         // A word too long for the box may take some of the bubble's width beside it, but never the art's
         val bubbleWidth = bubble.maxOfOrNull { it.right }?.minus(bubble.minOf { it.left })
         // Upright text is widened only as far as its bubble reaches at its height, as two bubbles joined into one
         // painted area are as wide as both together and text widened over that ran across the outline between them
-        val widest = if (isUpright) roomInBubble(block, blocks, margin = false) else bubbleWidth
+        val widest = sharedWidth ?: if (isUpright) roomInBubble(block, blocks, margin = false) else bubbleWidth
         val maxWidth = min(boxWidth * MAX_WIDENING, widest ?: Float.MAX_VALUE).coerceAtLeast(boxWidth)
         val translation = block.displayedTranslation()
         // Never larger than the original lettering, which a short reply in a big bubble would otherwise dwarf
@@ -190,13 +201,15 @@ class TranslationRenderer(
         // Lines as wide as the bubble is at their height, as lettering follows a round bubble's shape, where that
         // allows larger text than its largest rectangle
         if (isUpright && stacked == null && bubble.isNotEmpty()) {
-            fitInBubble(translation, bubble, block, block.bubbleSharers(blocks), maxSize)
-                ?.takeIf { it.text.paint.textSize > text.paint.textSize }
+            fitInBubble(translation, bubble, own, sharers, maxSize)
+                ?.takeIf {
+                    (sharers.isNotEmpty() && sharedWidth == null) || it.text.paint.textSize > text.paint.textSize
+                }
                 ?.let { shaped ->
                     return Block(
                         centerX = shaped.left + shaped.text.width / 2f,
                         centerY = shaped.top + shaped.height / 2,
-                        angle = block.angle,
+                        angle = angle,
                         box = RectF(0f, 0f, shaped.text.width.toFloat(), shaped.height).apply {
                             offset(-centerX(), -centerY())
                         },
@@ -212,9 +225,9 @@ class TranslationRenderer(
         val box = RectF(0f, 0f, max(boxWidth, text.width.toFloat()), boxHeight)
         // Text widened past the edge of the page, as in a bubble cut by it, moves in to stay whole
         return Block(
-            centerX = if (isUpright) centerX.keptOnPage(box.width(), imageWidth) else centerX,
-            centerY = if (isUpright) centerY.keptOnPage(box.height(), imageHeight) else centerY,
-            angle = block.angle,
+            centerX = if (isUpright && sharedWidth == null) centerX.keptOnPage(box.width(), imageWidth) else centerX,
+            centerY = if (isUpright && sharedWidth == null) centerY.keptOnPage(box.height(), imageHeight) else centerY,
+            angle = angle,
             box = box.apply { offset(-centerX(), -centerY()) },
             bubble = bubble,
             cornerRadius = symHeight / 4,
@@ -225,15 +238,16 @@ class TranslationRenderer(
     }
 
     /**
-     * The boxes of the other [blocks] with their text in this block's bubble, as in two touching bubbles painted as
-     * one area, which this block's text must leave room for.
+     * The text boxes of other [blocks] whose painted areas overlap. A mask can miss the center of another
+     * text box even when both masks cover the same connected bubbles.
      */
     private fun TranslationBlock.bubbleSharers(blocks: List<TranslationBlock>): List<RectF> = blocks
         .filter { other ->
             other !== this && bubble.any { area ->
-                val x = other.x + other.width / 2
-                val y = other.y + other.height / 2
-                x >= area.x && x < area.x + area.width && y >= area.y && y < area.y + area.height
+                other.bubble.any { neighbor ->
+                    area.x < neighbor.x + neighbor.width && neighbor.x < area.x + area.width &&
+                        area.y < neighbor.y + neighbor.height && neighbor.y < area.y + area.height
+                }
             }
         }
         .map { RectF(it.x, it.y, it.x + it.width, it.y + it.height) }
@@ -247,19 +261,18 @@ class TranslationRenderer(
 
     /**
      * Lays [text] out in [bubble] in the largest whole text size up to [maxSize] at which each line fits the width
-     * the bubble has at its height, around the center of [block], with the lines centered on the bubble's height
-     * there. Of a bubble shared with the text in [others], only the part nearer to [block] is used. Returns null when
+     * the bubble has at its height, around the center of [own], with the lines centered on the bubble's height
+     * there. Of a bubble shared with the text in [others], only the part nearer to [own] is used. Returns null when
      * even the smallest size doesn't fit.
      */
     private fun fitInBubble(
         text: String,
         bubble: List<RectF>,
-        block: TranslationBlock,
+        own: RectF,
         others: List<RectF>,
         maxSize: Float,
     ): ShapedText? {
-        val centerX = block.x + block.width / 2
-        val own = RectF(block.x, block.y, block.x + block.width, block.y + block.height)
+        val centerX = own.centerX()
         fun isOwn(y: Float) = bubble.any { centerX >= it.left && centerX < it.right && y >= it.top && y < it.bottom } &&
             others.none { it.distanceSquaredTo(centerX, y) < own.distanceSquaredTo(centerX, y) }
         val centerY = own.centerY()
@@ -324,7 +337,10 @@ class TranslationRenderer(
                 leftIndents = IntArray(lines) { ceil(spans[it].start - left).toInt() },
                 rightIndents = IntArray(lines) { ceil(right - spans[it].endInclusive).toInt() },
             )
-            if (layout.lineCount <= lines && layout.breaksOnlyBetweenWords(hyphenate)) {
+            if (layout.lineCount == lines &&
+                spans.indices.all { layout.getLineMax(it) <= spans[it].endInclusive - spans[it].start } &&
+                layout.breaksOnlyBetweenWords(hyphenate)
+            ) {
                 return ShapedText(layout, left, stackTop, lines * lineHeight)
             }
         }
