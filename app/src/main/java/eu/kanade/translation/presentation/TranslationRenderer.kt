@@ -275,7 +275,7 @@ class TranslationRenderer(
             var best: ShapedText? = null
             while (low <= high) {
                 val size = (low + high) / 2
-                val shaped = shapedAt(text, bubble, others, centerX, top, bottom, size.toFloat(), hyphenate)
+                val shaped = shapedAt(text, bubble, own, others, centerX, top, bottom, size.toFloat(), hyphenate)
                 if (shaped != null) {
                     best = shaped
                     low = size + 1
@@ -294,6 +294,7 @@ class TranslationRenderer(
     private fun shapedAt(
         text: String,
         bubble: List<RectF>,
+        own: RectF,
         others: List<RectF>,
         centerX: Float,
         top: Float,
@@ -310,7 +311,7 @@ class TranslationRenderer(
             val spans = (0..<lines).map { line ->
                 val lineTop = stackTop + line * lineHeight
                 // Taller text leaves a line even less room, so no larger count of lines fits either
-                widthAt(bubble, others, centerX, lineTop - margin, lineTop + lineHeight + margin, margin, size)
+                widthAt(bubble, own, others, centerX, lineTop - margin, lineTop + lineHeight + margin, margin, size)
                     ?: return null
             }
             val left = spans.minOf { it.start }
@@ -333,11 +334,12 @@ class TranslationRenderer(
     /**
      * The room [bubble] leaves from [top] to [bottom] around [centerX], short of [margin] on each side, or null where
      * it leaves less than [minWidth] or the bubble doesn't reach. Bubbles are flood filled in rectangles, one per run
-     * of light cells, so at each height the runs side by side give the bubble's width there. The text of [others]
-     * beside it at that height is left room too.
+     * of light cells, so at each height the runs side by side give the bubble's width there. Only the part nearer to
+     * [own] than to the text of [others] is used, so texts sharing a bubble that both grow into it never meet.
      */
     private fun widthAt(
         bubble: List<RectF>,
+        own: RectF,
         others: List<RectF>,
         centerX: Float,
         top: Float,
@@ -363,17 +365,12 @@ class TranslationRenderer(
                 }
             }
             if (runLeft.isNaN() || centerX !in runLeft..runRight) return null
+            fun isOwn(x: Float) = others.none { it.distanceSquaredTo(x, y) < own.distanceSquaredTo(x, y) }
+            if (!isOwn(centerX)) return null
+            while (runLeft < centerX && !isOwn(runLeft)) runLeft += 1
+            while (runRight > centerX && !isOwn(runRight)) runRight -= 1
             left = max(left, runLeft + margin)
             right = min(right, runRight - margin)
-        }
-        others.filter { it.top < bottom && it.bottom > top }.forEach { other ->
-            if (other.centerX() <
-                centerX
-            ) {
-                left = max(left, other.right + margin)
-            } else {
-                right = min(right, other.left - margin)
-            }
         }
         return (left..right).takeIf { right - left >= minWidth }
     }
