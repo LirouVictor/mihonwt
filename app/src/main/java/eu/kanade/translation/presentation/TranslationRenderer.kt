@@ -189,8 +189,8 @@ class TranslationRenderer(
         val centerY = block.y + block.height / 2
         // Lines as wide as the bubble is at their height, as lettering follows a round bubble's shape, where that
         // allows larger text than its largest rectangle
-        if (isUpright && stacked == null && bubble.isNotEmpty() && !block.sharesBubble(blocks)) {
-            fitInBubble(translation, bubble, centerX, maxSize)
+        if (isUpright && stacked == null && bubble.isNotEmpty()) {
+            fitInBubble(translation, bubble, block, block.bubbleSharers(blocks), maxSize)
                 ?.takeIf { it.text.paint.textSize > text.paint.textSize }
                 ?.let { shaped ->
                     return Block(
@@ -224,14 +224,19 @@ class TranslationRenderer(
         )
     }
 
-    /** Whether another of [blocks] has its text in this block's bubble, which their texts then share. */
-    private fun TranslationBlock.sharesBubble(blocks: List<TranslationBlock>): Boolean = blocks.any { other ->
-        other !== this && bubble.any { area ->
-            val x = other.x + other.width / 2
-            val y = other.y + other.height / 2
-            x >= area.x && x < area.x + area.width && y >= area.y && y < area.y + area.height
+    /**
+     * The boxes of the other [blocks] with their text in this block's bubble, as in two touching bubbles painted as
+     * one area, which this block's text must leave room for.
+     */
+    private fun TranslationBlock.bubbleSharers(blocks: List<TranslationBlock>): List<RectF> = blocks
+        .filter { other ->
+            other !== this && bubble.any { area ->
+                val x = other.x + other.width / 2
+                val y = other.y + other.height / 2
+                x >= area.x && x < area.x + area.width && y >= area.y && y < area.y + area.height
+            }
         }
-    }
+        .map { RectF(it.x, it.y, it.x + it.width, it.y + it.height) }
 
     private fun String.isOneWord() = isNotBlank() && trim().none(Char::isWhitespace)
 
@@ -242,14 +247,27 @@ class TranslationRenderer(
 
     /**
      * Lays [text] out in [bubble] in the largest whole text size up to [maxSize] at which each line fits the width
-     * the bubble has at its height, around [centerX], with the lines centered on the bubble's height there. Returns
-     * null when even the smallest size doesn't fit.
+     * the bubble has at its height, around the center of [block], with the lines centered on the bubble's height
+     * there. Of a bubble shared with the text in [others], only the part nearer to [block] is used. Returns null when
+     * even the smallest size doesn't fit.
      */
-    private fun fitInBubble(text: String, bubble: List<RectF>, centerX: Float, maxSize: Float): ShapedText? {
-        val column = bubble.filter { centerX >= it.left && centerX < it.right }
-        if (column.isEmpty()) return null
-        val top = column.minOf { it.top }
-        val bottom = column.maxOf { it.bottom }
+    private fun fitInBubble(
+        text: String,
+        bubble: List<RectF>,
+        block: TranslationBlock,
+        others: List<RectF>,
+        maxSize: Float,
+    ): ShapedText? {
+        val centerX = block.x + block.width / 2
+        val own = RectF(block.x, block.y, block.x + block.width, block.y + block.height)
+        fun isOwn(y: Float) = bubble.any { centerX >= it.left && centerX < it.right && y >= it.top && y < it.bottom } &&
+            others.none { it.distanceSquaredTo(centerX, y) < own.distanceSquaredTo(centerX, y) }
+        val centerY = own.centerY()
+        if (!isOwn(centerY)) return null
+        var top = centerY
+        while (isOwn(top - 1)) top -= 1
+        var bottom = centerY
+        while (isOwn(bottom + 1)) bottom += 1
         textPaint.textScaleX = 1f
         fun largest(hyphenate: Boolean): ShapedText? {
             var low = 1
@@ -257,7 +275,7 @@ class TranslationRenderer(
             var best: ShapedText? = null
             while (low <= high) {
                 val size = (low + high) / 2
-                val shaped = shapedAt(text, bubble, centerX, top, bottom, size.toFloat(), hyphenate)
+                val shaped = shapedAt(text, bubble, others, centerX, top, bottom, size.toFloat(), hyphenate)
                 if (shaped != null) {
                     best = shaped
                     low = size + 1
@@ -276,6 +294,7 @@ class TranslationRenderer(
     private fun shapedAt(
         text: String,
         bubble: List<RectF>,
+        others: List<RectF>,
         centerX: Float,
         top: Float,
         bottom: Float,
@@ -291,7 +310,8 @@ class TranslationRenderer(
             val spans = (0..<lines).map { line ->
                 val lineTop = stackTop + line * lineHeight
                 // Taller text leaves a line even less room, so no larger count of lines fits either
-                widthAt(bubble, centerX, lineTop - margin, lineTop + lineHeight + margin, margin, size) ?: return null
+                widthAt(bubble, others, centerX, lineTop - margin, lineTop + lineHeight + margin, margin, size)
+                    ?: return null
             }
             val left = spans.minOf { it.start }
             val right = spans.maxOf { it.endInclusive }
@@ -313,10 +333,12 @@ class TranslationRenderer(
     /**
      * The room [bubble] leaves from [top] to [bottom] around [centerX], short of [margin] on each side, or null where
      * it leaves less than [minWidth] or the bubble doesn't reach. Bubbles are flood filled in rectangles, one per run
-     * of light cells, so at each height the runs side by side give the bubble's width there.
+     * of light cells, so at each height the runs side by side give the bubble's width there. The text of [others]
+     * beside it at that height is left room too.
      */
     private fun widthAt(
         bubble: List<RectF>,
+        others: List<RectF>,
         centerX: Float,
         top: Float,
         bottom: Float,
@@ -344,6 +366,15 @@ class TranslationRenderer(
             left = max(left, runLeft + margin)
             right = min(right, runRight - margin)
         }
+        others.filter { it.top < bottom && it.bottom > top }.forEach { other ->
+            if (other.centerX() <
+                centerX
+            ) {
+                left = max(left, other.right + margin)
+            } else {
+                right = min(right, other.left - margin)
+            }
+        }
         return (left..right).takeIf { right - left >= minWidth }
     }
 
@@ -355,8 +386,16 @@ class TranslationRenderer(
      * or with a single word in capitals.
      */
     private fun TranslationBlock.displayedTranslation(): String {
-        val text = translation.joinLines()
+        // The line breaker never hyphenated a word with an ellipsis glued before it, as "...DESTRUÍDA!", which a
+        // zero width space parts from it. A line can't end at that space, as it ends neither at a space nor a hyphen
+        val text = translation.joinLines().replace(LEADING_ELLIPSIS, "$1\u200B")
         return if (this.text.isInCapitals()) text.uppercase(textPaint.textLocale) else text
+    }
+
+    private fun RectF.distanceSquaredTo(x: Float, y: Float): Float {
+        val dx = max(max(left - x, 0f), x - right)
+        val dy = max(max(top - y, 0f), y - bottom)
+        return dx * dx + dy * dy
     }
 
     /**
@@ -539,7 +578,10 @@ class TranslationRenderer(
          */
         val WORD_BREAK = Regex("""\s+""")
 
-        val AFTER_HYPHEN = Regex("""(?<=-)""")
+        val AFTER_HYPHEN = Regex("""(?<=[-\u200B])""")
+
+        /** Dots or an ellipsis glued to the start of a word. */
+        val LEADING_ELLIPSIS = Regex("""(?<=^|\s)([.…]+)(?=\p{L})""")
 
         /** Whole words are kept when they allow at least this share of the size hyphenation would. */
         const val MIN_WHOLE_WORD_SIZE = 0.8f
