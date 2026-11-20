@@ -85,7 +85,7 @@ fun blocksOfFoundText(found: List<FoundText>, words: List<Word>): List<Translati
     }
 }
 
-private fun List<Float>.median(): Float? = sorted().getOrNull(size / 2)
+internal fun List<Float>.median(): Float? = sorted().getOrNull(size / 2)
 
 /** A box around text that a detector found on a page, at page coordinates. */
 class TextBox(val left: Float, val top: Float, val right: Float, val bottom: Float)

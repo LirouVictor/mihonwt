@@ -161,21 +161,44 @@ class TranslationRenderer(context: Context, translation: PageTranslation, var on
         val bubbleWidth = bubble.maxOfOrNull { it.right }?.minus(bubble.minOf { it.left })
         val maxWidth = min(boxWidth * MAX_WIDENING, bubbleWidth ?: Float.MAX_VALUE).coerceAtLeast(boxWidth)
         val translation = block.displayedTranslation()
-        // Lettering stacked a letter per line in a tall, narrow bubble stays that way
-        val isStacked = !isSideways && height >= block.width * MIN_STACKED_RATIO && translation.none(Char::isWhitespace)
         // Never larger than the original lettering, which a short reply in a big bubble would otherwise dwarf
-        val text = fitText(
-            if (isStacked) translation.toList().joinToString("\n") else translation,
-            boxWidth.toInt(),
-            maxWidth.toInt(),
-            boxHeight,
-            symHeight / capHeightRatio,
-        )
+        val maxSize = symHeight / capHeightRatio
+        val lines = fitText(translation, boxWidth.toInt(), maxWidth.toInt(), boxHeight, maxSize)
+        // A single word stacked a letter per line in a tall, narrow box, as the original "WHAT?!" was, stays that way
+        // when that keeps it larger
+        val stacked = if (!isSideways && height >= block.width * MIN_STACKED_RATIO && block.text.isOneWord()) {
+            fitText(stackedLetters(translation), boxWidth.toInt(), maxWidth.toInt(), boxHeight, maxSize)
+                .takeIf { it.paint.textSize >= lines.paint.textSize }
+        } else {
+            null
+        }
+        val text = stacked ?: lines
+        val centerX = block.x + block.width / 2
+        val centerY = block.y + block.height / 2
+        // Lines as wide as the bubble is at their height, as lettering follows a round bubble's shape, where that
+        // allows larger text than its largest rectangle
+        if (isUpright && stacked == null && bubble.isNotEmpty() && !block.sharesBubble(blocks)) {
+            fitInBubble(translation, bubble, centerX, maxSize)
+                ?.takeIf { it.text.paint.textSize > text.paint.textSize }
+                ?.let { shaped ->
+                    return Block(
+                        centerX = shaped.left + shaped.text.width / 2f,
+                        centerY = shaped.top + shaped.height / 2,
+                        angle = block.angle,
+                        box = RectF(0f, 0f, shaped.text.width.toFloat(), shaped.height).apply {
+                            offset(-centerX(), -centerY())
+                        },
+                        bubble = bubble,
+                        cornerRadius = symHeight / 4,
+                        background = null,
+                        translation = translation,
+                        text = shaped.text,
+                    )
+                }
+        }
         // A box outside a bubble grows with text that had to be widened, so the white still covers it
         val box = RectF(0f, 0f, max(boxWidth, text.width.toFloat()), boxHeight)
         // Text widened past the edge of the page, as in a bubble cut by it, moves in to stay whole
-        val centerX = block.x + block.width / 2
-        val centerY = block.y + block.height / 2
         return Block(
             centerX = if (isUpright) centerX.keptOnPage(box.width(), imageWidth) else centerX,
             centerY = if (isUpright) centerY.keptOnPage(box.height(), imageHeight) else centerY,
@@ -187,6 +210,129 @@ class TranslationRenderer(context: Context, translation: PageTranslation, var on
             translation = translation,
             text = text,
         )
+    }
+
+    /** Whether another of [blocks] has its text in this block's bubble, which their texts then share. */
+    private fun TranslationBlock.sharesBubble(blocks: List<TranslationBlock>): Boolean = blocks.any { other ->
+        other !== this && bubble.any { area ->
+            val x = other.x + other.width / 2
+            val y = other.y + other.height / 2
+            x >= area.x && x < area.x + area.width && y >= area.y && y < area.y + area.height
+        }
+    }
+
+    private fun String.isOneWord() = isNotBlank() && trim().none(Char::isWhitespace)
+
+    /** [text] stacked a letter per line, with each run of punctuation on one line and a blank line between words. */
+    private fun stackedLetters(text: String): String = text.split(WORD_BREAK).joinToString("\n\n") { word ->
+        STACKED_PIECE.findAll(word).joinToString("\n") { it.value }
+    }
+
+    /**
+     * Lays [text] out in [bubble] in the largest whole text size up to [maxSize] at which each line fits the width
+     * the bubble has at its height, around [centerX], with the lines centered on the bubble's height there. Returns
+     * null when even the smallest size doesn't fit.
+     */
+    private fun fitInBubble(text: String, bubble: List<RectF>, centerX: Float, maxSize: Float): ShapedText? {
+        val column = bubble.filter { centerX >= it.left && centerX < it.right }
+        if (column.isEmpty()) return null
+        val top = column.minOf { it.top }
+        val bottom = column.maxOf { it.bottom }
+        textPaint.textScaleX = 1f
+        fun largest(hyphenate: Boolean): ShapedText? {
+            var low = 1
+            var high = min(bottom - top, maxSize).toInt()
+            var best: ShapedText? = null
+            while (low <= high) {
+                val size = (low + high) / 2
+                val shaped = shapedAt(text, bubble, centerX, top, bottom, size.toFloat(), hyphenate)
+                if (shaped != null) {
+                    best = shaped
+                    low = size + 1
+                } else {
+                    high = size - 1
+                }
+            }
+            return best
+        }
+        val whole = largest(hyphenate = false) ?: return largest(hyphenate = true)
+        val hyphenated = largest(hyphenate = true) ?: return whole
+        val wholeSize = whole.text.paint.textSize
+        return if (wholeSize >= hyphenated.text.paint.textSize * MIN_WHOLE_WORD_SIZE) whole else hyphenated
+    }
+
+    private fun shapedAt(
+        text: String,
+        bubble: List<RectF>,
+        centerX: Float,
+        top: Float,
+        bottom: Float,
+        size: Float,
+        hyphenate: Boolean,
+    ): ShapedText? {
+        textPaint.textSize = size
+        val lineHeight = textPaint.fontMetricsInt.let { it.descent - it.ascent }.toFloat()
+        val margin = size * BUBBLE_MARGIN
+        val maxLines = ((bottom - top - 2 * margin) / lineHeight).toInt()
+        for (lines in 1..maxLines) {
+            val stackTop = (top + bottom) / 2 - lines * lineHeight / 2
+            val spans = (0..<lines).map { line ->
+                val lineTop = stackTop + line * lineHeight
+                // Taller text leaves a line even less room, so no larger count of lines fits either
+                widthAt(bubble, centerX, lineTop - margin, lineTop + lineHeight + margin, margin, size) ?: return null
+            }
+            val left = spans.minOf { it.start }
+            val right = spans.maxOf { it.endInclusive }
+            val layout = layOutText(
+                text,
+                (right - left).toInt(),
+                size,
+                hyphenate,
+                leftIndents = IntArray(lines) { ceil(spans[it].start - left).toInt() },
+                rightIndents = IntArray(lines) { ceil(right - spans[it].endInclusive).toInt() },
+            )
+            if (layout.lineCount <= lines && layout.breaksOnlyBetweenWords(hyphenate)) {
+                return ShapedText(layout, left, stackTop, lines * lineHeight)
+            }
+        }
+        return null
+    }
+
+    /**
+     * The room [bubble] leaves from [top] to [bottom] around [centerX], short of [margin] on each side, or null where
+     * it leaves less than [minWidth] or the bubble doesn't reach. Bubbles are flood filled in rectangles, one per run
+     * of light cells, so at each height the runs side by side give the bubble's width there.
+     */
+    private fun widthAt(
+        bubble: List<RectF>,
+        centerX: Float,
+        top: Float,
+        bottom: Float,
+        margin: Float,
+        minWidth: Float,
+    ): ClosedFloatingPointRange<Float>? {
+        var left = -Float.MAX_VALUE
+        var right = Float.MAX_VALUE
+        val step = (bottom - top) / WIDTH_SAMPLES
+        for (sample in 0..WIDTH_SAMPLES) {
+            val y = min(top + sample * step, bottom - 0.5f)
+            val runs = bubble.filter { y >= it.top && y < it.bottom }.sortedBy { it.left }
+            var runLeft = Float.NaN
+            var runRight = Float.NaN
+            for (run in runs) {
+                if (runRight.isNaN() || run.left > runRight + 1) {
+                    if (centerX in runLeft..runRight) break
+                    runLeft = run.left
+                    runRight = run.right
+                } else {
+                    runRight = max(runRight, run.right)
+                }
+            }
+            if (runLeft.isNaN() || centerX !in runLeft..runRight) return null
+            left = max(left, runLeft + margin)
+            right = min(right, runRight - margin)
+        }
+        return (left..right).takeIf { right - left >= minWidth }
     }
 
     private fun Float.keptOnPage(size: Float, pageSize: Float): Float =
@@ -284,11 +430,19 @@ class TranslationRenderer(context: Context, translation: PageTranslation, var on
         return best
     }
 
-    private fun layOutText(text: String, width: Int, size: Float, hyphenate: Boolean): StaticLayout {
+    private fun layOutText(
+        text: String,
+        width: Int,
+        size: Float,
+        hyphenate: Boolean,
+        leftIndents: IntArray? = null,
+        rightIndents: IntArray? = null,
+    ): StaticLayout {
         textPaint.textSize = size
         return StaticLayout.Builder.obtain(text, 0, text.length, TextPaint(textPaint), width.coerceAtLeast(1))
             .setAlignment(Layout.Alignment.ALIGN_CENTER)
             .setIncludePad(false)
+            .setIndents(leftIndents, rightIndents)
             .apply {
                 if (hyphenate) {
                     setBreakStrategy(Layout.BREAK_STRATEGY_HIGH_QUALITY)
@@ -297,6 +451,9 @@ class TranslationRenderer(context: Context, translation: PageTranslation, var on
             }
             .build()
     }
+
+    /** Text laid out in a bubble's shape, its top left corner at [left], [top] and its lines [height] high. */
+    private class ShapedText(val text: StaticLayout, val left: Float, val top: Float, val height: Float)
 
     private inner class Block(
         val centerX: Float,
@@ -384,7 +541,16 @@ class TranslationRenderer(context: Context, translation: PageTranslation, var on
         const val MAX_UPRIGHT_ANGLE = 10f
         const val MAX_MARGIN_SHARE = 0.1f
 
-        /** Height to width ratio from which a box holding a single word is lettered a letter per line. */
-        const val MIN_STACKED_RATIO = 3f
+        /** Height to width ratio from which a box holding a single word may be lettered a letter per line. */
+        const val MIN_STACKED_RATIO = 2f
+
+        /** A letter, or a run of punctuation like "?!", each on a line of its own when stacked. */
+        val STACKED_PIECE = Regex("""[\p{L}\p{N}]|[^\p{L}\p{N}]+""")
+
+        /** Room left between text laid out in a bubble's shape and its outline, as a share of the text size. */
+        const val BUBBLE_MARGIN = 0.3f
+
+        /** Heights at which the width of a line's stretch of bubble is checked. */
+        const val WIDTH_SAMPLES = 8
     }
 }

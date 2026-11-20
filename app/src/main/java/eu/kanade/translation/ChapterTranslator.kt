@@ -34,6 +34,7 @@ import eu.kanade.translation.data.CharacterLookup
 import eu.kanade.translation.data.TranslationProvider
 import eu.kanade.translation.data.isGlossaryTerm
 import eu.kanade.translation.data.startingGlossary
+import eu.kanade.translation.model.Area
 import eu.kanade.translation.model.FoundText
 import eu.kanade.translation.model.PageTranslation
 import eu.kanade.translation.model.Translation
@@ -61,6 +62,9 @@ import eu.kanade.translation.recognizer.inBubble
 import eu.kanade.translation.recognizer.inReadingOrder
 import eu.kanade.translation.recognizer.isCorrectionOf
 import eu.kanade.translation.recognizer.lightPixels
+import eu.kanade.translation.recognizer.median
+import eu.kanade.translation.recognizer.stackedLetters
+import eu.kanade.translation.recognizer.stackedWordBreakBefore
 import eu.kanade.translation.recognizer.withBackground
 import eu.kanade.translation.recognizer.withOverlapsJoined
 import eu.kanade.translation.recognizer.withoutStrayMarks
@@ -578,7 +582,9 @@ class ChapterTranslator(
                 val pixels = bitmap.lightPixels()
                 times.bubbles.addAndGet(bubblesStart.elapsedNow().inWholeMilliseconds)
                 val (pageWords, ocrScale) = ocr
-                var words = pageWords
+                val stackedStart = TimeSource.Monotonic.markNow()
+                var words = textBoxes?.let { withStackedText(bitmap, it, pageWords, pixels, paddleOcr) } ?: pageWords
+                times.ocr.addAndGet(stackedStart.elapsedNow().inWholeMilliseconds)
                 textBoxes?.let { boxesWithoutWords(it, words) }?.forEach { box ->
                     val rereadStart = TimeSource.Monotonic.markNow()
                     val firstLine = (words.maxOfOrNull { it.line } ?: -1) + 1
@@ -1004,6 +1010,90 @@ class ChapterTranslator(
         }
     }
 
+    /**
+     * Returns [words] with the text of each of [boxes] that is stacked a letter per line read again from its letters
+     * set side by side, where that reads more letters than OCR found in the box.
+     */
+    private fun withStackedText(
+        page: Bitmap,
+        boxes: List<TextBox>,
+        words: List<Word>,
+        pixels: LightPixels,
+        paddleOcr: PaddleOcr?,
+    ): List<Word> {
+        var result = words
+        boxes.forEach { box ->
+            val letters = stackedLetters(box, pixels) ?: return@forEach
+            val firstLine = (result.maxOfOrNull { it.line } ?: -1) + 1
+            val stacked = readStacked(page, letters, paddleOcr, firstLine) ?: return@forEach
+            val inBox = result.filter { word ->
+                (word.x + word.width / 2) in box.left..box.right && (word.y + word.height / 2) in box.top..box.bottom
+            }
+            if (stacked.text.count(Char::isLetter) > inBox.sumOf { word -> word.text.count(Char::isLetter) }) {
+                result = result - inBox.toSet() + stacked
+            }
+        }
+        return result
+    }
+
+    /** Reads [letters] of [page] stacked a letter per line, set side by side on a line of their own. */
+    private fun readStacked(page: Bitmap, letters: List<Area>, paddleOcr: PaddleOcr?, line: Int): Word? {
+        val letterHeight = letters.map { it.height }.median() ?: return null
+        val scale = (STACKED_LETTER_HEIGHT / letterHeight).coerceIn(1f, MAX_STACKED_SCALE)
+        val margin = (letterHeight * scale * STACKED_MARGIN).toInt()
+        val gaps = letters.indices.drop(1).map { i ->
+            letterHeight * scale * if (stackedWordBreakBefore(letters, i)) STACKED_WORD_GAP else STACKED_LETTER_GAP
+        }
+        val width = (letters.sumOf { it.width.toDouble() * scale } + gaps.sum()).toInt() + 2 * margin
+        val height = ceil(letters.maxOf { it.height } * scale).toInt() + 2 * margin
+        val image = createBitmap(width, height)
+        val text = try {
+            Canvas(image).apply {
+                drawColor(Color.WHITE)
+                val paint = Paint(Paint.FILTER_BITMAP_FLAG)
+                var x = margin.toFloat()
+                letters.forEachIndexed { i, letter ->
+                    if (i > 0) x += gaps[i - 1]
+                    val source = Rect(
+                        letter.x.toInt(),
+                        letter.y.toInt(),
+                        ceil(letter.x + letter.width).toInt(),
+                        ceil(letter.y + letter.height).toInt(),
+                    )
+                    // On a common baseline, so a period stays low and reads as one
+                    val bottom = (height - margin).toFloat()
+                    drawBitmap(
+                        page,
+                        source,
+                        RectF(x, bottom - letter.height * scale, x + letter.width * scale, bottom),
+                        paint,
+                    )
+                    x += letter.width * scale
+                }
+            }
+            if (paddleOcr != null) {
+                paddleOcr.read(image).sortedBy { it.x }.joinToString(" ") { it.text }
+            } else {
+                textRecognizer.recognize(InputImage.fromBitmap(image, 0)).text.joinLines()
+            }
+        } finally {
+            image.recycle()
+        }
+        if (text.count(Char::isLetter) < MIN_STACKED_LETTERS) return null
+        val left = letters.minOf { it.x }
+        val top = letters.minOf { it.y }
+        return Word(
+            text = text,
+            x = left,
+            y = top,
+            width = letters.maxOf { it.x + it.width } - left,
+            height = letters.maxOf { it.y + it.height } - top,
+            letterHeight = letterHeight,
+            line = line,
+            angle = 0f,
+        )
+    }
+
     /** Reads the text in [box] of [page] on its own with [paddleOcr], which enlarges small images itself. */
     private fun readBox(page: Bitmap, box: TextBox, paddleOcr: PaddleOcr, firstLine: Int): List<Word> {
         val left = box.left.toInt().coerceIn(0, page.width - 1)
@@ -1080,6 +1170,15 @@ class ChapterTranslator(
         const val BOX_OCR_SCALE = 1.5f
         const val BOX_OCR_MARGIN = 32
         const val BOX_OCR_STRETCH = 2f
+
+        // Stacked letters are read set side by side at about the size OCR reads best, a word's letters closer
+        // together than its words
+        const val STACKED_LETTER_HEIGHT = 48f
+        const val MAX_STACKED_SCALE = 4f
+        const val STACKED_MARGIN = 0.5f
+        const val STACKED_LETTER_GAP = 0.2f
+        const val STACKED_WORD_GAP = 0.8f
+        const val MIN_STACKED_LETTERS = 2
 
         // As much room around a box as Baberu was tested with
         const val BABERU_MARGIN = 4
