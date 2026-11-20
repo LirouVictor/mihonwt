@@ -54,6 +54,8 @@
     <string name="pref_correct_text_with_gemini_summary">O OCR do aparelho lê o texto, e o Gemini olha as páginas e corrige o que ele leu errado antes de o DeepL ou outro tradutor que não vê as páginas traduzir. Não muda quem encontra os balões. Usa a chave e o modelo abaixo.</string>
     <string name="pref_correct_text_with_gemini">Corrigir o texto com o Gemini</string>
     <string name="pref_tap_to_reveal">Traduzir só o balão tocado</string>
+    <string name="pref_short_hyphenation">Dividir mais palavras com hífen</string>
+    <string name="pref_short_hyphenation_summary">Deixa uma palavra larga demais para o balão se dividir com só duas letras de um lado, como “CA-RAMBA”, quando isso deixa o texto bem maior. Vale para as páginas abertas depois da mudança.</string>
     <string name="pref_tap_to_reveal_summary">As páginas ficam com o texto original, e tocar num balão mostra a tradução dele numa janelinha, que fecha ao tocar fora. Vale para as páginas abertas depois da mudança.</string>
     <string name="translation_detector_unavailable">Detector de balões indisponível, agrupando sem ele: %1$s</string>
     <string name="pref_translate_on_download">Traduzir ao baixar</string>

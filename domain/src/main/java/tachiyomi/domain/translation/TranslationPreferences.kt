@@ -67,6 +67,9 @@ class TranslationPreferences(
 
     /** Whether the reader keeps the original lettering and shows a bubble's translation only when it is tapped. */
     val tapToReveal: Preference<Boolean> = preferenceStore.getBoolean("translation_tap_to_reveal", false)
+
+    /** Whether words may be hyphenated with only two letters on a side, as "CA-RAMBA", for larger text. */
+    val shortHyphenation: Preference<Boolean> = preferenceStore.getBoolean("translation_short_hyphenation", false)
 }
 
 /** What reads the text on the pages. */

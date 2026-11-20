@@ -33,7 +33,15 @@ import kotlin.math.min
  * lettering with each translated block only tinted, and [translationAt] gives the translation of a tapped bubble to
  * show apart.
  */
-class TranslationRenderer(context: Context, translation: PageTranslation, var onTap: Boolean = false) {
+class TranslationRenderer(
+    context: Context,
+    translation: PageTranslation,
+    var onTap: Boolean = false,
+    shortHyphenation: Boolean = false,
+) {
+
+    /** Fewest letters left on each side of a hyphen the layout adds inside a word. */
+    private val minSyllable = if (shortHyphenation) MIN_SHORT_SYLLABLE else MIN_SYLLABLE
 
     /** Width of the image the blocks are placed on. */
     val imageWidth = translation.imgWidth
@@ -395,7 +403,7 @@ class TranslationRenderer(context: Context, translation: PageTranslation, var on
 
     /**
      * Whether each line ends at a space or a hyphen, or, when [hyphenated], at a hyphen the layout added inside a word,
-     * leaving at least [MIN_SYLLABLE] letters on each side. A word too wide for the line is otherwise cut anywhere
+     * leaving at least [minSyllable] letters on each side. A word too wide for the line is otherwise cut anywhere
      * without a hyphen, as "VEN CEMOS", or before its punctuation, as "NÃO" over a lone "!". A line ending at a
      * hyphen of the text must not get another one, as "VAMO--" did.
      */
@@ -410,7 +418,7 @@ class TranslationRenderer(context: Context, translation: PageTranslation, var on
             if (!hyphenated || !last.isLetter() || !text[end].isLetter()) return@all false
             val before = text.substring(0, end).takeLastWhile(Char::isLetter).length
             val after = text.substring(end).takeWhile(Char::isLetter).length
-            addedHyphen && before >= MIN_SYLLABLE && after >= MIN_SYLLABLE
+            addedHyphen && before >= minSyllable && after >= minSyllable
         }
     }
 
@@ -543,6 +551,7 @@ class TranslationRenderer(context: Context, translation: PageTranslation, var on
         const val MIN_CONDENSED_GAIN = 1.2f
 
         const val MIN_SYLLABLE = 3
+        const val MIN_SHORT_SYLLABLE = 2
 
         /** How much wider than its box text may grow when its words don't fit at a readable size. */
         const val MAX_WIDENING = 1.4f
