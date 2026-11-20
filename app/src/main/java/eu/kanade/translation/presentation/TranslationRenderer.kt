@@ -365,7 +365,9 @@ class TranslationRenderer(context: Context, translation: PageTranslation, var on
     }
 
     private fun fitTextAtScale(text: String, width: Int, maxWidth: Int, height: Float, maxSize: Float): StaticLayout {
-        val words = text.split(WORD_BREAK)
+        // A line may also break after a hyphen, as in a stutter like "D-ESTRUÍDA!", which measured whole was too
+        // wide to ever widen to
+        val words = text.split(WORD_BREAK).flatMap { it.split(AFTER_HYPHEN) }
         // Checked on the layout itself, as a word measured just narrow enough on its own was still cut, as "VENC EMOS"
         val whole = largestFitting(text, { width }, height, maxSize, hyphenate = false) { _, layout ->
             layout.breaksOnlyBetweenWords(hyphenated = false)
@@ -390,16 +392,18 @@ class TranslationRenderer(context: Context, translation: PageTranslation, var on
     /**
      * Whether each line ends at a space or a hyphen, or, when [hyphenated], at a hyphen the layout added inside a word,
      * leaving at least [MIN_SYLLABLE] letters on each side. A word too wide for the line is otherwise cut anywhere
-     * without a hyphen, as "VEN CEMOS", or before its punctuation, as "NÃO" over a lone "!".
+     * without a hyphen, as "VEN CEMOS", or before its punctuation, as "NÃO" over a lone "!". A line ending at a
+     * hyphen of the text must not get another one, as "VAMO--" did.
      */
     private fun StaticLayout.breaksOnlyBetweenWords(hyphenated: Boolean): Boolean {
         return (0..<lineCount - 1).all { line ->
             val end = getLineEnd(line)
             val last = text[end - 1]
-            if (last.isWhitespace() || last == '-') return@all true
-            if (!hyphenated || !last.isLetter() || !text[end].isLetter()) return@all false
             val addedHyphen = getLineWidth(line) - paint.measureText(text, getLineStart(line), end) >
                 paint.measureText("-") / 2
+            if (last.isWhitespace()) return@all true
+            if (last == '-') return@all !addedHyphen
+            if (!hyphenated || !last.isLetter() || !text[end].isLetter()) return@all false
             val before = text.substring(0, end).takeLastWhile(Char::isLetter).length
             val after = text.substring(end).takeWhile(Char::isLetter).length
             addedHyphen && before >= MIN_SYLLABLE && after >= MIN_SYLLABLE
@@ -522,6 +526,8 @@ class TranslationRenderer(context: Context, translation: PageTranslation, var on
          * "VAMO-CHAN!" whole and cut it between letters.
          */
         val WORD_BREAK = Regex("""\s+""")
+
+        val AFTER_HYPHEN = Regex("""(?<=-)""")
 
         /** Whole words are kept when they allow at least this share of the size hyphenation would. */
         const val MIN_WHOLE_WORD_SIZE = 0.8f

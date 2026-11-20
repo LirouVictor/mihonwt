@@ -121,6 +121,7 @@ import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
@@ -1012,7 +1013,7 @@ class ChapterTranslator(
 
     /**
      * Returns [words] with the text of each of [boxes] that is stacked a letter per line read again from its letters
-     * set side by side, where that reads more letters than OCR found in the box.
+     * set side by side, where that reads at least as many letters as OCR found in the box.
      */
     private fun withStackedText(
         page: Bitmap,
@@ -1029,7 +1030,9 @@ class ChapterTranslator(
             val inBox = result.filter { word ->
                 (word.x + word.width / 2) in box.left..box.right && (word.y + word.height / 2) in box.top..box.bottom
             }
-            if (stacked.text.count(Char::isLetter) > inBox.sumOf { word -> word.text.count(Char::isLetter) }) {
+            // Upright OCR can at best read a stack's letters one by one, and a column read sideways is no reading
+            val read = inBox.filter { abs(it.angle) < MAX_STACKED_WORD_ANGLE }.sumOf { it.text.count(Char::isLetter) }
+            if (stacked.text.count(Char::isLetter) >= read) {
                 result = result - inBox.toSet() + stacked
             }
         }
@@ -1179,6 +1182,7 @@ class ChapterTranslator(
         const val STACKED_LETTER_GAP = 0.2f
         const val STACKED_WORD_GAP = 0.8f
         const val MIN_STACKED_LETTERS = 2
+        const val MAX_STACKED_WORD_ANGLE = 45f
 
         // As much room around a box as Baberu was tested with
         const val BABERU_MARGIN = 4
