@@ -40,13 +40,14 @@ data class TranslationBlock(
 @Serializable
 data class Area(val x: Float, val y: Float, val width: Float, val height: Float)
 
-private val HYPHEN_BREAK = Regex("""(?<=\p{L})-\s*\n\s*(?=\p{L})""")
+// Also with only a space after the hyphen, as a line break becomes when a model rereads the text
+private val HYPHEN_BREAK = Regex("""(?<=\p{L})-\s+(?=\p{L})""")
 private val LINE_BREAK = Regex("""\s*\n\s*""")
 
 /** Joins text broken over lines, including words hyphenated across them, so it can be wrapped anew. */
 fun String.joinLines(): String = joinHyphenatedWords().replace(LINE_BREAK, " ")
 
-/** Joins words hyphenated across lines, as "PRO-\nTECTING". */
+/** Joins words hyphenated across lines, as "PRO-\nTECTING" or "DE- STROYED". */
 fun String.joinHyphenatedWords(): String = replace(HYPHEN_BREAK, "")
 
 /**
