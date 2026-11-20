@@ -355,7 +355,9 @@ class TranslationRenderer(
      * or with a single word in capitals.
      */
     private fun TranslationBlock.displayedTranslation(): String {
-        val text = translation.joinLines()
+        // The line breaker never hyphenated a word with an ellipsis glued before it, as "...DESTRUÍDA!", which a
+        // zero width space parts from it. A line can't end at that space, as it ends neither at a space nor a hyphen
+        val text = translation.joinLines().replace(LEADING_ELLIPSIS, "$1\u200B")
         return if (this.text.isInCapitals()) text.uppercase(textPaint.textLocale) else text
     }
 
@@ -539,7 +541,10 @@ class TranslationRenderer(
          */
         val WORD_BREAK = Regex("""\s+""")
 
-        val AFTER_HYPHEN = Regex("""(?<=-)""")
+        val AFTER_HYPHEN = Regex("""(?<=[-\u200B])""")
+
+        /** Dots or an ellipsis glued to the start of a word. */
+        val LEADING_ELLIPSIS = Regex("""(?<=^|\s)([.…]+)(?=\p{L})""")
 
         /** Whole words are kept when they allow at least this share of the size hyphenation would. */
         const val MIN_WHOLE_WORD_SIZE = 0.8f
