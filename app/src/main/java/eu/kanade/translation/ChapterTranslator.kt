@@ -126,6 +126,7 @@ import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource
 
@@ -283,6 +284,7 @@ class ChapterTranslator(
             translation.error = null
             translation.status = Translation.State.TRANSLATING
             translation.progress = null
+            val times = Times()
             val translator = createTranslator()
             val service = translationPreferences.service.get()
             val translatedWith = translator.name +
@@ -307,7 +309,6 @@ class ChapterTranslator(
                 provider.getTranslationFileName(translation.chapter.name, translation.chapter.scanlator)
             val seenWords = provider.getSeenWords(mangaDir).toMutableMap()
             val readWords = ConcurrentHashMap.newKeySet<String>()
-            val times = Times()
             // A translator that reads the pages fixes OCR's mistakes itself
             val corrector = gemini().takeIf {
                 !translator.readsImages && translationPreferences.correctTextWithGemini.get()
@@ -318,6 +319,7 @@ class ChapterTranslator(
             val pages = coroutineScope {
                 val recognized = Channel<Pair<String, PageTranslation>>(Channel.UNLIMITED)
                 val ocr = async {
+                    val readStart = TimeSource.Monotonic.markNow()
                     // A retry usually follows a translator error, so it reuses the OCR instead of reading every page
                     // again
                     val cached = recognizedChapters[chapterId]
@@ -359,7 +361,7 @@ class ChapterTranslator(
                             .also { recognizedChapters[chapterId] = it }
                     }.also {
                         recognized.close()
-                        times.read.set(times.start.elapsedNow().inWholeMilliseconds)
+                        times.read.set(readStart.elapsedNow().inWholeMilliseconds)
                     }
                 }
                 // Batches go out as soon as OCR has read their pages, so the reader shows the first pages while the
@@ -374,26 +376,29 @@ class ChapterTranslator(
                     batch: Map<String, PageTranslation>,
                     before: PageTranslation?,
                 ) = inFlight.withPermit {
-                    val batchStart = TimeSource.Monotonic.markNow()
                     val title = translation.manga.title
                     val known = results.withLock { glossary.toMap() }
-                    var terms = emptyMap<String, String>()
-                    var answered = emptySet<String>()
-                    if (findsText) {
-                        val (found, foundTerms) = (translator as LanguageModelTranslator)
-                            .findText(batch, title, images, known, onRetry)
-                        found.forEach { (name, texts) -> batch.getValue(name).useText(chapterPages, name, texts) }
-                        terms = foundTerms
-                        answered = found.keys
+                    if (corrector != null) {
+                        times.correct.measure { correctText(corrector, batch, title, images, times) }
                     }
-                    // Pages the model skipped still get the text OCR grouped translated
-                    val left = batch.filterKeys { it !in answered }
-                    if (corrector != null && left.isNotEmpty()) correctText(corrector, left, title, images, times)
-                    if (left.isNotEmpty()) {
-                        terms =
-                            terms + translator.translate(left, title, images, known, onRetry, before)
+                    val terms = times.translate.measure {
+                        var foundTerms = emptyMap<String, String>()
+                        var answered = emptySet<String>()
+                        if (findsText) {
+                            val (found, terms) = (translator as LanguageModelTranslator)
+                                .findText(batch, title, images, known, onRetry)
+                            found.forEach { (name, texts) -> batch.getValue(name).useText(chapterPages, name, texts) }
+                            foundTerms = terms
+                            answered = found.keys
+                        }
+                        // Pages the model skipped still get the text OCR grouped translated
+                        val left = batch.filterKeys { it !in answered }
+                        if (left.isEmpty()) {
+                            foundTerms
+                        } else {
+                            foundTerms + translator.translate(left, title, images, known, onRetry, before)
+                        }
                     }
-                    times.translate.addAndGet(batchStart.elapsedNow().inWholeMilliseconds)
                     results.withLock {
                         // Terms the model gives again move to the end, keeping how they were first translated, so a
                         // full glossary drops those not seen for longest rather than refusing new characters
@@ -446,27 +451,42 @@ class ChapterTranslator(
             recognizedImages.remove(chapterId)
             _partialTranslations.update { it - chapterId }
             translation.progress = null
-            stepTimes[chapterId] = context.stringResource(
-                WTMR.strings.translation_times,
-                translatedWith,
-                times.start.elapsedNow().inWholeMilliseconds.seconds(),
-                times.read.get().seconds(),
-                times.decode.get().seconds(),
-                times.ocr.get().seconds(),
-                times.detect.get().seconds(),
-                times.bubbles.get().seconds(),
-                times.translate.get().seconds(),
-                times.ocrEngine,
-            ) + if (corrector != null) {
-                ". " + context.stringResource(
-                    WTMR.strings.translation_times_corrected,
-                    times.correct.get().seconds(),
-                    times.corrected.get(),
-                    times.correctable.get(),
+            stepTimes[chapterId] = buildString {
+                appendLine(
+                    context.stringResource(
+                        WTMR.strings.translation_times,
+                        translatedWith,
+                        times.start.elapsedNow().inWholeMilliseconds.seconds(),
+                        times.read.get().seconds(),
+                        times.decode.get().seconds(),
+                        times.ocr.get().seconds(),
+                        times.detect.get().seconds(),
+                        times.bubbles.get().seconds(),
+                        times.ocrEngine,
+                    ),
                 )
-            } else {
-                ""
-            }
+                if (times.correct.hasBatches) {
+                    appendLine(
+                        context.stringResource(
+                            WTMR.strings.translation_times_corrected,
+                            times.correct.elapsed.inWholeMilliseconds.seconds(),
+                            times.corrected.get(),
+                            times.correctable.get(),
+                            times.correct.total.inWholeMilliseconds.seconds(),
+                        ),
+                    )
+                }
+                if (times.translate.hasBatches) {
+                    appendLine(
+                        context.stringResource(
+                            WTMR.strings.translation_times_batches,
+                            times.translate.elapsed.inWholeMilliseconds.seconds(),
+                            times.translate.total.inWholeMilliseconds.seconds(),
+                        ),
+                    )
+                    append(context.stringResource(WTMR.strings.translation_times_overlap))
+                }
+            }.trimEnd()
             translation.status = Translation.State.TRANSLATED
             notifier.onTranslated(translation)
         } catch (e: Throwable) {
@@ -658,13 +678,37 @@ class ChapterTranslator(
         val ocr = AtomicLong()
         val bubbles = AtomicLong()
         val detect = AtomicLong()
-        val translate = AtomicLong()
-        val correct = AtomicLong()
+        val translate = BatchTimes(start)
+        val correct = BatchTimes(start)
         val corrected = AtomicInteger()
         val correctable = AtomicInteger()
 
         @Volatile
         var ocrEngine = "-"
+    }
+
+    private class BatchTimes(private val origin: TimeSource.Monotonic.ValueTimeMark) {
+        private var first = Duration.INFINITE
+        private var last = Duration.ZERO
+        var total = Duration.ZERO
+            private set
+
+        val hasBatches: Boolean get() = first.isFinite()
+        val elapsed: Duration get() = last - first
+
+        suspend fun <T> measure(block: suspend () -> T): T {
+            val start = origin.elapsedNow()
+            val result = block()
+            record(start, origin.elapsedNow())
+            return result
+        }
+
+        @Synchronized
+        private fun record(start: Duration, end: Duration) {
+            first = minOf(first, start)
+            last = maxOf(last, end)
+            total += end - start
+        }
     }
 
     /**
@@ -678,7 +722,6 @@ class ChapterTranslator(
         images: Map<String, ByteArray>,
         times: Times,
     ) {
-        val start = TimeSource.Monotonic.markNow()
         val corrections = try {
             corrector.correctText(pages, series, images) {}
         } catch (e: CancellationException) {
@@ -687,7 +730,6 @@ class ChapterTranslator(
             logcat(LogPriority.WARN, e) { "Text correction failed" }
             emptyMap()
         }
-        times.correct.addAndGet(start.elapsedNow().inWholeMilliseconds)
         pages.forEach { (name, page) ->
             val fixed = corrections[name].orEmpty()
             times.correctable.addAndGet(page.blocks.size)

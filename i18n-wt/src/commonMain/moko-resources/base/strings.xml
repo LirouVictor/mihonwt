@@ -6,8 +6,10 @@
     <string name="action_translate_chapter">Translate chapter</string>
     <string name="action_delete_translation">Delete translation</string>
     <string name="translation_failed">Couldn\'t translate %1$s: %2$s</string>
-    <string name="translation_times">Translated with %1$s in %2$.1f s. Reading pages: %3$.1f s (opening images %4$.1f s, OCR with %9$s %5$.1f s, bubble detector %6$.1f s, finding bubbles %7$.1f s). Translating: %8$.1f s, adding up batches run in parallel</string>
-    <string name="translation_times_corrected">Gemini corrected the text in %1$.1f s, changing %2$d of %3$d blocks.</string>
+    <string name="translation_times">Translated with %1$s in %2$.1f s.\nReading pages: %3$.1f s elapsed. Per-page totals: opening images %4$.1f s, OCR with %8$s %5$.1f s, bubble detector %6$.1f s, finding bubbles %7$.1f s.</string>
+    <string name="translation_times_corrected">Gemini review: %1$.1f s elapsed (%4$.1f s across all batches). Changed %2$d of %3$d blocks.</string>
+    <string name="translation_times_batches">Translation: %1$.1f s elapsed (%2$.1f s across all batches).</string>
+    <string name="translation_times_overlap">Elapsed time for each batch stage runs from its first batch to its last. Stages can overlap.</string>
     <string name="translation_error_quota">%1$s won\'t take more requests for now. Choose another service in Settings › Translation</string>
     <string name="translation_error_no_api_key">Add an API key in Settings › Translation</string>
     <string name="action_retranslate">Translate again</string>
