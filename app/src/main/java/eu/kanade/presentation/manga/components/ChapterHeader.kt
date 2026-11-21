@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import tachiyomi.i18n.MR
+import tachiyomi.i18n.wt.WTMR
 import tachiyomi.presentation.core.components.material.SECONDARY_ALPHA
 import tachiyomi.presentation.core.components.material.padding
 import tachiyomi.presentation.core.i18n.pluralStringResource
@@ -20,7 +21,10 @@ import tachiyomi.presentation.core.i18n.stringResource
 @Composable
 fun ChapterHeader(
     enabled: Boolean,
-    chapterCount: Int?,
+    chapterCount: Int,
+    publicationCount: Int,
+    scanlatorFilterActive: Boolean,
+    selectedScanlator: String?,
     missingChapterCount: Int,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -35,15 +39,23 @@ fun ChapterHeader(
             .padding(horizontal = 16.dp, vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(MaterialTheme.padding.extraSmall),
     ) {
+        val chapterLabel = pluralStringResource(MR.plurals.manga_num_chapters, count = chapterCount, chapterCount)
         Text(
-            text = if (chapterCount == null) {
-                stringResource(MR.strings.chapters)
+            text = if (publicationCount > chapterCount) {
+                stringResource(WTMR.strings.chapter_publication_count, chapterLabel, publicationCount)
             } else {
-                pluralStringResource(MR.plurals.manga_num_chapters, count = chapterCount, chapterCount)
+                chapterLabel
             },
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onBackground,
         )
+        if (scanlatorFilterActive) {
+            Text(
+                text = selectedScanlator ?: stringResource(WTMR.strings.scanlator_filter_active),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
 
         MissingChaptersWarning(missingChapterCount)
     }

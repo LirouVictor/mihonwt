@@ -17,6 +17,7 @@ import dev.zacsweers.metrox.viewmodel.ViewModelAssistedFactory
 import dev.zacsweers.metrox.viewmodel.ViewModelAssistedFactoryKey
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.domain.chapter.model.toSChapter
+import eu.kanade.domain.manga.interactor.GetExcludedScanlators
 import eu.kanade.domain.manga.interactor.SetMangaViewerFlags
 import eu.kanade.domain.manga.interactor.UpdateManga
 import eu.kanade.domain.manga.model.readerOrientation
@@ -131,6 +132,7 @@ class ReaderViewModel(
     private val chapterCache: ChapterCache,
     private val downloadCache: DownloadCache,
     private val translationManager: TranslationManager,
+    private val getExcludedScanlators: GetExcludedScanlators,
 ) : ViewModel() {
 
     @AssistedFactory
@@ -279,10 +281,13 @@ class ReaderViewModel(
             else -> chapters
         }
 
+        val onlyOneScanlator = getExcludedScanlators.await(manga.id).isNotEmpty() &&
+            chapters.mapNotNull { it.scanlator?.takeIf(String::isNotBlank) }.toSet().size == 1
+
         return chaptersForReader
             .sortedWith(getChapterSort(manga, sortDescending = false))
             .run {
-                if (readerPreferences.skipDupe.get()) {
+                if (readerPreferences.skipDupe.get() || onlyOneScanlator) {
                     removeDuplicates(selectedChapter)
                 } else {
                     this

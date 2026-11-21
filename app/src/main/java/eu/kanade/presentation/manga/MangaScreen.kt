@@ -427,7 +427,10 @@ private fun MangaScreenSmallImpl(
                     ) {
                         ChapterHeader(
                             enabled = !isAnySelected,
-                            chapterCount = chapters.size,
+                            chapterCount = state.visibleChapterCount,
+                            publicationCount = chapters.size,
+                            scanlatorFilterActive = state.scanlatorFilterActive,
+                            selectedScanlator = state.onlyVisibleScanlator,
                             missingChapterCount = state.missingChapterCount,
                             onClick = onFilterClicked,
                         )
@@ -655,7 +658,10 @@ fun MangaScreenLargeImpl(
                             ) {
                                 ChapterHeader(
                                     enabled = !isAnySelected,
-                                    chapterCount = chapters.size,
+                                    chapterCount = state.visibleChapterCount,
+                                    publicationCount = chapters.size,
+                                    scanlatorFilterActive = state.scanlatorFilterActive,
+                                    selectedScanlator = state.onlyVisibleScanlator,
                                     missingChapterCount = state.missingChapterCount,
                                     onClick = onFilterButtonClicked,
                                 )

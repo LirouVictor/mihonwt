@@ -10,6 +10,12 @@
     <string name="translation_times_corrected">Gemini review: %1$.1f s elapsed (%4$.1f s across all batches). Changed %2$d of %3$d blocks.</string>
     <string name="translation_times_batches">Translation: %1$.1f s elapsed (%2$.1f s across all batches).</string>
     <string name="translation_times_overlap">Elapsed time for each batch stage runs from its first batch to its last. Stages can overlap.</string>
+    <string name="chapter_publication_count">%1$s · %2$d releases</string>
+    <string name="scanlator_filter_title">Choose chapter groups</string>
+    <string name="scanlator_chapter_coverage">%1$d of %2$d numbered chapters</string>
+    <string name="scanlator_keep_only">Only this group</string>
+    <string name="scanlator_filter_active">Group filter active</string>
+    <string name="scanlator_filter_unidentified">Chapters without a group stay visible.</string>
     <string name="translation_error_quota">%1$s won\'t take more requests for now. Choose another service in Settings › Translation</string>
     <string name="translation_error_no_api_key">Add an API key in Settings › Translation</string>
     <string name="action_retranslate">Translate again</string>
