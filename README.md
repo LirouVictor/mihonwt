@@ -13,14 +13,13 @@
 
 MihonWT is an unofficial personal fork of [Mihon](https://github.com/mihonapp/mihon) that reads the English text in
 manga, webtoon and comic pages and draws a translation over each speech bubble, right in the reader. Chapters can be
-translated into Brazilian Portuguese, Spanish (Latin America or Spain), French, Italian or German. Everything else works as in Mihon. It is not affiliated with the Mihon project, so report its issues here, not
-upstream.
+translated into Brazilian Portuguese, Spanish (Latin America or Spain), French, Italian or German. This fork is
+independent of the Mihon project. Please report MihonWT issues in this repository.
 
 ## Download
 
 Get `MihonWT-vX.Y.Z.apk` from the [latest release](https://github.com/LirouVictor/mihonwt/releases/latest). Once
-installed, the app checks this repository for new versions and updates itself, keeping your library and settings.
-[Obtainium](https://github.com/ImranR98/Obtainium) pointed at this repository works too.
+installed, use MihonWT's built-in updater to install new versions while keeping your library and settings.
 
 MihonWT installs beside Mihon (its package is `app.mihonwt`), so you can keep both. It is built for arm64 phones and
 requires Android 8.0 or higher.
@@ -54,8 +53,8 @@ need to be entered again after reinstalling.
 
 * Choose the language to translate into: Brazilian Portuguese, Latin American Spanish, Spanish from Spain, French,
   Italian or German. Every service supports all of them.
-* Translate a chapter from its menu in the chapter list, downloaded or not, and toggle the translation on and off from
-  the reader's bottom bar.
+* Translate a chapter directly from the chapter list or the reader. The reader's translation button can start a
+  translation, show translated pages or return to the original lettering.
 * Translate chapters automatically after they download, with a queue and progress notifications.
 * The next chapter is translated ahead once you're halfway through a translated one.
 * A tap mode that keeps the original lettering and shows the translation of the tapped bubble in a popup.
@@ -63,14 +62,24 @@ need to be entered again after reinstalling.
   translator that can't see them.
 * Optional bubble finding by Gemini from the page images instead of the on-device detector, when Gemini translates.
 * A starting glossary of each series' characters from [AniList](https://anilist.co/), filled before its first chapter.
-* Per-step times and errors with retry in each chapter's translation menu.
+* The chapter's translation menu shows progress, a ready-to-read status and errors with retry. Its timing report
+  separates elapsed time from the sum of parallel batches and reports Gemini review separately from translation.
 
-Settings are under **Settings › Translation**.
+Open **Settings › Translation** to see your current OCR, review service, translator and target language together.
+The individual settings are available below the summary.
+
+### Chapter releases and translation groups
+
+The chapter list distinguishes numbered chapters from releases when several groups publish the same chapter. Open
+the chapter filter and choose **Choose chapter groups** to see how many distinct chapter numbers each group covers
+out of those returned by the source. Choose **Only this group** and confirm to select one of the known groups.
+Releases without a group label remain visible. With one group selected, the reader skips repeated numbered chapters
+as you advance. The filter uses the chapter list already fetched from the source.
 
 ### Current limits
 
 * Source text must be English.
-* Text written one letter per line is not read.
+* Vertical lettering and stylized text can be harder to recognize.
 * Local chapters can't be translated yet.
 
 ## Building
