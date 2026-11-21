@@ -18,7 +18,6 @@ import mihon.icons.materialsymbols.rounded.Crop
 import mihon.icons.materialsymbols.rounded.Settings
 import mihon.icons.materialsymbols.rounded.Translate
 import tachiyomi.i18n.MR
-import tachiyomi.i18n.wt.WTMR
 import tachiyomi.presentation.core.i18n.stringResource
 
 @Composable
@@ -30,6 +29,7 @@ fun ReaderBottomBar(
     cropEnabled: Boolean,
     onClickCropBorder: () -> Unit,
     translationsShown: Boolean,
+    translationActionLabel: String,
     onClickTranslations: (() -> Unit)?,
     onClickSettings: () -> Unit,
     modifier: Modifier = Modifier,
@@ -65,8 +65,7 @@ fun ReaderBottomBar(
             IconButton(onClick = onClickTranslations) {
                 Icon(
                     imageVector = MaterialSymbols.Rounded.Translate,
-                    contentDescription = stringResource(WTMR.strings.pref_show_translations),
-                    // Dimmed like a disabled icon, as there's no crossed out version of this one
+                    contentDescription = translationActionLabel,
                     tint = LocalContentColor.current.copy(alpha = if (translationsShown) 1f else DISABLED_ALPHA),
                 )
             }

@@ -23,8 +23,9 @@ import eu.kanade.core.preference.asState
 import eu.kanade.core.util.addOrRemove
 import eu.kanade.core.util.insertSeparators
 import eu.kanade.domain.base.BasePreferences
-import eu.kanade.domain.chapter.interactor.GetAvailableScanlators
+import eu.kanade.domain.chapter.interactor.ScanlatorCoverage
 import eu.kanade.domain.chapter.interactor.SetReadStatus
+import eu.kanade.domain.chapter.interactor.scanlatorCoverage
 import eu.kanade.domain.manga.interactor.GetExcludedScanlators
 import eu.kanade.domain.manga.interactor.SetExcludedScanlators
 import eu.kanade.domain.manga.interactor.UpdateManga
@@ -70,6 +71,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
@@ -130,7 +132,6 @@ class MangaViewModel(
     private val downloadCache: DownloadCache,
     private val getMangaAndChapters: GetMangaWithChapters,
     private val getDuplicateLibraryManga: GetDuplicateLibraryManga,
-    private val getAvailableScanlators: GetAvailableScanlators,
     private val getExcludedScanlators: GetExcludedScanlators,
     private val setExcludedScanlators: SetExcludedScanlators,
     private val setMangaChapterFlags: SetMangaChapterFlags,
@@ -223,27 +224,25 @@ class MangaViewModel(
         flow {
             // So an entry outside the library isn't shown with its old chapter settings first
             defaultChapterFlagsJob.join()
-            emitAll(getMangaAndChapters.subscribe(mangaId, applyScanlatorFilter = true))
+            emitAll(getMangaAndChapters.subscribe(mangaId))
         }
-            .distinctUntilChanged(),
+            .distinctUntilChanged()
+            .map { (manga, chapters) -> Triple(manga, chapters, chapters.scanlatorCoverage()) },
+        getExcludedScanlators.subscribe(mangaId).distinctUntilChanged(),
         downloadCache.changes.pausedWhileUnsubscribed(),
         downloadManager.queueState.pausedWhileUnsubscribed(),
         translationManager.changes.pausedWhileUnsubscribed(),
-    ) { (manga, chapters), _, _, _ ->
+    ) { (manga, chapters, coverage), excludedScanlators, _, _, _ ->
         val source = sourceManager.getOrStub(manga.source)
         MangaAndChapters(
             manga = manga,
             source = source,
             sourceName = source.getNameForMangaInfo(sourcePreferences),
-            chapters = chapters.toChapterListItems(manga, source),
+            chapters = chapters.filterNot { it.scanlator in excludedScanlators }.toChapterListItems(manga, source),
+            scanlatorCoverage = coverage,
+            excludedScanlators = excludedScanlators,
         )
     }
-
-    private val scanlators = combine(
-        getAvailableScanlators.subscribe(mangaId).distinctUntilChanged(),
-        getExcludedScanlators.subscribe(mangaId).distinctUntilChanged(),
-        ::Pair,
-    )
 
     private val trackers = flow { emit(sourceManager.getOrStub(getMangaAndChapters.awaitManga(mangaId).source)) }
         .flatMapLatest { source ->
@@ -263,7 +262,6 @@ class MangaViewModel(
 
     val state: StateFlow<State> = combine(
         mangaAndChapters,
-        scanlators,
         trackers,
         combine(
             selectedChapterIds,
@@ -274,7 +272,6 @@ class MangaViewModel(
         combine(dialog, isRefreshingData, basePreferences.downloadedOnly.changes(), ::Triple),
     ) {
             mangaAndChapters,
-            (availableScanlators, excludedScanlators),
             (trackingCount, hasLoggedInTrackers),
             (selectedIds, downloads, translations),
             (dialog, isRefreshingData, downloadedOnly),
@@ -305,8 +302,8 @@ class MangaViewModel(
                     selected = selected,
                 )
             },
-            availableScanlators = availableScanlators,
-            excludedScanlators = excludedScanlators,
+            scanlatorCoverage = mangaAndChapters.scanlatorCoverage,
+            excludedScanlators = mangaAndChapters.excludedScanlators,
             trackingCount = trackingCount,
             hasLoggedInTrackers = hasLoggedInTrackers,
             isRefreshingData = isRefreshingData,
@@ -324,6 +321,7 @@ class MangaViewModel(
             it.hasUnreadChapters
             it.hasReadChapters
             it.missingChapterCount
+            it.visibleChapterCount
         }
         .flowOn(Dispatchers.IO)
         .stateIn(viewModelScope + subscriberGate, subscriberGate.whileSubscribed(5.seconds), State.Loading)
@@ -1147,6 +1145,8 @@ class MangaViewModel(
         val source: Source,
         val sourceName: String,
         val chapters: List<ChapterList.Item>,
+        val scanlatorCoverage: ScanlatorCoverage,
+        val excludedScanlators: Set<String>,
     )
 
     sealed interface State {
@@ -1160,7 +1160,7 @@ class MangaViewModel(
             val sourceName: String,
             val isFromSource: Boolean,
             val chapters: List<ChapterList.Item>,
-            val availableScanlators: Set<String>,
+            val scanlatorCoverage: ScanlatorCoverage,
             val excludedScanlators: Set<String>,
             val trackingCount: Int = 0,
             val hasLoggedInTrackers: Boolean = false,
@@ -1225,8 +1225,20 @@ class MangaViewModel(
                 }
             }
 
+            val visibleChapterCount by lazy {
+                val numbered = HashSet<Double>()
+                processedChapters.count {
+                    val chapter = it.chapter
+                    !chapter.isRecognizedNumber || !chapter.chapterNumber.isFinite() ||
+                        numbered.add(chapter.chapterNumber)
+                }
+            }
+
             val scanlatorFilterActive: Boolean
-                get() = excludedScanlators.intersect(availableScanlators).isNotEmpty()
+                get() = scanlatorCoverage.counts.keys.any { it in excludedScanlators }
+
+            val onlyVisibleScanlator: String?
+                get() = (scanlatorCoverage.counts.keys - excludedScanlators).singleOrNull()
 
             val filterActive: Boolean
                 get() = scanlatorFilterActive || manga.chaptersFiltered(downloadedOnly)
