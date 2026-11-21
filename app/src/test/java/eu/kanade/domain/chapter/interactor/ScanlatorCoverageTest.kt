@@ -2,6 +2,7 @@ package eu.kanade.domain.chapter.interactor
 
 import eu.kanade.tachiyomi.util.chapter.removeDuplicates
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.chapter.model.Chapter
@@ -23,6 +24,19 @@ class ScanlatorCoverageTest {
         assertEquals(4, coverage.numberedChapters)
         assertEquals(mapOf("TCB" to 2, "VIZ" to 2, "Extras" to 0), coverage.counts)
         assertTrue(coverage.hasUnidentifiedScanlator)
+        assertEquals(setOf(2.0, 3.0), coverage.missingFrom("TCB"))
+        assertEquals(setOf(1.5, 3.0), coverage.missingFrom("VIZ"))
+        assertEquals(1, coverage.missingMainCount("VIZ"))
+        assertTrue(coverage.containsChapter(2))
+        assertFalse(coverage.containsChapter(4))
+    }
+
+    @Test
+    fun `missing ranges only combine consecutive numbered chapters`() {
+        assertEquals(
+            listOf(500.0 to 502.0, 742.0 to 742.0, 1198.0 to 1199.0),
+            listOf(500.0, 501.0, 502.0, 742.0, 1198.0, 1199.0).consecutiveChapterRanges(),
+        )
     }
 
     @Test

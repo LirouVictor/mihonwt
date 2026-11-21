@@ -79,6 +79,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.plus
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import logcat.LogPriority
 import mihon.core.metro.AppCoroutineScope
 import mihon.domain.chapter.interactor.FilterChaptersForDownload
@@ -1132,6 +1133,20 @@ class MangaViewModel(
     fun showMigrateDialog(duplicate: Manga) {
         val manga = successState?.manga ?: return
         dialog.value = Dialog.Migrate(target = manga, current = duplicate)
+    }
+
+    suspend fun getMangaUpdatesLatestChapter(): Int? {
+        val mangaUpdates = trackerManager.mangaUpdates
+        val track = getTracks.await(mangaId).firstOrNull { it.trackerId == mangaUpdates.id && it.remoteId > 0 }
+            ?: return null
+        return try {
+            withTimeoutOrNull(8.seconds) { mangaUpdates.getLatestChapter(track.remoteId) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logcat(LogPriority.WARN, e) { "Could not load the latest chapter from MangaUpdates" }
+            null
+        }
     }
 
     fun setExcludedScanlators(excludedScanlators: Set<String>) {

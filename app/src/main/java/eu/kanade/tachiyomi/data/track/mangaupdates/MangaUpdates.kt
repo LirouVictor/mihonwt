@@ -117,6 +117,9 @@ class MangaUpdates(
             }
     }
 
+    suspend fun getLatestChapter(seriesId: Long): Int? =
+        api.getSeriesDetails(seriesId)?.latestChapter?.takeIf { it > 0 }
+
     override suspend fun refresh(track: Track): Track {
         val (series, rating) = api.getSeriesListItem(track)
         return track.copyFrom(series, rating)
