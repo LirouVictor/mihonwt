@@ -23,6 +23,14 @@
     <string name="scanlator_keep_only">Only this group</string>
     <string name="scanlator_filter_active">Group filter active</string>
     <string name="scanlator_filter_unidentified">Chapters without a group stay visible.</string>
+    <string name="scanlator_complete_on_source">Complete in this source</string>
+    <string name="scanlator_gaps_main">Main chapters missing · %1$d</string>
+    <string name="scanlator_gaps_extras">Main chapters complete · %1$d fractional chapters missing</string>
+    <string name="scanlator_view_gaps">View missing chapters</string>
+    <string name="scanlator_missing_main_heading">Missing main chapters</string>
+    <string name="scanlator_missing_extras_heading">Missing fractional chapters</string>
+    <string name="scanlator_tracker_latest">MangaUpdates · Latest recorded chapter %1$d</string>
+    <string name="scanlator_tracker_missing_from_source">MangaUpdates · Chapter %1$d is missing from this source</string>
     <string name="translation_error_quota">%1$s won\'t take more requests for now. Choose another service in Settings › Translation</string>
     <string name="translation_error_no_api_key">Add an API key in Settings › Translation</string>
     <string name="action_retranslate">Translate again</string>

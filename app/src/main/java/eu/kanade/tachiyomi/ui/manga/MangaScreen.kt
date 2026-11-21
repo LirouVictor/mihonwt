@@ -291,8 +291,13 @@ class MangaScreen(
         }
 
         if (showScanlatorsDialog) {
+            var latestChapter by remember(viewModel) { mutableStateOf<Int?>(null) }
+            LaunchedEffect(viewModel) {
+                latestChapter = viewModel.getMangaUpdatesLatestChapter()
+            }
             ScanlatorFilterDialog(
                 coverage = successState.scanlatorCoverage,
+                latestTrackerChapter = latestChapter,
                 excludedScanlators = successState.excludedScanlators,
                 onDismissRequest = { showScanlatorsDialog = false },
                 onConfirm = viewModel::setExcludedScanlators,

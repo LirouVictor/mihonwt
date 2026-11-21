@@ -23,6 +23,14 @@
     <string name="scanlator_keep_only">Só esta</string>
     <string name="scanlator_filter_active">Filtro de scans ativo</string>
     <string name="scanlator_filter_unidentified">Capítulos sem scan identificada continuam visíveis.</string>
+    <string name="scanlator_complete_on_source">Completa na fonte</string>
+    <string name="scanlator_gaps_main">Capítulos principais ausentes · %1$d</string>
+    <string name="scanlator_gaps_extras">Capítulos principais completos · Fracionários ausentes %1$d</string>
+    <string name="scanlator_view_gaps">Ver lacunas</string>
+    <string name="scanlator_missing_main_heading">Capítulos principais ausentes</string>
+    <string name="scanlator_missing_extras_heading">Capítulos fracionários ausentes</string>
+    <string name="scanlator_tracker_latest">MangaUpdates · Último capítulo registrado %1$d</string>
+    <string name="scanlator_tracker_missing_from_source">MangaUpdates · Capítulo %1$d ausente na fonte</string>
     <string name="translation_error_quota">O limite do %1$s acabou por enquanto. Escolha outro serviço em Configurações › Tradução</string>
     <string name="translation_error_no_api_key">Adicione uma chave de API em Configurações › Tradução</string>
     <string name="action_retranslate">Traduzir de novo</string>
