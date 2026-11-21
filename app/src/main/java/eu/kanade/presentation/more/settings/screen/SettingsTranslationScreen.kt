@@ -34,6 +34,8 @@ object SettingsTranslationScreen : SearchableSettings {
         val translationPreferences = remember { context.appGraph.translationPreferences }
         val service by translationPreferences.service.collectAsState()
         val correctsText by translationPreferences.correctTextWithGemini.collectAsState()
+        val engine by translationPreferences.ocrEngine.collectAsState()
+        val language by translationPreferences.targetLanguage.collectAsState()
         val bubbleFinder by translationPreferences.bubbleFinder.collectAsState()
         val geminiTranslates = service == TranslationService.GEMINI
 
@@ -56,17 +58,43 @@ object SettingsTranslationScreen : SearchableSettings {
             )
         }
 
+        val engineNames = mapOf(
+            OcrEngine.ML_KIT to stringResource(WTMR.strings.ocr_engine_ml_kit),
+            OcrEngine.PP_OCR to stringResource(WTMR.strings.ocr_engine_pp_ocr),
+            OcrEngine.BABERU to stringResource(WTMR.strings.ocr_engine_baberu),
+        )
+        val serviceNames = TranslationService.entries.associateWith {
+            when (it) {
+                TranslationService.GEMINI -> "Gemini"
+                TranslationService.GROQ -> "Groq"
+                TranslationService.OPENROUTER -> "OpenRouter"
+                TranslationService.CEREBRAS -> "Cerebras"
+                TranslationService.DEEPL -> "DeepL"
+                TranslationService.OFFLINE ->
+                    stringResource(WTMR.strings.translation_service_offline)
+                TranslationService.CUSTOM -> stringResource(WTMR.strings.translation_service_custom)
+            }
+        }
+        val summary = listOfNotNull(
+            engineNames.getValue(engine),
+            stringResource(WTMR.strings.translation_settings_gemini_review).takeIf {
+                correctsText && !geminiTranslates
+            },
+            serviceNames.getValue(service),
+            language.displayName,
+        ).joinToString(" → ")
+
         return listOf(
+            Preference.PreferenceItem.TextPreference(
+                title = stringResource(WTMR.strings.translation_settings_current),
+                subtitle = summary,
+            ),
             Preference.PreferenceGroup(
                 title = stringResource(WTMR.strings.pref_group_reading),
                 preferenceItems = listOf(
                     Preference.PreferenceItem.ListPreference(
                         preference = translationPreferences.ocrEngine,
-                        entries = mapOf(
-                            OcrEngine.ML_KIT to stringResource(WTMR.strings.ocr_engine_ml_kit),
-                            OcrEngine.PP_OCR to stringResource(WTMR.strings.ocr_engine_pp_ocr),
-                            OcrEngine.BABERU to stringResource(WTMR.strings.ocr_engine_baberu),
-                        ),
+                        entries = engineNames,
                         title = stringResource(WTMR.strings.pref_ocr_engine),
                         subtitleProvider = { engine, _ ->
                             when (engine) {
@@ -123,18 +151,7 @@ object SettingsTranslationScreen : SearchableSettings {
                     ),
                     Preference.PreferenceItem.ListPreference(
                         preference = translationPreferences.service,
-                        entries = TranslationService.entries.associateWith {
-                            when (it) {
-                                TranslationService.GEMINI -> "Gemini"
-                                TranslationService.GROQ -> "Groq"
-                                TranslationService.OPENROUTER -> "OpenRouter"
-                                TranslationService.CEREBRAS -> "Cerebras"
-                                TranslationService.DEEPL -> "DeepL"
-                                TranslationService.OFFLINE ->
-                                    stringResource(WTMR.strings.translation_service_offline)
-                                TranslationService.CUSTOM -> stringResource(WTMR.strings.translation_service_custom)
-                            }
-                        },
+                        entries = serviceNames,
                         title = stringResource(WTMR.strings.pref_translation_service),
                     ),
                     Preference.PreferenceItem.EditTextPreference(

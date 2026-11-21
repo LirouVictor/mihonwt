@@ -74,6 +74,7 @@ fun ReaderAppBars(
     cropEnabled: Boolean,
     onClickCropBorder: () -> Unit,
     translationsShown: Boolean,
+    translationActionLabel: String,
     onClickTranslations: (() -> Unit)?,
     onClickSettings: () -> Unit,
 ) {
@@ -175,6 +176,7 @@ fun ReaderAppBars(
                     cropEnabled = cropEnabled,
                     onClickCropBorder = onClickCropBorder,
                     translationsShown = translationsShown,
+                    translationActionLabel = translationActionLabel,
                     onClickTranslations = onClickTranslations,
                     onClickSettings = onClickSettings,
                 )

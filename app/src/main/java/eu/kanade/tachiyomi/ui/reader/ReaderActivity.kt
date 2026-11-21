@@ -102,6 +102,7 @@ import eu.kanade.tachiyomi.util.system.readerBackgroundColor
 import eu.kanade.tachiyomi.util.system.toShareIntent
 import eu.kanade.tachiyomi.util.system.toast
 import eu.kanade.tachiyomi.util.view.setComposeContent
+import eu.kanade.translation.model.Translation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -119,8 +120,10 @@ import tachiyomi.core.common.Constants
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.i18n.MR
+import tachiyomi.i18n.wt.WTMR
 import tachiyomi.presentation.core.screens.LoadingScreen
 import tachiyomi.presentation.core.util.collectAsState
+import tachiyomi.presentation.core.i18n.stringResource as composeStringResource
 
 class ReaderActivity : BaseActivity() {
 
@@ -552,6 +555,21 @@ class ReaderActivity : BaseActivity() {
 
         val showTranslations = appGraph.translationPreferences.showTranslations
         val translationsShown by showTranslations.collectAsState()
+        val translationManager = appGraph.translationManager
+        val queuedTranslations by translationManager.queuedStates.collectAsState(emptyMap())
+        val chapter = state.currentChapter
+        val translationStatus = queuedTranslations[chapter?.chapter?.id]
+        val hasTranslation = chapter?.pages.orEmpty().any { it.translation != null } ||
+            translationStatus == Translation.State.TRANSLATED
+        val translationPending = translationStatus == Translation.State.QUEUE ||
+            translationStatus == Translation.State.TRANSLATING
+        val shouldTranslate = !hasTranslation && !translationPending
+        val showOriginal = translationsShown && !shouldTranslate
+        val translationAction = when {
+            shouldTranslate -> WTMR.strings.action_translate_chapter
+            showOriginal -> WTMR.strings.reader_show_original
+            else -> WTMR.strings.pref_show_translations
+        }
         // The WebGPU viewers don't draw translations
         val isWebGpu by settingsViewModel.isWebGpu.collectAsState()
 
@@ -615,14 +633,21 @@ class ReaderActivity : BaseActivity() {
                 menuToggleToast?.cancel()
                 menuToggleToast = toast(if (enabled) MR.strings.on else MR.strings.off)
             },
-            translationsShown = translationsShown,
+            translationsShown = showOriginal,
+            translationActionLabel = composeStringResource(translationAction),
             onClickTranslations = {
-                val shown = !showTranslations.get()
-                showTranslations.set(shown)
-                if (shown) viewModel.translateCurrentChapter()
+                showTranslations.set(!showOriginal)
+                if (shouldTranslate) viewModel.translateCurrentChapter()
                 menuToggleToast?.cancel()
-                menuToggleToast = toast(if (shown) MR.strings.on else MR.strings.off)
-            }.takeIf { !isWebGpu },
+                menuToggleToast = toast(
+                    when {
+                        shouldTranslate -> WTMR.strings.translation_queued
+                        showOriginal -> WTMR.strings.reader_original_shown
+                        translationPending && !hasTranslation -> WTMR.strings.reader_translation_pending
+                        else -> WTMR.strings.reader_translation_shown
+                    },
+                )
+            }.takeIf { !isWebGpu && chapter?.pages != null && (isHttpSource || hasTranslation) },
             onClickSettings = viewModel::openSettingsDialog,
         )
     }

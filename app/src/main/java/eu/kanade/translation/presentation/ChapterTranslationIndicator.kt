@@ -23,6 +23,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.components.DropdownMenu
 import eu.kanade.tachiyomi.util.system.copyToClipboard
@@ -57,9 +59,16 @@ fun ChapterTranslationIndicator(
 ) {
     var isMenuExpanded by remember { mutableStateOf(false) }
     val progress by progressFlow.collectAsState(null)
+    val context = LocalContext.current
+    val progressText = when (state) {
+        Translation.State.QUEUE, Translation.State.TRANSLATING -> context.translationProgressText(progress)
+        Translation.State.TRANSLATED -> stringResource(WTMR.strings.translation_ready_to_read)
+        else -> null
+    }
     Box(
         modifier = modifier
             .size(IconButtonTokens.StateLayerSize)
+            .semantics { progressText?.let { stateDescription = it } }
             .combinedClickable(
                 enabled = enabled,
                 interactionSource = null,
@@ -117,8 +126,13 @@ fun ChapterTranslationIndicator(
                 )
                 else -> listOf(stringResource(MR.strings.action_cancel) to ChapterTranslationAction.CANCEL)
             }
+            if (state == Translation.State.TRANSLATED) {
+                MenuNote(
+                    text = progressText.orEmpty(),
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
             if ((state == Translation.State.ERROR || state == Translation.State.TRANSLATED) && note != null) {
-                val context = LocalContext.current
                 MenuNote(
                     text = note,
                     color = if (state == Translation.State.ERROR) {
@@ -131,7 +145,7 @@ fun ChapterTranslationIndicator(
             }
             if (state == Translation.State.TRANSLATING || state == Translation.State.QUEUE) {
                 MenuNote(
-                    text = LocalContext.current.translationProgressText(progress),
+                    text = progressText.orEmpty(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
