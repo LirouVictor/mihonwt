@@ -16,6 +16,12 @@ manga, webtoon and comic pages and draws a translation over each speech bubble, 
 translated into Brazilian Portuguese, Spanish (Latin America or Spain), French, Italian or German. This fork is
 independent of the Mihon project. Please report MihonWT issues in this repository.
 
+<p align="center">
+  <img src="./.github/assets/before-after.jpg" alt="The same panels in English and translated into Brazilian Portuguese" width="800"/>
+  <br/>
+  <sub>Original lettering (left) and the translation MihonWT drew over it (right)</sub>
+</p>
+
 ## Download
 
 Get `MihonWT-vX.Y.Z.apk` from the [latest release](https://github.com/LirouVictor/mihonwt/releases/latest). Once
@@ -48,6 +54,33 @@ requires Android 8.0 or higher.
 
 Each service keeps its own key and model. Keys are encrypted with the Android Keystore and left out of backups, so they
 need to be entered again after reinstalling.
+
+### Getting a free key
+
+Gemini and DeepL both have free plans that are enough to read several chapters a day. Either one is all you need, and
+having both lets you switch when one runs out for the day.
+
+**Google Gemini**
+
+1. Open [Google AI Studio](https://aistudio.google.com/apikey) and sign in with a Google account.
+2. Accept the terms. AI Studio creates a project for you; if it doesn't show a key yet, tap **Create API key**.
+3. Copy the key.
+4. In MihonWT, open **Settings › Translation**, set **Translation service** to **Gemini**, tap **API key** and paste it.
+
+The free plan needs no payment details but allows only a limited number of requests per minute and per day. Google
+may use what is sent on the free plan to improve its products.
+
+**DeepL**
+
+1. Open [DeepL API](https://www.deepl.com/pro-api), choose the **DeepL API Free** plan and create an account. DeepL
+   may ask for a card to verify the account; the Free plan doesn't charge it.
+2. In your DeepL account, open **API Keys** and copy the key. Free keys end in `:fx`.
+3. In MihonWT, open **Settings › Translation**, set **Translation service** to **DeepL**, tap **API key** and paste it.
+
+The Free plan translates up to 500,000 characters a month, which is a few hundred chapters.
+
+To translate a chapter, tap the translate icon beside it in the chapter list, or open it and tap the translate button
+in the reader's bottom bar.
 
 ### Features
 
