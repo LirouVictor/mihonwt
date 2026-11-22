@@ -155,6 +155,24 @@ private fun Bitmap.averageAround(x: Int, y: Int): Int {
     return Color.rgb(red / count, green / count, blue / count)
 }
 
+/**
+ * Returns this block placed in the bubble of screentone or flat tone around it on [bitmap], when it has a
+ * [TranslationBlock.background] that isn't light, so the whole bubble is painted in that tone rather than a box around
+ * the text. [others] are the page's blocks.
+ */
+fun TranslationBlock.withToneBubble(bitmap: Bitmap, others: List<TranslationBlock>): TranslationBlock {
+    val color = background ?: return this
+    // Dark art around text is rarely a bubble, as the gate's bars beside a white bubble the fill can't find
+    if (bubble.isNotEmpty() || isLight(color) || luminance(color) < MIN_TONE_LUMINANCE) return this
+    val pixels = tonePixels(bitmap.width, bitmap.height, luminance(color).toInt()) { left, top, right, bottom ->
+        val width = right - left
+        val colors = IntArray(width * (bottom - top))
+        bitmap.getPixels(colors, 0, width, left, top, width, bottom - top)
+        IntArray(colors.size) { luminance(colors[it]).toInt() }
+    }
+    return inToneBubble(bitmap.width, bitmap.height, others, pixels) ?: this
+}
+
 /** Reads [LightPixels] off this bitmap. */
 fun Bitmap.lightPixels() = LightPixels { left, top, right, bottom ->
     val width = right - left
@@ -163,14 +181,17 @@ fun Bitmap.lightPixels() = LightPixels { left, top, right, bottom ->
     BooleanArray(colors.size) { isLight(colors[it]) }
 }
 
-private fun isLight(color: Int): Boolean =
-    Color.red(color) * 0.299f + Color.green(color) * 0.587f + Color.blue(color) * 0.114f >= LIGHT_LUMINANCE
+private fun isLight(color: Int): Boolean = luminance(color) >= LIGHT_LUMINANCE
+
+private fun luminance(color: Int): Float =
+    Color.red(color) * 0.299f + Color.green(color) * 0.587f + Color.blue(color) * 0.114f
 
 private const val MAX_ANGLE = 10f
 private const val RING_STEP = 2
 private const val RING_BLUR = 3
 private const val MAX_GROWTH_LINES = 4
 private const val LIGHT_LUMINANCE = 200f
+private const val MIN_TONE_LUMINANCE = 80f
 
 private const val MAX_JUMP_LINES = 1.5f
 

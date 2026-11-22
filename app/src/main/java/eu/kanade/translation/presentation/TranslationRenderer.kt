@@ -177,11 +177,12 @@ class TranslationRenderer(
         val symHeight = if (isSideways) block.symWidth else tilted?.letterHeight ?: block.symHeight
 
         // Text wider than its box ran into the art and the next speech bubble. A box found in a bubble is already
-        // clear of its outline. OCR boxes of tilted shouts, outlined thickly, missed a letter's edge at either end
+        // clear of its outline. OCR boxes of tilted shouts, outlined thickly, missed a letter's edge at either end, and
+        // a box laid along the tilt never covers the bubble's room
         val padding = when {
-            block.bubble.isNotEmpty() -> 0f
-            tilted != null -> 2f
-            else -> 1f
+            tilted != null && block.bubble.isEmpty() -> 2f
+            tilted != null || block.bubble.isEmpty() -> 1f
+            else -> 0f
         }
         val boxWidth = width + padding * symWidth / 2
         val boxHeight = height + padding * symHeight / 2
@@ -223,7 +224,7 @@ class TranslationRenderer(
                         },
                         bubble = bubble,
                         cornerRadius = symHeight / 4,
-                        background = null,
+                        background = block.background,
                         translation = translation,
                         text = shaped.text,
                     )
@@ -239,7 +240,7 @@ class TranslationRenderer(
             box = box.apply { offset(-centerX(), -centerY()) },
             bubble = bubble,
             cornerRadius = symHeight / 4,
-            background = block.background.takeIf { bubble.isEmpty() },
+            background = block.background,
             translation = translation,
             text = text,
         )
@@ -538,7 +539,10 @@ class TranslationRenderer(
         val box: RectF,
         val bubble: List<RectF>,
         val cornerRadius: Float,
-        /** The art's color under text outside a bubble, whose translation is then outlined to stand out from it. */
+        /**
+         * The art's color under text outside a white bubble, or of the toned bubble around it, painted under its
+         * translation, which is then outlined to stand out from it.
+         */
         val background: Int?,
         val translation: String,
         val text: StaticLayout,
@@ -553,6 +557,7 @@ class TranslationRenderer(
         fun bubbleContains(x: Float, y: Float): Boolean = bubble.any { it.contains(x, y) }
 
         fun drawBackground(canvas: Canvas) = canvas.withSave {
+            bubblePaint.color = background ?: Color.WHITE
             drawPath(bubbleShape, bubblePaint)
             if (bubble.isEmpty()) {
                 translate(centerX, centerY)

@@ -148,6 +148,37 @@ class BubbleMaskTest {
     }
 
     @Test
+    fun `finds a bubble of screentone around tilted text`() {
+        // One Piece 1199 p.8: "GRAB" tilted in a round bubble of dots
+        fun luminances(inBubble: Boolean) = Array(height) { y ->
+            IntArray(width) { x ->
+                val distance = hypot((x - 200) / 120.0, (y - 150) / 80.0)
+                when {
+                    inBubble && abs(distance - 1) * 100 <= 2.5 -> 0
+                    inBubble && distance > 1 -> 255
+                    x in 150..250 && y in 130..170 && y % 10 < 3 -> 0
+                    (x / 2 + y / 2) % 2 == 0 -> 0
+                    else -> 255
+                }
+            }
+        }
+        fun pixelsOf(page: Array<IntArray>) = tonePixels(width, height, 127) { left, top, right, bottom ->
+            IntArray((right - left) * (bottom - top)) { page[top + it / (right - left)][left + it % (right - left)] }
+        }
+        val text = block(150f, 130f, 100f, 40f).copy(angle = -19f)
+
+        val placed = text.inToneBubble(width, height, listOf(text), pixelsOf(luminances(inBubble = true)))
+
+        assertNotNull(placed)
+        assertTrue(placed!!.covers(110f, 150f))
+        assertTrue(placed.covers(200f, 85f))
+        assertFalse(placed.covers(20f, 20f))
+        assertEquals(150f, placed.x)
+        // Screentone over the whole panel is art, not a bubble
+        assertNull(text.inToneBubble(width, height, listOf(text), pixelsOf(luminances(inBubble = false))))
+    }
+
+    @Test
     fun `joins blocks placed over each other`() {
         val note = block(110f, 110f, 60f, 80f).copy(text = "(NOTE)")
         val text = block(100f, 100f, 140f, 100f).copy(text = "THIS BODY")

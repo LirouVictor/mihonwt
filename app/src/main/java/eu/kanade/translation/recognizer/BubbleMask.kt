@@ -34,15 +34,77 @@ fun TranslationBlock.inBubble(
     return REACH_LINES.firstNotNullOfOrNull { inBubble(imageWidth, imageHeight, others, pixels, it) }
 }
 
+/**
+ * Returns this block placed in a bubble of screentone or flat tone around it, as [inBubble] places one in a white
+ * bubble, with [pixels] telling which pixels are of the bubble's tone, as [tonePixels] does. The tone must reach past
+ * every side of the text, as grey art beside a caption would otherwise be taken for a bubble. A tilted block keeps its
+ * box, its translation being laid out along its tilt.
+ */
+fun TranslationBlock.inToneBubble(
+    imageWidth: Int,
+    imageHeight: Int,
+    others: List<TranslationBlock>,
+    pixels: LightPixels,
+): TranslationBlock? {
+    // Screentone averaged is grey only some pixels away from the outline and the letters' outlines, which narrows the
+    // way around large letters to less than a cell sized by them. A tilted block needs no upright room in the bubble
+    val isTilted = abs(angle) > MAX_ANGLE
+    return REACH_LINES.firstNotNullOfOrNull {
+        inBubble(imageWidth, imageHeight, others, pixels, it, MAX_TONE_CELL, !isTilted, mustSurround = true)
+    }
+}
+
+/**
+ * Returns which pixels of a page of [width] by [height] are of the luminance [tone] once averaged with those around
+ * them, as screentone's dots and gaps are, for [inToneBubble]. [luminances] reads a region's luminance row by row.
+ */
+fun tonePixels(
+    width: Int,
+    height: Int,
+    tone: Int,
+    luminances: (left: Int, top: Int, right: Int, bottom: Int) -> IntArray,
+) = LightPixels { left, top, right, bottom ->
+    val areaLeft = max(0, left - TONE_RADIUS)
+    val areaTop = max(0, top - TONE_RADIUS)
+    val areaRight = min(width, right + TONE_RADIUS)
+    val areaBottom = min(height, bottom + TONE_RADIUS)
+    val areaWidth = areaRight - areaLeft
+    val values = luminances(areaLeft, areaTop, areaRight, areaBottom)
+    // Sums of the area above and left of each point, so each pixel's average is read in four steps
+    val sums = LongArray((areaWidth + 1) * (areaBottom - areaTop + 1))
+    for (y in 0..<areaBottom - areaTop) {
+        var row = 0L
+        for (x in 0..<areaWidth) {
+            row += values[y * areaWidth + x]
+            sums[(y + 1) * (areaWidth + 1) + x + 1] = sums[y * (areaWidth + 1) + x + 1] + row
+        }
+    }
+    val regionWidth = right - left
+    BooleanArray(regionWidth * (bottom - top)) { index ->
+        val x = left + index % regionWidth - areaLeft
+        val y = top + index / regionWidth - areaTop
+        val x0 = max(0, x - TONE_RADIUS)
+        val y0 = max(0, y - TONE_RADIUS)
+        val x1 = min(areaWidth, x + TONE_RADIUS + 1)
+        val y1 = min(areaBottom - areaTop, y + TONE_RADIUS + 1)
+        val sum = sums[y1 * (areaWidth + 1) + x1] - sums[y0 * (areaWidth + 1) + x1] -
+            sums[y1 * (areaWidth + 1) + x0] + sums[y0 * (areaWidth + 1) + x0]
+        abs(sum / ((x1 - x0) * (y1 - y0)) - tone) <= TONE_TOLERANCE
+    }
+}
+
 private fun TranslationBlock.inBubble(
     imageWidth: Int,
     imageHeight: Int,
     others: List<TranslationBlock>,
     pixels: LightPixels,
     reachLines: Float,
+    maxCell: Int = Int.MAX_VALUE,
+    needsTextRoom: Boolean = true,
+    mustSurround: Boolean = false,
 ): TranslationBlock? {
     val lineHeight = max(symHeight, 1f)
-    val cell = max(1, (lineHeight / CELLS_PER_LINE).roundToInt())
+    val cell = (lineHeight / CELLS_PER_LINE).roundToInt().coerceIn(1, maxCell)
     val reach = lineHeight * reachLines
     val left = max(0, (x - reach).toInt())
     val top = max(0, (y - reach).toInt())
@@ -122,6 +184,8 @@ private fun TranslationBlock.inBubble(
         }
     }
 
+    if (mustSurround && !inside.surrounds(cols, boxLeft, boxTop, boxRight, boxBottom)) return null
+
     // Marks enclosed by the bubble's light space, like letters OCR missed, belong to the bubble too. So do the
     // block's own letters where they touch the outline, which would otherwise join the outside and be left unpainted
     fun isOwnLetter(index: Int): Boolean {
@@ -151,6 +215,9 @@ private fun TranslationBlock.inBubble(
     }
     val bubble = BooleanArray(cols * rows) { !outside[it] }
     keepArt(bubble, inside, cols, left, top, cell, lineHeight * ART_MIN_LINES, others + this)
+    if (!needsTextRoom) {
+        return if (inside.any { it }) copy(bubble = bubbleAreas(bubble, cols, rows, left, top, cell)) else null
+    }
 
     // Bubbles that touch share their light space, so each block only lays its text out on the cells nearer to it
     val neighbours = others.filter { it !== this && it.overlaps(left, top, right, bottom) }
@@ -242,6 +309,28 @@ fun List<TranslationBlock>.inReadingOrder(rightToLeft: Boolean): List<Translatio
     return rows.flatMap { row ->
         if (rightToLeft) row.sortedByDescending { it.x + it.width } else row.sortedBy { it.x }
     }
+}
+
+/** Whether these cells reach past each side of the box from [left], [top] to [right], [bottom], as a bubble does. */
+private fun BooleanArray.surrounds(cols: Int, left: Int, top: Int, right: Int, bottom: Int): Boolean {
+    var above = false
+    var below = false
+    var before = false
+    var after = false
+    forEachIndexed { index, isSet ->
+        if (!isSet) return@forEachIndexed
+        val col = index % cols
+        val row = index / cols
+        if (col in left..right) {
+            above = above || row < top
+            below = below || row > bottom
+        }
+        if (row in top..bottom) {
+            before = before || col < left
+            after = after || col > right
+        }
+    }
+    return above && below && before && after
 }
 
 private fun TranslationBlock.overlapsMostOf(other: TranslationBlock): Boolean {
@@ -388,6 +477,11 @@ private fun TranslationBlock.distanceSquaredTo(px: Float, py: Float): Float {
 private const val MAX_ANGLE = 10f
 private const val MIN_JOINED_OVERLAP = 0.25f
 private const val CELLS_PER_LINE = 8f
+
+// Averaged over 7 by 7 pixels, the dots of screentone vary less than this, its outline and white letters much more
+private const val TONE_RADIUS = 3
+private const val TONE_TOLERANCE = 30
+private const val MAX_TONE_CELL = 4
 private const val LEFT_EDGE = 1
 private const val TOP_EDGE = 2
 private const val RIGHT_EDGE = 4
