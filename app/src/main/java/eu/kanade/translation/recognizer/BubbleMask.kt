@@ -50,7 +50,7 @@ fun TranslationBlock.inToneBubble(
     // way around large letters to less than a cell sized by them. A tilted block needs no upright room in the bubble
     val isTilted = abs(angle) > MAX_ANGLE
     return REACH_LINES.firstNotNullOfOrNull {
-        inBubble(imageWidth, imageHeight, others, pixels, it, MAX_TONE_CELL, !isTilted, mustSurround = true)
+        inBubble(imageWidth, imageHeight, others, pixels, it, MAX_TONE_CELL, !isTilted, isToned = true)
     }
 }
 
@@ -101,7 +101,7 @@ private fun TranslationBlock.inBubble(
     reachLines: Float,
     maxCell: Int = Int.MAX_VALUE,
     needsTextRoom: Boolean = true,
-    mustSurround: Boolean = false,
+    isToned: Boolean = false,
 ): TranslationBlock? {
     val lineHeight = max(symHeight, 1f)
     val cell = (lineHeight / CELLS_PER_LINE).roundToInt().coerceIn(1, maxCell)
@@ -137,6 +137,7 @@ private fun TranslationBlock.inBubble(
     val seen = BooleanArray(cols * rows)
     val queue = ArrayDeque<Int>()
     val component = mutableListOf<Int>()
+    var largestTone = emptyList<Int>()
     for (row in boxTop..boxBottom) {
         for (col in boxLeft..boxRight) {
             val seed = row * cols + col
@@ -180,11 +181,18 @@ private fun TranslationBlock.inBubble(
             }
             val isCutBubble = pageEdges.countOneBits() <= MAX_PAGE_EDGES &&
                 component.size * cell * cell <= width * height * MAX_CUT_BUBBLE_AREA
-            if (closed && (pageEdges == 0 || isCutBubble)) component.forEach { inside[it] = true }
+            if (!closed || (pageEdges != 0 && !isCutBubble)) continue
+            // Only a toned bubble's own tone: gaps between speed lines that the box reaches past it are tone too
+            if (!isToned) {
+                component.forEach { inside[it] = true }
+            } else if (component.size > largestTone.size) {
+                largestTone = component.toList()
+            }
         }
     }
+    largestTone.forEach { inside[it] = true }
 
-    if (mustSurround && !inside.surrounds(cols, boxLeft, boxTop, boxRight, boxBottom)) return null
+    if (isToned && !inside.surrounds(cols, boxLeft, boxTop, boxRight, boxBottom)) return null
 
     // Marks enclosed by the bubble's light space, like letters OCR missed, belong to the bubble too. So do the
     // block's own letters where they touch the outline, which would otherwise join the outside and be left unpainted
@@ -193,6 +201,9 @@ private fun TranslationBlock.inBubble(
         val row = index / cols
         return !lightCells[index] && col in boxLeft..boxRight && row in boxTop..boxBottom
     }
+
+    // A toned bubble's letters are enclosed by its tone, while the box of tilted text reaches past its outline
+    fun isKept(index: Int) = inside[index] || (!isToned && isOwnLetter(index))
     val outside = BooleanArray(cols * rows)
     for (col in 0..<cols) {
         queue.add(col)
@@ -204,7 +215,7 @@ private fun TranslationBlock.inBubble(
     }
     while (queue.isNotEmpty()) {
         val index = queue.removeFirst()
-        if (outside[index] || inside[index] || isOwnLetter(index)) continue
+        if (outside[index] || isKept(index)) continue
         outside[index] = true
         val col = index % cols
         val row = index / cols
