@@ -12,6 +12,7 @@ import eu.kanade.translation.data.ApiKeyCipher
 import eu.kanade.translation.presentation.ModelPickerDialog
 import eu.kanade.translation.translator.LanguageModelTranslator
 import eu.kanade.translation.translator.PageTranslator
+import kotlinx.serialization.Serializable
 import mihon.app.di.appGraph
 import tachiyomi.domain.translation.BubbleFinder
 import tachiyomi.domain.translation.OcrEngine
@@ -22,7 +23,8 @@ import tachiyomi.i18n.wt.WTMR
 import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.util.collectAsState
 
-object SettingsTranslationScreen : SearchableSettings {
+@Serializable
+data object SettingsTranslationScreen : SearchableSettings {
 
     @ReadOnlyComposable
     @Composable
