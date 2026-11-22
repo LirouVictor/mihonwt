@@ -577,17 +577,23 @@ class TranslationRenderer(
             translate(centerX, centerY)
             rotate(angle)
             translate(-text.width / 2f, -text.height / 2f)
-            if (background != null) {
-                val paint = text.paint
-                paint.style = Paint.Style.STROKE
-                paint.strokeJoin = Paint.Join.ROUND
-                paint.strokeWidth = paint.textSize * OUTLINE_WIDTH
-                paint.color = Color.WHITE
+            if (background == null) {
                 text.draw(this)
-                paint.style = Paint.Style.FILL
-                paint.color = Color.BLACK
+                return@withSave
             }
+            // In a toned bubble, white letters outlined in black, as such bubbles are lettered: a white outline
+            // around black letters read as a box on the grey
+            val isToned = bubble.isNotEmpty()
+            val paint = text.paint
+            paint.style = Paint.Style.STROKE
+            paint.strokeJoin = Paint.Join.ROUND
+            paint.strokeWidth = paint.textSize * OUTLINE_WIDTH
+            paint.color = if (isToned) Color.BLACK else Color.WHITE
             text.draw(this)
+            paint.style = Paint.Style.FILL
+            paint.color = if (isToned) Color.WHITE else Color.BLACK
+            text.draw(this)
+            paint.color = Color.BLACK
         }
     }
 
