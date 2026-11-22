@@ -105,9 +105,11 @@ import eu.kanade.tachiyomi.util.view.setComposeContent
 import eu.kanade.translation.model.Translation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
@@ -558,9 +560,16 @@ class ReaderActivity : BaseActivity() {
         val translationManager = appGraph.translationManager
         val queuedTranslations by translationManager.queuedStates.collectAsState(emptyMap())
         val chapter = state.currentChapter
+        // Pages load, and their translations arrive, without a change to the reader's state
+        val chapterState by remember(chapter) { chapter?.stateFlow ?: flowOf(null) }.collectAsState(null)
+        val pages = (chapterState as? ReaderChapter.State.Loaded)?.pages
+        val pagesTranslated by remember(pages) {
+            pages?.takeIf { it.isNotEmpty() }
+                ?.let { loaded -> combine(loaded.map { it.translationFlow }) { it.any { t -> t != null } } }
+                ?: flowOf(false)
+        }.collectAsState(false)
         val translationStatus = queuedTranslations[chapter?.chapter?.id]
-        val hasTranslation = chapter?.pages.orEmpty().any { it.translation != null } ||
-            translationStatus == Translation.State.TRANSLATED
+        val hasTranslation = pagesTranslated || translationStatus == Translation.State.TRANSLATED
         val translationPending = translationStatus == Translation.State.QUEUE ||
             translationStatus == Translation.State.TRANSLATING
         val shouldTranslate = !hasTranslation && !translationPending
@@ -647,7 +656,7 @@ class ReaderActivity : BaseActivity() {
                         else -> WTMR.strings.reader_translation_shown
                     },
                 )
-            }.takeIf { !isWebGpu && chapter?.pages != null && (isHttpSource || hasTranslation) },
+            }.takeIf { !isWebGpu && pages != null && (isHttpSource || hasTranslation) },
             onClickSettings = viewModel::openSettingsDialog,
         )
     }

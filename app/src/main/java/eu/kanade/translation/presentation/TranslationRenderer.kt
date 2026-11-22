@@ -154,12 +154,14 @@ class TranslationRenderer(
         val bubble = block.bubble.map { RectF(it.x, it.y, it.x + it.width, it.y + it.height) }
         val own = RectF(block.x, block.y, block.x + block.width, block.y + block.height)
         val sharers = if (isUpright) block.bubbleSharers(blocks) else emptyList()
-        val sharedWidth = if (sharers.isNotEmpty()) {
+        // Text sharing a bubble is centered on the room its side leaves, which is narrower one way when its block sits
+        // near the bubble's outline
+        val sharedRoom = if (sharers.isNotEmpty()) {
             widthAt(bubble, own, sharers, own.centerX(), own.top, own.bottom, margin = 0f, minWidth = 1f)
-                ?.let { 2 * min(own.centerX() - it.start, it.endInclusive - own.centerX()) }
         } else {
             null
         }
+        val sharedWidth = sharedRoom?.let { it.endInclusive - it.start }
         // Rotating a fitted line can move it across the boundary with a neighboring block.
         val angle = if (sharers.isEmpty()) block.angle else 0f
         val width = when {
@@ -196,7 +198,7 @@ class TranslationRenderer(
             null
         }
         val text = stacked ?: lines
-        val centerX = block.x + block.width / 2
+        val centerX = sharedRoom?.let { (it.start + it.endInclusive) / 2 } ?: (block.x + block.width / 2)
         val centerY = block.y + block.height / 2
         // Lines as wide as the bubble is at their height, as lettering follows a round bubble's shape, where that
         // allows larger text than its largest rectangle
@@ -225,8 +227,8 @@ class TranslationRenderer(
         val box = RectF(0f, 0f, max(boxWidth, text.width.toFloat()), boxHeight)
         // Text widened past the edge of the page, as in a bubble cut by it, moves in to stay whole
         return Block(
-            centerX = if (isUpright && sharedWidth == null) centerX.keptOnPage(box.width(), imageWidth) else centerX,
-            centerY = if (isUpright && sharedWidth == null) centerY.keptOnPage(box.height(), imageHeight) else centerY,
+            centerX = if (isUpright) centerX.keptOnPage(box.width(), imageWidth) else centerX,
+            centerY = if (isUpright) centerY.keptOnPage(box.height(), imageHeight) else centerY,
             angle = angle,
             box = box.apply { offset(-centerX(), -centerY()) },
             bubble = bubble,
