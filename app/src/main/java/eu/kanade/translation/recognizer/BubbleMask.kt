@@ -17,8 +17,8 @@ fun interface LightPixels {
 /**
  * Returns this block placed in the speech bubble around it: [TranslationBlock.bubble] covers the bubble's whole inside,
  * English letters and any stray marks included, so it can be painted over, and the block's box becomes the largest
- * rectangle inside the bubble for the translation. Returns null when no closed bubble is found, as for text on art or
- * a bubble cut by the page's edge.
+ * rectangle inside the bubble for the translation. Returns null when no closed bubble is found, as for text on art. The
+ * page's edge closes a bubble it cuts.
  *
  * The page is read in square cells about an eighth of a letter high, a cell being light only if all its pixels are, so
  * a thin outline still closes the bubble.
@@ -83,23 +83,42 @@ private fun TranslationBlock.inBubble(
             queue.add(seed)
             component.clear()
             var closed = true
+            var pageEdges = 0
             while (queue.isNotEmpty()) {
                 val index = queue.removeFirst()
                 component.add(index)
                 val c = index % cols
                 val r = index / cols
-                if (c == 0 || r == 0 || c == cols - 1 || r == rows - 1) {
+                // The page's edge closes a bubble it cuts, while the edge of the search doesn't. Light space along
+                // more than one edge of the page, or far larger than its text, is a margin or blank art
+                val atLeft = c == 0
+                val atTop = r == 0
+                val atRight = c == cols - 1
+                val atBottom = r == rows - 1
+                if ((atLeft && left > 0) || (atTop && top > 0) || (atRight && right < imageWidth) ||
+                    (atBottom && bottom < imageHeight)
+                ) {
                     closed = false
                     continue
                 }
-                for (next in intArrayOf(index - 1, index + 1, index - cols, index + cols)) {
+                if (atLeft) pageEdges = pageEdges or LEFT_EDGE
+                if (atTop) pageEdges = pageEdges or TOP_EDGE
+                if (atRight) pageEdges = pageEdges or RIGHT_EDGE
+                if (atBottom) pageEdges = pageEdges or BOTTOM_EDGE
+                fun visit(next: Int) {
                     if (!seen[next] && lightCells[next]) {
                         seen[next] = true
                         queue.add(next)
                     }
                 }
+                if (!atLeft) visit(index - 1)
+                if (!atRight) visit(index + 1)
+                if (!atTop) visit(index - cols)
+                if (!atBottom) visit(index + cols)
             }
-            if (closed) component.forEach { inside[it] = true }
+            val isCutBubble = pageEdges.countOneBits() <= MAX_PAGE_EDGES &&
+                component.size * cell * cell <= width * height * MAX_CUT_BUBBLE_AREA
+            if (closed && (pageEdges == 0 || isCutBubble)) component.forEach { inside[it] = true }
         }
     }
 
@@ -161,7 +180,9 @@ private fun TranslationBlock.inBubble(
 
 /**
  * Joins blocks whose boxes overlap once placed, as a note beside a bubble's text that OCR read a line across, so their
- * translations aren't drawn over each other. The larger box holds the joined text, in the order of the blocks.
+ * translations aren't drawn over each other. The joined text, in the order of the blocks, is written in the larger box,
+ * or across both when neither is in a bubble. The letters of a block outside a bubble joined to one in a bubble are
+ * painted over with the bubble, as they would otherwise stay in English beside the translation.
  */
 fun List<TranslationBlock>.withOverlapsJoined(): MutableList<TranslationBlock> {
     val joined = mutableListOf<TranslationBlock>()
@@ -172,14 +193,31 @@ fun List<TranslationBlock>.withOverlapsJoined(): MutableList<TranslationBlock> {
             return@forEach
         }
         val earlier = joined[i]
-        val larger = if (earlier.width * earlier.height >= block.width * block.height) earlier else block
-        joined[i] = larger.copy(
-            text = earlier.text + "\n" + block.text,
-            bubble = (earlier.bubble + block.bubble).distinct(),
-        )
+        val text = earlier.text + "\n" + block.text
+        joined[i] = if (earlier.bubble.isEmpty() && block.bubble.isEmpty()) {
+            val left = min(earlier.x, block.x)
+            val top = min(earlier.y, block.y)
+            earlier.copy(
+                text = text,
+                x = left,
+                y = top,
+                width = max(earlier.x + earlier.width, block.x + block.width) - left,
+                height = max(earlier.y + earlier.height, block.y + block.height) - top,
+                symHeight = max(earlier.symHeight, block.symHeight),
+                symWidth = max(earlier.symWidth, block.symWidth),
+            )
+        } else {
+            val larger = if (earlier.width * earlier.height >= block.width * block.height) earlier else block
+            larger.copy(
+                text = text,
+                bubble = (earlier.bubbleOrBox() + block.bubbleOrBox()).distinct(),
+            )
+        }
     }
     return joined
 }
+
+private fun TranslationBlock.bubbleOrBox(): List<Area> = bubble.ifEmpty { listOf(Area(x, y, width, height)) }
 
 /**
  * Returns these blocks in reading order: in rows from the top, each read [rightToLeft] or left to right. Translators
@@ -350,6 +388,12 @@ private fun TranslationBlock.distanceSquaredTo(px: Float, py: Float): Float {
 private const val MAX_ANGLE = 10f
 private const val MIN_JOINED_OVERLAP = 0.25f
 private const val CELLS_PER_LINE = 8f
+private const val LEFT_EDGE = 1
+private const val TOP_EDGE = 2
+private const val RIGHT_EDGE = 4
+private const val BOTTOM_EDGE = 8
+private const val MAX_PAGE_EDGES = 1
+private const val MAX_CUT_BUBBLE_AREA = 8
 private val REACH_LINES = listOf(6f, 12f, 24f)
 private const val TEXT_MARGIN_LINES = 0.25f
 

@@ -1,5 +1,6 @@
 package eu.kanade.translation.recognizer
 
+import eu.kanade.translation.model.Area
 import eu.kanade.translation.model.TranslationBlock
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -124,6 +125,29 @@ class BubbleMaskTest {
     }
 
     @Test
+    fun `finds a bubble cut by the page's edge, but not the page's margin`() {
+        // The ellipse moved up so the top of the page cuts it, as One Piece 1199 p.7
+        val page = Array(height) { y ->
+            BooleanArray(width) { x -> abs(hypot((x - 200) / 120.0, (y - 40) / 80.0) - 1) * 100 > 2.5 }
+        }
+        val text = block(140f, 20f, 120f, 40f)
+        page.dark(140, 20, 260, 30)
+        page.dark(140, 50, 260, 60)
+
+        val placed = text.inBubble(width, height, listOf(text), page.pixels())
+
+        assertNotNull(placed)
+        assertTrue(placed!!.covers(200f, 2f))
+        assertFalse(placed.covers(200f, 200f))
+
+        // A blank page has light space along all its edges
+        val blank = Array(height) { BooleanArray(width) { true } }
+        blank.dark(140, 20, 260, 30)
+        blank.dark(140, 50, 260, 60)
+        assertNull(text.inBubble(width, height, listOf(text), blank.pixels()))
+    }
+
+    @Test
     fun `joins blocks placed over each other`() {
         val note = block(110f, 110f, 60f, 80f).copy(text = "(NOTE)")
         val text = block(100f, 100f, 140f, 100f).copy(text = "THIS BODY")
@@ -133,6 +157,30 @@ class BubbleMaskTest {
 
         assertEquals(listOf("(NOTE)\nTHIS BODY", "HEY"), joined.map { it.text })
         assertEquals(140f, joined[0].width)
+    }
+
+    @Test
+    fun `blocks joined outside bubbles take both boxes`() {
+        // One Piece 1199 p.7: "HOW ELSE CAN WE EXPLAIN IT?" beside a bubble's text on the same light art
+        val left = block(800f, 70f, 120f, 110f).copy(text = "HOW ELSE")
+        val right = block(870f, 40f, 160f, 140f).copy(text = "BUT HE LOOKS LIKE HIM")
+
+        val joined = listOf(right, left).withOverlapsJoined().single()
+
+        assertEquals(800f, joined.x)
+        assertEquals(40f, joined.y)
+        assertEquals(230f, joined.width)
+        assertEquals(140f, joined.height)
+    }
+
+    @Test
+    fun `letters outside a bubble joined to one are painted over`() {
+        val note = block(100f, 100f, 60f, 30f).copy(text = "(NOTE)")
+        val text = block(100f, 100f, 140f, 100f).copy(text = "THIS BODY", bubble = listOf(Area(90f, 90f, 160f, 120f)))
+
+        val joined = listOf(text, note).withOverlapsJoined().single()
+
+        assertEquals(listOf(Area(90f, 90f, 160f, 120f), Area(100f, 100f, 60f, 30f)), joined.bubble)
     }
 
     @Test
