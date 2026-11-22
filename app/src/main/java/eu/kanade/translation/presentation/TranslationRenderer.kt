@@ -20,6 +20,7 @@ import eu.kanade.translation.model.PageTranslation
 import eu.kanade.translation.model.TranslationBlock
 import eu.kanade.translation.model.isInCapitals
 import eu.kanade.translation.model.joinLines
+import eu.kanade.translation.model.untilted
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -164,19 +165,24 @@ class TranslationRenderer(
         val sharedWidth = sharedRoom?.let { it.endInclusive - it.start }
         // Rotating a fitted line can move it across the boundary with a neighboring block.
         val angle = if (sharers.isEmpty()) block.angle else 0f
+        val tilted = if (!isSideways && !isUpright) block.untilted() else null
         val width = when {
             sharedWidth != null -> min(roomInBubble(block, blocks), sharedWidth)
             isSideways -> block.height
             isUpright -> roomInBubble(block, blocks)
-            else -> block.width
+            else -> tilted!!.width
         }
-        val height = if (isSideways) block.width else block.height
-        val symWidth = if (isSideways) block.symHeight else block.symWidth
-        val symHeight = if (isSideways) block.symWidth else block.symHeight
+        val height = if (isSideways) block.width else tilted?.height ?: block.height
+        val symWidth = if (isSideways) block.symHeight else tilted?.letterHeight ?: block.symWidth
+        val symHeight = if (isSideways) block.symWidth else tilted?.letterHeight ?: block.symHeight
 
         // Text wider than its box ran into the art and the next speech bubble. A box found in a bubble is already
-        // clear of its outline
-        val padding = if (block.bubble.isEmpty()) 1f else 0f
+        // clear of its outline. OCR boxes of tilted shouts, outlined thickly, missed a letter's edge at either end
+        val padding = when {
+            block.bubble.isNotEmpty() -> 0f
+            tilted != null -> 2f
+            else -> 1f
+        }
         val boxWidth = width + padding * symWidth / 2
         val boxHeight = height + padding * symHeight / 2
         // A word too long for the box may take some of the bubble's width beside it, but never the art's
