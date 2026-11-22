@@ -36,9 +36,9 @@ fun TranslationBlock.inBubble(
 
 /**
  * Returns this block placed in a bubble of screentone or flat tone around it, as [inBubble] places one in a white
- * bubble, with [pixels] telling which pixels are of the bubble's tone, as [tonePixels] does. The tone must reach past
- * every side of the text, as grey art beside a caption would otherwise be taken for a bubble. A tilted block keeps its
- * box, its translation being laid out along its tilt.
+ * bubble, with [pixels] telling which pixels are of the bubble's tone, as [tonePixels] does, or light ones for a white
+ * bubble [inBubble] missed. The tone must reach past every side of the text, as grey art beside a caption would
+ * otherwise be taken for a bubble. A tilted block keeps its box, its translation being laid out along its tilt.
  */
 fun TranslationBlock.inToneBubble(
     imageWidth: Int,

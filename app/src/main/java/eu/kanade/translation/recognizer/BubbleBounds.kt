@@ -156,14 +156,18 @@ private fun Bitmap.averageAround(x: Int, y: Int): Int {
 }
 
 /**
- * Returns this block placed in the bubble of screentone or flat tone around it on [bitmap], when it has a
- * [TranslationBlock.background] that isn't light, so the whole bubble is painted in that tone rather than a box around
- * the text. [others] are the page's blocks.
+ * Returns this block placed in the bubble around it on [bitmap] when it has none yet, from the color of the art around
+ * it, its [TranslationBlock.background], so the whole bubble is painted rather than a box around the text: a bubble of
+ * screentone or flat tone, painted in that tone, or a white one the first search missed, as for text tilted in it,
+ * painted white. [others] are the page's blocks.
  */
 fun TranslationBlock.withToneBubble(bitmap: Bitmap, others: List<TranslationBlock>): TranslationBlock {
     val color = background ?: return this
     // Dark art around text is rarely a bubble, as the gate's bars beside a white bubble the fill can't find
-    if (bubble.isNotEmpty() || isLight(color) || luminance(color) < MIN_TONE_LUMINANCE) return this
+    if (bubble.isNotEmpty() || luminance(color) < MIN_TONE_LUMINANCE) return this
+    if (isLight(color)) {
+        return inToneBubble(bitmap.width, bitmap.height, others, bitmap.lightPixels())?.copy(background = null) ?: this
+    }
     val pixels = tonePixels(bitmap.width, bitmap.height, luminance(color).toInt()) { left, top, right, bottom ->
         val width = right - left
         val colors = IntArray(width * (bottom - top))
