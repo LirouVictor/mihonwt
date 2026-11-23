@@ -17,8 +17,8 @@ fun interface LightPixels {
 /**
  * Returns this block placed in the speech bubble around it: [TranslationBlock.bubble] covers the bubble's whole inside,
  * English letters and any stray marks included, so it can be painted over, and the block's box becomes the largest
- * rectangle inside the bubble for the translation. Returns null when no closed bubble is found, as for text on art or
- * a bubble cut by the page's edge.
+ * rectangle inside the bubble for the translation. Returns null when no closed bubble is found, as for text on art. The
+ * page's edge closes a bubble it cuts.
  *
  * The page is read in square cells about an eighth of a letter high, a cell being light only if all its pixels are, so
  * a thin outline still closes the bubble.
@@ -34,15 +34,77 @@ fun TranslationBlock.inBubble(
     return REACH_LINES.firstNotNullOfOrNull { inBubble(imageWidth, imageHeight, others, pixels, it) }
 }
 
+/**
+ * Returns this block placed in a bubble of screentone or flat tone around it, as [inBubble] places one in a white
+ * bubble, with [pixels] telling which pixels are of the bubble's tone, as [tonePixels] does, or light ones for a white
+ * bubble [inBubble] missed. The tone must reach past every side of the text, as grey art beside a caption would
+ * otherwise be taken for a bubble. A tilted block keeps its box, its translation being laid out along its tilt.
+ */
+fun TranslationBlock.inToneBubble(
+    imageWidth: Int,
+    imageHeight: Int,
+    others: List<TranslationBlock>,
+    pixels: LightPixels,
+): TranslationBlock? {
+    // Screentone averaged is grey only some pixels away from the outline and the letters' outlines, which narrows the
+    // way around large letters to less than a cell sized by them. A tilted block needs no upright room in the bubble
+    val isTilted = abs(angle) > MAX_ANGLE
+    return REACH_LINES.firstNotNullOfOrNull {
+        inBubble(imageWidth, imageHeight, others, pixels, it, MAX_TONE_CELL, !isTilted, isToned = true)
+    }
+}
+
+/**
+ * Returns which pixels of a page of [width] by [height] are of the luminance [tone] once averaged with those around
+ * them, as screentone's dots and gaps are, for [inToneBubble]. [luminances] reads a region's luminance row by row.
+ */
+fun tonePixels(
+    width: Int,
+    height: Int,
+    tone: Int,
+    luminances: (left: Int, top: Int, right: Int, bottom: Int) -> IntArray,
+) = LightPixels { left, top, right, bottom ->
+    val areaLeft = max(0, left - TONE_RADIUS)
+    val areaTop = max(0, top - TONE_RADIUS)
+    val areaRight = min(width, right + TONE_RADIUS)
+    val areaBottom = min(height, bottom + TONE_RADIUS)
+    val areaWidth = areaRight - areaLeft
+    val values = luminances(areaLeft, areaTop, areaRight, areaBottom)
+    // Sums of the area above and left of each point, so each pixel's average is read in four steps
+    val sums = LongArray((areaWidth + 1) * (areaBottom - areaTop + 1))
+    for (y in 0..<areaBottom - areaTop) {
+        var row = 0L
+        for (x in 0..<areaWidth) {
+            row += values[y * areaWidth + x]
+            sums[(y + 1) * (areaWidth + 1) + x + 1] = sums[y * (areaWidth + 1) + x + 1] + row
+        }
+    }
+    val regionWidth = right - left
+    BooleanArray(regionWidth * (bottom - top)) { index ->
+        val x = left + index % regionWidth - areaLeft
+        val y = top + index / regionWidth - areaTop
+        val x0 = max(0, x - TONE_RADIUS)
+        val y0 = max(0, y - TONE_RADIUS)
+        val x1 = min(areaWidth, x + TONE_RADIUS + 1)
+        val y1 = min(areaBottom - areaTop, y + TONE_RADIUS + 1)
+        val sum = sums[y1 * (areaWidth + 1) + x1] - sums[y0 * (areaWidth + 1) + x1] -
+            sums[y1 * (areaWidth + 1) + x0] + sums[y0 * (areaWidth + 1) + x0]
+        abs(sum / ((x1 - x0) * (y1 - y0)) - tone) <= TONE_TOLERANCE
+    }
+}
+
 private fun TranslationBlock.inBubble(
     imageWidth: Int,
     imageHeight: Int,
     others: List<TranslationBlock>,
     pixels: LightPixels,
     reachLines: Float,
+    maxCell: Int = Int.MAX_VALUE,
+    needsTextRoom: Boolean = true,
+    isToned: Boolean = false,
 ): TranslationBlock? {
     val lineHeight = max(symHeight, 1f)
-    val cell = max(1, (lineHeight / CELLS_PER_LINE).roundToInt())
+    val cell = (lineHeight / CELLS_PER_LINE).roundToInt().coerceIn(1, maxCell)
     val reach = lineHeight * reachLines
     val left = max(0, (x - reach).toInt())
     val top = max(0, (y - reach).toInt())
@@ -75,6 +137,7 @@ private fun TranslationBlock.inBubble(
     val seen = BooleanArray(cols * rows)
     val queue = ArrayDeque<Int>()
     val component = mutableListOf<Int>()
+    var largestTone = emptyList<Int>()
     for (row in boxTop..boxBottom) {
         for (col in boxLeft..boxRight) {
             val seed = row * cols + col
@@ -83,25 +146,53 @@ private fun TranslationBlock.inBubble(
             queue.add(seed)
             component.clear()
             var closed = true
+            var pageEdges = 0
             while (queue.isNotEmpty()) {
                 val index = queue.removeFirst()
                 component.add(index)
                 val c = index % cols
                 val r = index / cols
-                if (c == 0 || r == 0 || c == cols - 1 || r == rows - 1) {
+                // The page's edge closes a bubble it cuts, while the edge of the search doesn't. Light space along
+                // more than one edge of the page, or far larger than its text, is a margin or blank art
+                val atLeft = c == 0
+                val atTop = r == 0
+                val atRight = c == cols - 1
+                val atBottom = r == rows - 1
+                if ((atLeft && left > 0) || (atTop && top > 0) || (atRight && right < imageWidth) ||
+                    (atBottom && bottom < imageHeight)
+                ) {
                     closed = false
                     continue
                 }
-                for (next in intArrayOf(index - 1, index + 1, index - cols, index + cols)) {
+                if (atLeft) pageEdges = pageEdges or LEFT_EDGE
+                if (atTop) pageEdges = pageEdges or TOP_EDGE
+                if (atRight) pageEdges = pageEdges or RIGHT_EDGE
+                if (atBottom) pageEdges = pageEdges or BOTTOM_EDGE
+                fun visit(next: Int) {
                     if (!seen[next] && lightCells[next]) {
                         seen[next] = true
                         queue.add(next)
                     }
                 }
+                if (!atLeft) visit(index - 1)
+                if (!atRight) visit(index + 1)
+                if (!atTop) visit(index - cols)
+                if (!atBottom) visit(index + cols)
             }
-            if (closed) component.forEach { inside[it] = true }
+            val isCutBubble = pageEdges.countOneBits() <= MAX_PAGE_EDGES &&
+                component.size * cell * cell <= width * height * MAX_CUT_BUBBLE_AREA
+            if (!closed || (pageEdges != 0 && !isCutBubble)) continue
+            // Only a toned bubble's own tone: gaps between speed lines that the box reaches past it are tone too
+            if (!isToned) {
+                component.forEach { inside[it] = true }
+            } else if (component.size > largestTone.size) {
+                largestTone = component.toList()
+            }
         }
     }
+    largestTone.forEach { inside[it] = true }
+
+    if (isToned && !inside.surrounds(cols, boxLeft, boxTop, boxRight, boxBottom)) return null
 
     // Marks enclosed by the bubble's light space, like letters OCR missed, belong to the bubble too. So do the
     // block's own letters where they touch the outline, which would otherwise join the outside and be left unpainted
@@ -110,6 +201,9 @@ private fun TranslationBlock.inBubble(
         val row = index / cols
         return !lightCells[index] && col in boxLeft..boxRight && row in boxTop..boxBottom
     }
+
+    // A toned bubble's letters are enclosed by its tone, while the box of tilted text reaches past its outline
+    fun isKept(index: Int) = inside[index] || (!isToned && isOwnLetter(index))
     val outside = BooleanArray(cols * rows)
     for (col in 0..<cols) {
         queue.add(col)
@@ -121,7 +215,7 @@ private fun TranslationBlock.inBubble(
     }
     while (queue.isNotEmpty()) {
         val index = queue.removeFirst()
-        if (outside[index] || inside[index] || isOwnLetter(index)) continue
+        if (outside[index] || isKept(index)) continue
         outside[index] = true
         val col = index % cols
         val row = index / cols
@@ -132,6 +226,9 @@ private fun TranslationBlock.inBubble(
     }
     val bubble = BooleanArray(cols * rows) { !outside[it] }
     keepArt(bubble, inside, cols, left, top, cell, lineHeight * ART_MIN_LINES, others + this)
+    if (!needsTextRoom) {
+        return if (inside.any { it }) copy(bubble = bubbleAreas(bubble, cols, rows, left, top, cell)) else null
+    }
 
     // Bubbles that touch share their light space, so each block only lays its text out on the cells nearer to it
     val neighbours = others.filter { it !== this && it.overlaps(left, top, right, bottom) }
@@ -161,7 +258,9 @@ private fun TranslationBlock.inBubble(
 
 /**
  * Joins blocks whose boxes overlap once placed, as a note beside a bubble's text that OCR read a line across, so their
- * translations aren't drawn over each other. The larger box holds the joined text, in the order of the blocks.
+ * translations aren't drawn over each other. The joined text, in the order of the blocks, is written in the larger box,
+ * or across both when neither is in a bubble. The letters of a block outside a bubble joined to one in a bubble are
+ * painted over with the bubble, as they would otherwise stay in English beside the translation.
  */
 fun List<TranslationBlock>.withOverlapsJoined(): MutableList<TranslationBlock> {
     val joined = mutableListOf<TranslationBlock>()
@@ -172,14 +271,31 @@ fun List<TranslationBlock>.withOverlapsJoined(): MutableList<TranslationBlock> {
             return@forEach
         }
         val earlier = joined[i]
-        val larger = if (earlier.width * earlier.height >= block.width * block.height) earlier else block
-        joined[i] = larger.copy(
-            text = earlier.text + "\n" + block.text,
-            bubble = (earlier.bubble + block.bubble).distinct(),
-        )
+        val text = earlier.text + "\n" + block.text
+        joined[i] = if (earlier.bubble.isEmpty() && block.bubble.isEmpty()) {
+            val left = min(earlier.x, block.x)
+            val top = min(earlier.y, block.y)
+            earlier.copy(
+                text = text,
+                x = left,
+                y = top,
+                width = max(earlier.x + earlier.width, block.x + block.width) - left,
+                height = max(earlier.y + earlier.height, block.y + block.height) - top,
+                symHeight = max(earlier.symHeight, block.symHeight),
+                symWidth = max(earlier.symWidth, block.symWidth),
+            )
+        } else {
+            val larger = if (earlier.width * earlier.height >= block.width * block.height) earlier else block
+            larger.copy(
+                text = text,
+                bubble = (earlier.bubbleOrBox() + block.bubbleOrBox()).distinct(),
+            )
+        }
     }
     return joined
 }
+
+private fun TranslationBlock.bubbleOrBox(): List<Area> = bubble.ifEmpty { listOf(Area(x, y, width, height)) }
 
 /**
  * Returns these blocks in reading order: in rows from the top, each read [rightToLeft] or left to right. Translators
@@ -204,6 +320,28 @@ fun List<TranslationBlock>.inReadingOrder(rightToLeft: Boolean): List<Translatio
     return rows.flatMap { row ->
         if (rightToLeft) row.sortedByDescending { it.x + it.width } else row.sortedBy { it.x }
     }
+}
+
+/** Whether these cells reach past each side of the box from [left], [top] to [right], [bottom], as a bubble does. */
+private fun BooleanArray.surrounds(cols: Int, left: Int, top: Int, right: Int, bottom: Int): Boolean {
+    var above = false
+    var below = false
+    var before = false
+    var after = false
+    forEachIndexed { index, isSet ->
+        if (!isSet) return@forEachIndexed
+        val col = index % cols
+        val row = index / cols
+        if (col in left..right) {
+            above = above || row < top
+            below = below || row > bottom
+        }
+        if (row in top..bottom) {
+            before = before || col < left
+            after = after || col > right
+        }
+    }
+    return above && below && before && after
 }
 
 private fun TranslationBlock.overlapsMostOf(other: TranslationBlock): Boolean {
@@ -350,6 +488,17 @@ private fun TranslationBlock.distanceSquaredTo(px: Float, py: Float): Float {
 private const val MAX_ANGLE = 10f
 private const val MIN_JOINED_OVERLAP = 0.25f
 private const val CELLS_PER_LINE = 8f
+
+// Averaged over 7 by 7 pixels, the dots of screentone vary less than this, its outline and white letters much more
+private const val TONE_RADIUS = 3
+private const val TONE_TOLERANCE = 30
+private const val MAX_TONE_CELL = 4
+private const val LEFT_EDGE = 1
+private const val TOP_EDGE = 2
+private const val RIGHT_EDGE = 4
+private const val BOTTOM_EDGE = 8
+private const val MAX_PAGE_EDGES = 1
+private const val MAX_CUT_BUBBLE_AREA = 8
 private val REACH_LINES = listOf(6f, 12f, 24f)
 private const val TEXT_MARGIN_LINES = 0.25f
 

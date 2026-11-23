@@ -20,11 +20,14 @@ import eu.kanade.translation.model.PageTranslation
 import eu.kanade.translation.model.TranslationBlock
 import eu.kanade.translation.model.isInCapitals
 import eu.kanade.translation.model.joinLines
+import eu.kanade.translation.model.untilted
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.ceil
+import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.sin
 
 /**
  * Draws the translation of a page over its image: each speech bubble painted white, or a white box over blocks found
@@ -164,21 +167,41 @@ class TranslationRenderer(
         val sharedWidth = sharedRoom?.let { it.endInclusive - it.start }
         // Rotating a fitted line can move it across the boundary with a neighboring block.
         val angle = if (sharers.isEmpty()) block.angle else 0f
+        val tilted = if (!isSideways && !isUpright) block.untilted() else null
         val width = when {
             sharedWidth != null -> min(roomInBubble(block, blocks), sharedWidth)
             isSideways -> block.height
             isUpright -> roomInBubble(block, blocks)
-            else -> block.width
+            else -> tilted!!.width
         }
-        val height = if (isSideways) block.width else block.height
-        val symWidth = if (isSideways) block.symHeight else block.symWidth
-        val symHeight = if (isSideways) block.symWidth else block.symHeight
+        val height = if (isSideways) block.width else tilted?.height ?: block.height
+        val symWidth = if (isSideways) block.symHeight else tilted?.letterHeight ?: block.symWidth
+        val symHeight = if (isSideways) block.symWidth else tilted?.letterHeight ?: block.symHeight
 
         // Text wider than its box ran into the art and the next speech bubble. A box found in a bubble is already
-        // clear of its outline
-        val padding = if (block.bubble.isEmpty()) 1f else 0f
-        val boxWidth = width + padding * symWidth / 2
-        val boxHeight = height + padding * symHeight / 2
+        // clear of its outline. OCR boxes of tilted shouts, outlined thickly, missed a letter's edge at either end, and
+        // a box laid along the tilt never covers the bubble's room
+        val padding = when {
+            tilted != null && block.bubble.isEmpty() -> 2f
+            tilted != null || block.bubble.isEmpty() -> 1f
+            else -> 0f
+        }
+        // Tilted text in a bubble is set in the middle of it, as small as it takes for its tilted box to stay inside
+        val tiltedIn = if (tilted != null) block.bubbleBounds() else null
+        val tiltedFit = tiltedIn?.let { bounds ->
+            val radians = Math.toRadians(block.angle.toDouble())
+            val cos = abs(cos(radians)).toFloat()
+            val sin = abs(sin(radians)).toFloat()
+            val w = width + padding * symWidth / 2
+            val h = height + padding * symHeight / 2
+            minOf(
+                1f,
+                bounds.width() * TILTED_BUBBLE_SHARE / (w * cos + h * sin),
+                bounds.height() * TILTED_BUBBLE_SHARE / (w * sin + h * cos),
+            )
+        } ?: 1f
+        val boxWidth = (width + padding * symWidth / 2) * tiltedFit
+        val boxHeight = (height + padding * symHeight / 2) * tiltedFit
         // A word too long for the box may take some of the bubble's width beside it, but never the art's
         val bubbleWidth = bubble.maxOfOrNull { it.right }?.minus(bubble.minOf { it.left })
         // Upright text is widened only as far as its bubble reaches at its height, as two bubbles joined into one
@@ -198,8 +221,9 @@ class TranslationRenderer(
             null
         }
         val text = stacked ?: lines
-        val centerX = sharedRoom?.let { (it.start + it.endInclusive) / 2 } ?: (block.x + block.width / 2)
-        val centerY = block.y + block.height / 2
+        val centerX = tiltedIn?.centerX() ?: sharedRoom?.let { (it.start + it.endInclusive) / 2 }
+            ?: (block.x + block.width / 2)
+        val centerY = tiltedIn?.centerY() ?: (block.y + block.height / 2)
         // Lines as wide as the bubble is at their height, as lettering follows a round bubble's shape, where that
         // allows larger text than its largest rectangle
         if (isUpright && stacked == null && bubble.isNotEmpty()) {
@@ -217,7 +241,7 @@ class TranslationRenderer(
                         },
                         bubble = bubble,
                         cornerRadius = symHeight / 4,
-                        background = null,
+                        background = block.background,
                         translation = translation,
                         text = shaped.text,
                     )
@@ -233,7 +257,7 @@ class TranslationRenderer(
             box = box.apply { offset(-centerX(), -centerY()) },
             bubble = bubble,
             cornerRadius = symHeight / 4,
-            background = block.background.takeIf { bubble.isEmpty() },
+            background = block.background,
             translation = translation,
             text = text,
         )
@@ -532,7 +556,10 @@ class TranslationRenderer(
         val box: RectF,
         val bubble: List<RectF>,
         val cornerRadius: Float,
-        /** The art's color under text outside a bubble, whose translation is then outlined to stand out from it. */
+        /**
+         * The art's color under text outside a white bubble, or of the toned bubble around it, painted under its
+         * translation, which is then outlined to stand out from it.
+         */
         val background: Int?,
         val translation: String,
         val text: StaticLayout,
@@ -547,6 +574,7 @@ class TranslationRenderer(
         fun bubbleContains(x: Float, y: Float): Boolean = bubble.any { it.contains(x, y) }
 
         fun drawBackground(canvas: Canvas) = canvas.withSave {
+            bubblePaint.color = background ?: Color.WHITE
             drawPath(bubbleShape, bubblePaint)
             if (bubble.isEmpty()) {
                 translate(centerX, centerY)
@@ -566,17 +594,23 @@ class TranslationRenderer(
             translate(centerX, centerY)
             rotate(angle)
             translate(-text.width / 2f, -text.height / 2f)
-            if (background != null) {
-                val paint = text.paint
-                paint.style = Paint.Style.STROKE
-                paint.strokeJoin = Paint.Join.ROUND
-                paint.strokeWidth = paint.textSize * OUTLINE_WIDTH
-                paint.color = Color.WHITE
+            if (background == null) {
                 text.draw(this)
-                paint.style = Paint.Style.FILL
-                paint.color = Color.BLACK
+                return@withSave
             }
+            // In a toned bubble, white letters outlined in black, as such bubbles are lettered: a white outline
+            // around black letters read as a box on the grey
+            val isToned = bubble.isNotEmpty()
+            val paint = text.paint
+            paint.style = Paint.Style.STROKE
+            paint.strokeJoin = Paint.Join.ROUND
+            paint.strokeWidth = paint.textSize * OUTLINE_WIDTH
+            paint.color = if (isToned) Color.BLACK else Color.WHITE
             text.draw(this)
+            paint.style = Paint.Style.FILL
+            paint.color = if (isToned) Color.WHITE else Color.BLACK
+            text.draw(this)
+            paint.color = Color.BLACK
         }
     }
 
@@ -615,6 +649,9 @@ class TranslationRenderer(
 
         /** Tilt in degrees up to which a block is taken as upright, for widening it in its bubble. */
         const val MAX_UPRIGHT_ANGLE = 10f
+
+        /** Share of a bubble's width and height that tilted text's box may span, as its corners near a round outline. */
+        const val TILTED_BUBBLE_SHARE = 0.85f
         const val MAX_MARGIN_SHARE = 0.1f
 
         /** Height to width ratio from which a box holding a single word may be lettered a letter per line. */

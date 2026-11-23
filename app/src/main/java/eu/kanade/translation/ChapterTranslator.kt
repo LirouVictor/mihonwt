@@ -67,6 +67,7 @@ import eu.kanade.translation.recognizer.stackedLetters
 import eu.kanade.translation.recognizer.stackedWordBreakBefore
 import eu.kanade.translation.recognizer.withBackground
 import eu.kanade.translation.recognizer.withOverlapsJoined
+import eu.kanade.translation.recognizer.withToneBubble
 import eu.kanade.translation.recognizer.withoutStrayMarks
 import eu.kanade.translation.recognizer.wordOf
 import eu.kanade.translation.translator.GeminiTranslator
@@ -631,7 +632,9 @@ class ChapterTranslator(
                             .also { rereadMs = rereadStart.elapsedNow().inWholeMilliseconds }
                     }
                     .mapTo(mutableListOf()) { block ->
-                        block.withBackground(bitmap).let { it.copy(text = fixText(it.text)) }
+                        block.withBackground(bitmap)
+                            .withToneBubble(bitmap, found)
+                            .let { it.copy(text = fixText(it.text)) }
                     }
                 // Baberu's rereading counts as OCR rather than finding bubbles
                 times.ocr.addAndGet(rereadMs)
@@ -839,7 +842,7 @@ class ChapterTranslator(
             blocks = found
                 .map { it.inBubble(bitmap.width, bitmap.height, found, pixels) ?: it.grownIntoBubble(bitmap) }
                 .withOverlapsJoined()
-                .mapTo(mutableListOf()) { it.withBackground(bitmap) }
+                .mapTo(mutableListOf()) { it.withBackground(bitmap).withToneBubble(bitmap, found) }
         } finally {
             bitmap.recycle()
         }

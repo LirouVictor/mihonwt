@@ -29,7 +29,7 @@ class StartingGlossaryTest {
     }
 
     @Test
-    fun `AniList characters are read with their other names`() {
+    fun `AniList characters are read by their full names`() {
         val reply = Json.parseToJsonElement(
             """
             {"data":{"Media":{"characters":{"nodes":[
@@ -41,7 +41,7 @@ class StartingGlossaryTest {
         ) as JsonObject
 
         assertEquals(
-            listOf("Zoro Roronoa", "Zolo", "Nami", "Ken Takakura", "Okarun"),
+            listOf("Zoro Roronoa", "Nami", "Ken Takakura"),
             CharacterLookup.characterNamesOf(reply),
         )
         assertEquals(

@@ -6,6 +6,10 @@ package eu.kanade.translation.model
 import eu.kanade.translation.recognizer.Word
 import kotlinx.serialization.Serializable
 import java.util.Locale
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.min
+import kotlin.math.sin
 
 /** Text blocks found on one page, in the coordinates of the image they were recognized on. */
 @Serializable
@@ -87,3 +91,32 @@ fun Map<String, PageTranslation>.forPage(name: String): PageTranslation? {
     val stem = name.substringBeforeLast('.')
     return entries.firstOrNull { it.key.substringBeforeLast('.') == stem }?.value
 }
+
+/** The size of a block's text along its own tilt, and of its letters. */
+data class UntiltedSize(val width: Float, val height: Float, val letterHeight: Float)
+
+/**
+ * Returns the size of this block's text along its tilt. OCR gives upright boxes, so text tilted 20°, as a shout
+ * lettered aslant, has a box and letters much taller and wider than they are, and its translation drawn at that size
+ * and tilt covered far more than the original. Text upright or set sideways, and tilts too close to 45° to tell width
+ * from height, keep their box.
+ */
+fun TranslationBlock.untilted(): UntiltedSize {
+    val unchanged = UntiltedSize(width, height, symHeight)
+    val tilt = Math.toRadians(abs(angle % 180).let { min(it, 180 - it) }.toDouble())
+    if (tilt < Math.toRadians(MIN_TILT) || tilt >= Math.PI / 4) return unchanged
+    val cos = cos(tilt).toFloat()
+    val sin = sin(tilt).toFloat()
+    // Box width = w·cos + h·sin and height = w·sin + h·cos, solved for w and h
+    val determinant = cos * cos - sin * sin
+    if (determinant < MIN_DETERMINANT) return unchanged
+    val untiltedWidth = (width * cos - height * sin) / determinant
+    val untiltedHeight = (height * cos - width * sin) / determinant
+    if (untiltedWidth <= 0f || untiltedHeight <= 0f) return unchanged
+    // A letter about as wide as it is tall
+    return UntiltedSize(untiltedWidth, untiltedHeight, symHeight / (cos + sin))
+}
+
+// As the renderer takes blocks up to 10° as upright
+private const val MIN_TILT = 10.0
+private const val MIN_DETERMINANT = 0.3f

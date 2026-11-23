@@ -3,9 +3,12 @@ package eu.kanade.translation.recognizer
 import android.graphics.Bitmap
 import android.graphics.Color
 import eu.kanade.translation.model.TranslationBlock
+import eu.kanade.translation.model.untilted
 import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.sin
 
 /**
  * Returns this block grown over the light space around its text on [bitmap], so the translation can use the whole
@@ -97,27 +100,81 @@ private fun Bitmap.rowStrip(y: Int, left: Int, right: Int) = BooleanArray(right 
 
 /**
  * Returns this block with the color of the art just around it on [bitmap] as its background, when it isn't in a speech
- * bubble: the median of each channel over a ring half a letter out, so stray lines and letters don't tint it.
+ * bubble: the median of each channel over a ring half a letter out, along the text's tilt, so stray lines and letters
+ * don't tint it. Each point of the ring is the average of the pixels around it, as screentone is dots on white whose
+ * median is white, while the eye sees grey.
  */
 fun TranslationBlock.withBackground(bitmap: Bitmap): TranslationBlock {
     if (bubble.isNotEmpty()) return this
-    val margin = symHeight / 2
-    val left = (x - margin).toInt().coerceIn(0, bitmap.width - 1)
-    val top = (y - margin).toInt().coerceIn(0, bitmap.height - 1)
-    val right = (x + width + margin).toInt().coerceIn(left, bitmap.width - 1)
-    val bottom = (y + height + margin).toInt().coerceIn(top, bitmap.height - 1)
+    val size = untilted()
+    val margin = size.letterHeight / 2
+    val halfWidth = size.width / 2 + margin
+    val halfHeight = size.height / 2 + margin
+    val centerX = x + width / 2
+    val centerY = y + height / 2
+    val radians = Math.toRadians(angle.toDouble())
+    val cos = cos(radians).toFloat()
+    val sin = sin(radians).toFloat()
+    fun sample(u: Float, v: Float): Int {
+        val px = (centerX + u * cos - v * sin).toInt().coerceIn(0, bitmap.width - 1)
+        val py = (centerY + u * sin + v * cos).toInt().coerceIn(0, bitmap.height - 1)
+        return bitmap.averageAround(px, py)
+    }
     val ring = buildList {
-        for (px in left..right step RING_STEP) {
-            add(bitmap.getPixel(px, top))
-            add(bitmap.getPixel(px, bottom))
+        var u = -halfWidth
+        while (u <= halfWidth) {
+            add(sample(u, -halfHeight))
+            add(sample(u, halfHeight))
+            u += RING_STEP
         }
-        for (py in top..bottom step RING_STEP) {
-            add(bitmap.getPixel(left, py))
-            add(bitmap.getPixel(right, py))
+        var v = -halfHeight
+        while (v <= halfHeight) {
+            add(sample(-halfWidth, v))
+            add(sample(halfWidth, v))
+            v += RING_STEP
         }
     }
     fun median(channel: (Int) -> Int) = ring.map(channel).sorted()[ring.size / 2]
     return copy(background = Color.rgb(median(Color::red), median(Color::green), median(Color::blue)))
+}
+
+private fun Bitmap.averageAround(x: Int, y: Int): Int {
+    var red = 0
+    var green = 0
+    var blue = 0
+    var count = 0
+    for (py in max(0, y - RING_BLUR)..min(height - 1, y + RING_BLUR)) {
+        for (px in max(0, x - RING_BLUR)..min(width - 1, x + RING_BLUR)) {
+            val color = getPixel(px, py)
+            red += Color.red(color)
+            green += Color.green(color)
+            blue += Color.blue(color)
+            count++
+        }
+    }
+    return Color.rgb(red / count, green / count, blue / count)
+}
+
+/**
+ * Returns this block placed in the bubble around it on [bitmap] when it has none yet, from the color of the art around
+ * it, its [TranslationBlock.background], so the whole bubble is painted rather than a box around the text: a bubble of
+ * screentone or flat tone, painted in that tone, or a white one the first search missed, as for text tilted in it,
+ * painted white. [others] are the page's blocks.
+ */
+fun TranslationBlock.withToneBubble(bitmap: Bitmap, others: List<TranslationBlock>): TranslationBlock {
+    val color = background ?: return this
+    // Dark art around text is rarely a bubble, as the gate's bars beside a white bubble the fill can't find
+    if (bubble.isNotEmpty() || luminance(color) < MIN_TONE_LUMINANCE) return this
+    if (isLight(color)) {
+        return inToneBubble(bitmap.width, bitmap.height, others, bitmap.lightPixels())?.copy(background = null) ?: this
+    }
+    val pixels = tonePixels(bitmap.width, bitmap.height, luminance(color).toInt()) { left, top, right, bottom ->
+        val width = right - left
+        val colors = IntArray(width * (bottom - top))
+        bitmap.getPixels(colors, 0, width, left, top, width, bottom - top)
+        IntArray(colors.size) { luminance(colors[it]).toInt() }
+    }
+    return inToneBubble(bitmap.width, bitmap.height, others, pixels) ?: this
 }
 
 /** Reads [LightPixels] off this bitmap. */
@@ -128,13 +185,17 @@ fun Bitmap.lightPixels() = LightPixels { left, top, right, bottom ->
     BooleanArray(colors.size) { isLight(colors[it]) }
 }
 
-private fun isLight(color: Int): Boolean =
-    Color.red(color) * 0.299f + Color.green(color) * 0.587f + Color.blue(color) * 0.114f >= LIGHT_LUMINANCE
+private fun isLight(color: Int): Boolean = luminance(color) >= LIGHT_LUMINANCE
+
+private fun luminance(color: Int): Float =
+    Color.red(color) * 0.299f + Color.green(color) * 0.587f + Color.blue(color) * 0.114f
 
 private const val MAX_ANGLE = 10f
 private const val RING_STEP = 2
+private const val RING_BLUR = 3
 private const val MAX_GROWTH_LINES = 4
 private const val LIGHT_LUMINANCE = 200f
+private const val MIN_TONE_LUMINANCE = 80f
 
 private const val MAX_JUMP_LINES = 1.5f
 

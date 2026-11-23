@@ -26,7 +26,11 @@ import java.io.IOException
  */
 class CharacterLookup(private val client: OkHttpClient) {
 
-    /** Returns the names of the main characters of the comic titled [title], with the names they also go by. */
+    /**
+     * Returns the full names of the main characters of the comic titled [title]. The other names AniList lists are
+     * left out: mostly nicknames and spellings from other translations, as "Cyborg" or "Ruffy", which a glossary would
+     * then keep untranslated.
+     */
     suspend fun characterNames(title: String): List<String> = aniList(title).ifEmpty { jikan(title) }
 
     private suspend fun aniList(title: String): List<String> = withContext(Dispatchers.IO) {
@@ -67,7 +71,7 @@ class CharacterLookup(private val client: OkHttpClient) {
             query (${'$'}search: String) {
               Media(search: ${'$'}search, type: MANGA) {
                 characters(sort: [ROLE, RELEVANCE, ID], perPage: $MAX_CHARACTERS) {
-                  nodes { name { full alternative } }
+                  nodes { name { full } }
                 }
               }
             }
@@ -77,15 +81,9 @@ class CharacterLookup(private val client: OkHttpClient) {
         internal fun characterNamesOf(reply: JsonObject): List<String> {
             val media = (reply["data"] as? JsonObject)?.get("Media") as? JsonObject ?: return emptyList()
             val nodes = ((media["characters"] as? JsonObject)?.get("nodes") as? JsonArray).orEmpty()
-            return nodes.flatMap { node ->
-                val name = (node as? JsonObject)?.get("name") as? JsonObject ?: return@flatMap emptyList()
-                val full = (name["full"] as? JsonPrimitive)?.contentOrNull
-                // Other names are often nicknames in English, as "Straw Hat", or in other languages, as "Shanks den
-                // røde", which a translation shouldn't keep, so only one-word names like "Okarun" are taken
-                val alternative = (name["alternative"] as? JsonArray).orEmpty()
-                    .mapNotNull { (it as? JsonPrimitive)?.contentOrNull?.replace(IN_BRACKETS, "")?.trim() }
-                    .filter { ONE_WORD.matches(it) }
-                listOfNotNull(full) + alternative
+            return nodes.mapNotNull { node ->
+                val name = (node as? JsonObject)?.get("name") as? JsonObject
+                (name?.get("full") as? JsonPrimitive)?.contentOrNull
             }.cleaned()
         }
 
@@ -111,6 +109,5 @@ class CharacterLookup(private val client: OkHttpClient) {
 
         private val IN_BRACKETS = Regex("""\s*[(（][^)）]*[)）]""")
         private val LATIN = Character.UnicodeScript.LATIN
-        private val ONE_WORD = Regex("""[A-Za-z]+""")
     }
 }
