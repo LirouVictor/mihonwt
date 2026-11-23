@@ -21,18 +21,34 @@ fun interface LightPixels {
  * page's edge closes a bubble it cuts.
  *
  * The page is read in square cells about an eighth of a letter high, a cell being light only if all its pixels are, so
- * a thin outline still closes the bubble.
+ * a thin outline still closes the bubble. [words] are those OCR read on the page, whose lines tell this block's letters
+ * from art its box overlaps.
  */
 fun TranslationBlock.inBubble(
     imageWidth: Int,
     imageHeight: Int,
     others: List<TranslationBlock>,
     pixels: LightPixels,
+    words: List<Word> = emptyList(),
 ): TranslationBlock? {
     if (abs(angle) > MAX_ANGLE) return null
+    val letters = ownLines(words)
     // Most bubbles are found in a small search, and a short text in a big bubble in a larger one
-    return REACH_LINES.firstNotNullOfOrNull { inBubble(imageWidth, imageHeight, others, pixels, it) }
+    return REACH_LINES.firstNotNullOfOrNull { inBubble(imageWidth, imageHeight, others, pixels, it, letters = letters) }
 }
+
+/** The box of each line of the [words] whose middle is in this block's box, gaps between its words included. */
+private fun TranslationBlock.ownLines(words: List<Word>): List<Area> = words
+    .filter { it.x + it.width / 2 in x..x + width && it.y + it.height / 2 in y..y + height }
+    .groupBy { it.line }
+    .values
+    .map { line ->
+        // OCR's boxes can cut off a letter's edge, as of a large serif "B"
+        val margin = line.maxOf { it.letterHeight } * LINE_MARGIN_LETTERS
+        val left = line.minOf { it.x } - margin
+        val top = line.minOf { it.y } - margin
+        Area(left, top, line.maxOf { it.x + it.width } + margin - left, line.maxOf { it.y + it.height } + margin - top)
+    }
 
 /**
  * Returns this block placed in a bubble of screentone or flat tone around it, as [inBubble] places one in a white
@@ -102,6 +118,7 @@ private fun TranslationBlock.inBubble(
     maxCell: Int = Int.MAX_VALUE,
     needsTextRoom: Boolean = true,
     isToned: Boolean = false,
+    letters: List<Area> = emptyList(),
 ): TranslationBlock? {
     val lineHeight = max(symHeight, 1f)
     val cell = (lineHeight / CELLS_PER_LINE).roundToInt().coerceIn(1, maxCell)
@@ -198,10 +215,22 @@ private fun TranslationBlock.inBubble(
 
     // Marks enclosed by the bubble's light space, like letters OCR missed, belong to the bubble too. So do the
     // block's own letters where they touch the outline, which would otherwise join the outside and be left unpainted
+    // Only along its lines when known, as art the box overlaps, like a fist over a jagged bubble's edge,
+    // would be painted as a rectangle too
+    val letterCells = BooleanArray(cols * rows) { letters.isEmpty() }
+    letters.forEach { word ->
+        val fromCol = ((word.x - left) / cell).toInt().coerceIn(0, cols - 1)
+        val toCol = ((word.x + word.width - left) / cell).toInt().coerceIn(0, cols - 1)
+        val fromRow = ((word.y - top) / cell).toInt().coerceIn(0, rows - 1)
+        val toRow = ((word.y + word.height - top) / cell).toInt().coerceIn(0, rows - 1)
+        for (row in fromRow..toRow) {
+            for (col in fromCol..toCol) letterCells[row * cols + col] = true
+        }
+    }
     fun isOwnLetter(index: Int): Boolean {
         val col = index % cols
         val row = index / cols
-        return !lightCells[index] && col in boxLeft..boxRight && row in boxTop..boxBottom
+        return !lightCells[index] && letterCells[index] && col in boxLeft..boxRight && row in boxTop..boxBottom
     }
 
     // A toned bubble's letters are enclosed by its tone, while the box of tilted text reaches past its outline
@@ -228,14 +257,16 @@ private fun TranslationBlock.inBubble(
     }
     val bubble = BooleanArray(cols * rows) { !outside[it] }
     keepArt(bubble, inside, cols, left, top, cell, lineHeight * ART_MIN_LINES, others + this)
-    if (!needsTextRoom) {
-        return if (inside.any { it }) copy(bubble = bubbleAreas(bubble, cols, rows, left, top, cell)) else null
-    }
+    // Without closed light space around the text there is no bubble, only its letters
+    if (inside.none { it }) return null
+    if (!needsTextRoom) return copy(bubble = bubbleAreas(bubble, cols, rows, left, top, cell))
 
     // Bubbles that touch share their light space, so each block only lays its text out on the cells nearer to it
     val neighbours = others.filter { it !== this && it.overlaps(left, top, right, bottom) }
+    // The text had room where it was lettered, also over art left unpainted
     val ownCells = BooleanArray(cols * rows) { index ->
-        if (!bubble[index]) return@BooleanArray false
+        val isInBox = index % cols in boxLeft..boxRight && index / cols in boxTop..boxBottom
+        if (!bubble[index] && !isInBox) return@BooleanArray false
         val cx = left + (index % cols + 0.5f) * cell
         val cy = top + (index / cols + 0.5f) * cell
         val own = distanceSquaredTo(cx, cy)
@@ -503,6 +534,7 @@ private const val MAX_PAGE_EDGES = 1
 private const val MAX_CUT_BUBBLE_AREA = 8
 private const val MIN_CUT_BUBBLE_FILL = 0.5
 private val REACH_LINES = listOf(6f, 12f, 24f)
+private const val LINE_MARGIN_LETTERS = 0.25f
 private const val TEXT_MARGIN_LINES = 0.25f
 
 // Letters are about a line high and specks smaller, while a face drawn in a bubble spans a few lines

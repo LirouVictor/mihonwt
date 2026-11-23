@@ -706,7 +706,9 @@ class ChapterTranslator(
                 val page = toPageTranslation(words, bitmap.width, bitmap.height, pixels, textBoxes)
                 val found = page.blocks
                 page.blocks = found
-                    .map { it.inBubble(bitmap.width, bitmap.height, found, pixels) ?: it.grownIntoBubble(bitmap) }
+                    .map {
+                        it.inBubble(bitmap.width, bitmap.height, found, pixels, words) ?: it.grownIntoBubble(bitmap)
+                    }
                     .inReadingOrder(translation.isRightToLeft())
                     .withOverlapsJoined()
                     .let { blocks ->
@@ -1093,7 +1095,7 @@ class ChapterTranslator(
             val pixels = bitmap.lightPixels()
             val found = blocksOfFoundText(texts, words)
             blocks = found
-                .map { it.inBubble(bitmap.width, bitmap.height, found, pixels) ?: it.grownIntoBubble(bitmap) }
+                .map { it.inBubble(bitmap.width, bitmap.height, found, pixels, words) ?: it.grownIntoBubble(bitmap) }
                 .withOverlapsJoined()
                 .mapTo(mutableListOf()) { it.withBackground(bitmap).withToneBubble(bitmap, found) }
         } finally {
