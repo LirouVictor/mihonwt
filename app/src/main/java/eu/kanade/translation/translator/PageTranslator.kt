@@ -8,6 +8,7 @@ import eu.kanade.translation.model.PageTranslation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -18,6 +19,7 @@ import okhttp3.Request
 import tachiyomi.domain.translation.TargetLanguage
 import tachiyomi.domain.translation.TranslationService
 import java.io.IOException
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
@@ -54,37 +56,51 @@ abstract class PageTranslator {
     /**
      * Sends [request], retrying rate limits and overloads, and returns the response's JSON body. Throws
      * [QuotaExceededException] when the service's daily or monthly quota is used up, or its rate limit outlasts the
-     * retries.
+     * retries. A request still unanswered after [stalledAfter] is sent again once.
      */
     protected suspend fun send(
         request: Request,
         onRetry: (attempt: Int) -> Unit,
+        stalledAfter: Duration? = null,
     ): JsonObject = withContext(Dispatchers.IO) {
         var attempt = 0
-        var response = client.newCall(request).await()
-        var body = response.use { it.body.string() }
+        var reply = call(request, stalledAfter)
         // Rate limits and "model overloaded" errors usually clear within seconds, a used up daily quota doesn't
-        while (response.code in RETRY_CODES && attempt < RETRY_DELAYS.size) {
-            if (response.code == 429 && DAILY_LIMIT.containsMatchIn(body)) throw QuotaExceededException(name)
+        while (reply.code in RETRY_CODES && attempt < RETRY_DELAYS.size) {
+            if (reply.code == 429 && DAILY_LIMIT.containsMatchIn(reply.body)) throw QuotaExceededException(name)
             onRetry(attempt + 1)
-            delay(RETRY_DELAYS[attempt++])
-            response = client.newCall(request).await()
-            body = response.use { it.body.string() }
+            // Retrying before the time the service asks for only fails again
+            delay(reply.retryAfter?.coerceAtMost(MAX_ASKED_DELAY) ?: RETRY_DELAYS[attempt])
+            attempt++
+            reply = call(request, stalledAfter)
         }
-        if (response.code == 429 || response.code == DEEPL_QUOTA_EXCEEDED) throw QuotaExceededException(name)
-        val json = runCatching { Json.parseToJsonElement(body).jsonObject }.getOrNull()
-        if (!response.isSuccessful || json == null) {
+        if (reply.code == 429 || reply.code == DEEPL_QUOTA_EXCEEDED) throw QuotaExceededException(name)
+        val json = runCatching { Json.parseToJsonElement(reply.body).jsonObject }.getOrNull()
+        if (reply.code !in 200..299 || json == null) {
             // DeepL puts the message at the top level rather than in an error object
             val error = json?.get("error") as? JsonObject ?: json
             throw ApiException(
-                message = "$name HTTP ${response.code}: " +
-                    ((error?.get("message") as? JsonPrimitive)?.contentOrNull ?: body.take(200)),
+                message = "$name HTTP ${reply.code}: " +
+                    ((error?.get("message") as? JsonPrimitive)?.contentOrNull ?: reply.body.take(200)),
                 code = (error?.get("code") as? JsonPrimitive)?.contentOrNull,
-                status = response.code,
+                status = reply.code,
             )
         }
         json
     }
+
+    // Only the request is timed, not the waits between retries, which would otherwise be cut short and start over
+    private suspend fun call(request: Request, stalledAfter: Duration?): Reply =
+        stalledAfter?.let { withTimeoutOrNull(it) { execute(request) } } ?: execute(request)
+
+    private suspend fun execute(request: Request): Reply = client.newCall(request).await().use { response ->
+        val body = response.body.string()
+        val asked = response.header("Retry-After")?.toDoubleOrNull()
+            ?: RETRY_DELAY_IN_BODY.find(body)?.groupValues?.get(1)?.toDoubleOrNull()
+        Reply(response.code, body, asked?.seconds)
+    }
+
+    private class Reply(val code: Int, val body: String, val retryAfter: Duration?)
 
     /** An error response with HTTP [status], and the API's own error [code] when it gives one. */
     class ApiException(message: String, val code: String?, val status: Int) : IOException(message)
@@ -113,6 +129,10 @@ abstract class PageTranslator {
 
         private val RETRY_CODES = setOf(429, 500, 502, 503)
         private val RETRY_DELAYS = listOf(15.seconds, 30.seconds, 60.seconds)
+        private val MAX_ASKED_DELAY = 60.seconds
+
+        // Gemini says when to retry in its error details, as "retryDelay": "37s"
+        private val RETRY_DELAY_IN_BODY = Regex("\"retryDelay\"\\s*:\\s*\"(\\d+(?:\\.\\d+)?)s\"")
 
         // Gemini names the quota, as in "GenerateRequestsPerDayPerProjectPerModel-FreeTier", and OpenAI-compatible
         // APIs like Groq say "tokens per day" in the message

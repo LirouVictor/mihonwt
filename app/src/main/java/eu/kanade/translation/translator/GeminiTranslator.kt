@@ -3,7 +3,6 @@
 
 package eu.kanade.translation.translator
 
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.addJsonObject
@@ -87,7 +86,7 @@ class GeminiTranslator(
             .build()
         // A batch normally answers in 2-3 s, but now and then a request hangs for half a minute or more, holding up the
         // chapter, and asking again is quicker
-        val json = withTimeoutOrNull(STALLED_AFTER) { send(request, onRetry) } ?: send(request, onRetry)
+        val json = send(request, onRetry, STALLED_AFTER)
 
         val candidate = (json["candidates"] as? JsonArray)?.firstOrNull()?.jsonObject
             ?: throw IOException("Gemini returned no candidates: ${json["promptFeedback"]}")
@@ -105,7 +104,7 @@ class GeminiTranslator(
             .url("$BASE_URL?pageSize=1000")
             .header("x-goog-api-key", apiKey)
             .build()
-        return (send(request) {}["models"] as? JsonArray).orEmpty()
+        return (send(request, onRetry = {})["models"] as? JsonArray).orEmpty()
             .map { it.jsonObject }
             .filter { model ->
                 (model["supportedGenerationMethods"] as? JsonArray).orEmpty()

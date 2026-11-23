@@ -55,7 +55,7 @@ class OpenAiCompatibleTranslator(
             .url("${baseUrl.trimEnd('/')}/models")
             .header("Authorization", "Bearer $apiKey")
             .build()
-        return (send(request) {}["data"] as? JsonArray).orEmpty()
+        return (send(request, onRetry = {})["data"] as? JsonArray).orEmpty()
             .mapNotNull { it.jsonObject["id"]?.jsonPrimitive?.contentOrNull }
             .sorted()
     }
