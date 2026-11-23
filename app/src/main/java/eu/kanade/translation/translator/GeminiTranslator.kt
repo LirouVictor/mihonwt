@@ -21,6 +21,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import tachiyomi.domain.translation.TargetLanguage
 import java.io.IOException
 import java.util.Base64
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -32,6 +33,7 @@ class GeminiTranslator(
     private val apiKey: String,
     private val model: String,
     language: TargetLanguage,
+    override val retryDelays: List<Duration> = PageTranslator.RETRY_DELAYS,
 ) : LanguageModelTranslator(language) {
 
     override val name = "Gemini"

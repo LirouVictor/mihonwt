@@ -39,6 +39,9 @@ abstract class PageTranslator {
     /** Whether [translate] uses the page images, so they are worth preparing. */
     open val readsImages = false
 
+    /** How long to wait before each retry of a rate limit or overload. */
+    protected open val retryDelays: List<Duration> = RETRY_DELAYS
+
     /**
      * Fills [eu.kanade.translation.model.TranslationBlock.translation] of every block on [pages], keyed by page name,
      * and returns how the names and recurring terms on these pages were translated, when the translator can tell.
@@ -66,11 +69,11 @@ abstract class PageTranslator {
         var attempt = 0
         var reply = call(request, stalledAfter)
         // Rate limits and "model overloaded" errors usually clear within seconds, a used up daily quota doesn't
-        while (reply.code in RETRY_CODES && attempt < RETRY_DELAYS.size) {
+        while (reply.code in RETRY_CODES && attempt < retryDelays.size) {
             if (reply.code == 429 && DAILY_LIMIT.containsMatchIn(reply.body)) throw QuotaExceededException(name)
             onRetry(attempt + 1)
             // Retrying before the time the service asks for only fails again
-            delay(reply.retryAfter?.coerceAtMost(MAX_ASKED_DELAY) ?: RETRY_DELAYS[attempt])
+            delay(reply.retryAfter?.coerceAtMost(MAX_ASKED_DELAY) ?: retryDelays[attempt])
             attempt++
             reply = call(request, stalledAfter)
         }
@@ -128,7 +131,7 @@ abstract class PageTranslator {
         }
 
         private val RETRY_CODES = setOf(429, 500, 502, 503)
-        private val RETRY_DELAYS = listOf(15.seconds, 30.seconds, 60.seconds)
+        val RETRY_DELAYS = listOf(15.seconds, 30.seconds, 60.seconds)
         private val MAX_ASKED_DELAY = 60.seconds
 
         // Gemini says when to retry in its error details, as "retryDelay": "37s"
