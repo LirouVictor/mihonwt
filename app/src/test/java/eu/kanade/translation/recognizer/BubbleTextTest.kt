@@ -128,4 +128,11 @@ class BubbleTextTest {
         val missed = TextBox(200f, 0f, 240f, 100f)
         assertEquals(listOf(missed), boxesWithoutWords(listOf(TextBox(0f, 0f, 60f, 13f), missed), words))
     }
+
+    @Test
+    fun `a box around text already placed in a smaller box isn't read again`() {
+        val words = line(0f, "GOT" to 0f, "YOU" to 6f)
+        val boxes = listOf(TextBox(0f, 0f, 60f, 13f), TextBox(-2f, -2f, 62f, 15f))
+        assertEquals(emptyList<TextBox>(), boxesWithoutWords(boxes, words))
+    }
 }

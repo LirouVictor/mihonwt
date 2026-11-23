@@ -5,6 +5,7 @@ package eu.kanade.translation.model
 
 import eu.kanade.translation.recognizer.Word
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.cos
@@ -38,7 +39,21 @@ data class TranslationBlock(
     val bubble: List<Area> = emptyList(),
     /** The color of the art around text outside a bubble, which covers it before its outlined translation is drawn. */
     val background: Int? = null,
-)
+) {
+    /**
+     * The rest of this block's text, on the next piece of a strip cut through it. This block then holds the whole text,
+     * and its translation is split between them, [shareAbove] of it here.
+     */
+    @Transient
+    var continuation: TranslationBlock? = null
+
+    @Transient
+    var shareAbove = 1f
+
+    /** Whether this block is the [continuation] of one on the piece above, translated with it. */
+    @Transient
+    var continuesAbove = false
+}
 
 /** A rectangle on the page. */
 @Serializable

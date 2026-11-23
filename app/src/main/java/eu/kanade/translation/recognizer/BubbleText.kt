@@ -118,25 +118,33 @@ fun blocksInBoxes(boxes: List<TextBox>, words: List<Word>): List<TranslationBloc
         .filterNot { it.isArt() }
 }
 
-/** Returns the [boxes] that none of [words] is placed in, whose text OCR missed. */
+/**
+ * Returns the [boxes] that none of [words] is in, whose text OCR missed. A box around the same text as a smaller box
+ * isn't one of them, though its words are placed in the smaller box, or its text would be read a second time.
+ */
 fun boxesWithoutWords(boxes: List<TextBox>, words: List<Word>): List<TextBox> {
-    val wordsByBox = wordsByBox(boxes, words)
-    return boxes.filter { it !in wordsByBox }
+    val pageLetterHeight = words.map { it.letterHeight }.median() ?: 0f
+    return boxes.filter { box -> words.none { it.isIn(box, pageLetterHeight) } }
 }
 
 private fun wordsByBox(boxes: List<TextBox>, words: List<Word>): Map<TextBox?, List<Word>> {
     val pageLetterHeight = words.map { it.letterHeight }.median() ?: 0f
     return words.groupBy { word ->
-        val cx = word.x + word.width / 2
-        val cy = word.y + word.height / 2
-        // A bubble's outline read as a huge letter would otherwise reach boxes all over the page
-        val margin = min(word.letterHeight, pageLetterHeight) * FOUND_BOX_MARGIN
         boxes
-            .filter { cx in it.left - margin..it.right + margin && cy in it.top - margin..it.bottom + margin }
-            .filter { word.areaInside(it, margin) >= word.width * word.height * MIN_WORD_SHARE_IN_BOX }
+            .filter { word.isIn(it, pageLetterHeight) }
             // Detectors give the same text more than once, in boxes of different sizes
             .minByOrNull { (it.right - it.left) * (it.bottom - it.top) }
     }
+}
+
+private fun Word.isIn(box: TextBox, pageLetterHeight: Float): Boolean {
+    val cx = x + width / 2
+    val cy = y + height / 2
+    // A bubble's outline read as a huge letter would otherwise reach boxes all over the page
+    val margin = min(letterHeight, pageLetterHeight) * FOUND_BOX_MARGIN
+    return cx in box.left - margin..box.right + margin &&
+        cy in box.top - margin..box.bottom + margin &&
+        areaInside(box, margin) >= width * height * MIN_WORD_SHARE_IN_BOX
 }
 
 private fun Word.areaInside(box: TextBox, margin: Float): Float {

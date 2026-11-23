@@ -50,7 +50,9 @@ import eu.kanade.translation.recognizer.PaddleOcr
 import eu.kanade.translation.recognizer.TextBox
 import eu.kanade.translation.recognizer.TextRecognizer
 import eu.kanade.translation.recognizer.Word
+import eu.kanade.translation.recognizer.blocksAcrossSeam
 import eu.kanade.translation.recognizer.blocksInBoxes
+import eu.kanade.translation.recognizer.blocksNearBottom
 import eu.kanade.translation.recognizer.blocksOfFoundText
 import eu.kanade.translation.recognizer.boxesToReread
 import eu.kanade.translation.recognizer.boxesWithoutWords
@@ -61,8 +63,14 @@ import eu.kanade.translation.recognizer.grownIntoBubble
 import eu.kanade.translation.recognizer.inBubble
 import eu.kanade.translation.recognizer.inReadingOrder
 import eu.kanade.translation.recognizer.isCorrectionOf
+import eu.kanade.translation.recognizer.isStripPiece
+import eu.kanade.translation.recognizer.joinedText
+import eu.kanade.translation.recognizer.letterShare
+import eu.kanade.translation.recognizer.letterShareAbove
 import eu.kanade.translation.recognizer.lightPixels
 import eu.kanade.translation.recognizer.median
+import eu.kanade.translation.recognizer.paintedToEdge
+import eu.kanade.translation.recognizer.splitTranslation
 import eu.kanade.translation.recognizer.stackedLetters
 import eu.kanade.translation.recognizer.stackedWordBreakBefore
 import eu.kanade.translation.recognizer.withBackground
@@ -158,6 +166,9 @@ class ChapterTranslator(
     private val textRecognizer by lazy { TextRecognizer() }
 
     private val recognizedChapters = ConcurrentHashMap<Long, Map<String, PageTranslation>>()
+
+    /** How long reading the pages of [recognizedChapters] took, shown again when a retry reuses them. */
+    private val readingTimes = ConcurrentHashMap<Long, Times>()
 
     /** Small JPEG copies of the pages of [recognizedChapters], for translators that read them. */
     private val recognizedImages = ConcurrentHashMap<Long, MutableMap<String, ByteArray>>()
@@ -325,6 +336,8 @@ class ChapterTranslator(
                     // again
                     val cached = recognizedChapters[chapterId]
                     if (cached != null) {
+                        readingTimes[chapterId]?.let(times::copyReadingFrom)
+                        times.readingReused = true
                         cached.forEach { recognized.send(it.toPair()) }
                         cached
                     } else {
@@ -353,17 +366,28 @@ class ChapterTranslator(
                             )
                                 .also { readWords += spelling.unknownWords(it) }
                         }
-                        recognizeChapter(chapterPages, translation, pageImages, detector, ocr, baberu, fixText, times) {
+                        recognizeChapter(
+                            chapterPages,
+                            translation,
+                            pageImages,
+                            detector,
+                            ocr,
+                            baberu,
+                            fixText,
+                            times,
+                            joinsSeams = !findsText,
+                        ) {
                                 name,
                                 page,
                             ->
                             recognized.send(name to page)
                         }
-                            .also { recognizedChapters[chapterId] = it }
-                    }.also {
-                        recognized.close()
-                        times.read.set(readStart.elapsedNow().inWholeMilliseconds)
-                    }
+                            .also {
+                                times.read.set(readStart.elapsedNow().inWholeMilliseconds)
+                                readingTimes[chapterId] = times
+                                recognizedChapters[chapterId] = it
+                            }
+                    }.also { recognized.close() }
                 }
                 // Batches go out as soon as OCR has read their pages, so the reader shows the first pages while the
                 // rest are still being read. Small batches also keep each reply within the model's output limit, and a
@@ -397,7 +421,18 @@ class ChapterTranslator(
                         if (left.isEmpty()) {
                             foundTerms
                         } else {
-                            foundTerms + translator.translate(left, title, images, known, onRetry, before)
+                            // A text cut by a strip's page edge is translated whole with the piece above
+                            val pieces = left.withoutContinuations()
+                            foundTerms + translator.translate(pieces, title, images, known, onRetry, before)
+                                .also { pieces.keepDroppedBlocksOutOf(left) }
+                        }
+                    }
+                    batch.values.forEach { page ->
+                        page.blocks.forEach { block ->
+                            val rest = block.continuation ?: return@forEach
+                            val (here, below) = splitTranslation(block.translation, block.shareAbove)
+                            block.translation = here
+                            rest.translation = below
                         }
                     }
                     results.withLock {
@@ -414,6 +449,7 @@ class ChapterTranslator(
                     }
                 }
                 val alreadyDone = done.keys.toSet()
+                times.reusedPages = alreadyDone.size
                 var batch = mutableMapOf<String, PageTranslation>()
                 var lastPage: PageTranslation? = null
                 var beforeBatch: PageTranslation? = null
@@ -449,6 +485,7 @@ class ChapterTranslator(
                 provider.saveSeenWords(mangaDir, seenWords)
             }
             recognizedChapters.remove(chapterId)
+            readingTimes.remove(chapterId)
             recognizedImages.remove(chapterId)
             _partialTranslations.update { it - chapterId }
             translation.progress = null
@@ -466,6 +503,12 @@ class ChapterTranslator(
                         times.ocrEngine,
                     ),
                 )
+                if (times.readingReused) {
+                    appendLine(context.stringResource(WTMR.strings.translation_times_reused_reading))
+                }
+                if (times.reusedPages > 0) {
+                    appendLine(context.stringResource(WTMR.strings.translation_times_reused_pages, times.reusedPages))
+                }
                 if (times.correct.hasBatches) {
                     appendLine(
                         context.stringResource(
@@ -474,6 +517,16 @@ class ChapterTranslator(
                             times.corrected.get(),
                             times.correctable.get(),
                             times.correct.total.inWholeMilliseconds.seconds(),
+                        ),
+                    )
+                }
+                times.correctError?.let { error ->
+                    appendLine(
+                        context.stringResource(
+                            WTMR.strings.translation_times_correct_failed,
+                            times.correctFailed.get(),
+                            times.correctBatches.get(),
+                            error,
                         ),
                     )
                 }
@@ -568,13 +621,17 @@ class ChapterTranslator(
         baberu: BaberuOcr?,
         fixText: (String) -> String,
         times: Times,
+        joinsSeams: Boolean,
         onPage: suspend (String, PageTranslation) -> Unit,
     ): Map<String, PageTranslation> {
         val pages = mutableMapOf<String, PageTranslation>()
+        // A strip piece with text at its bottom waits for the next one, which may go on with that text
+        var above: StripPiece? = null
         chapterPages.forEach { index, count, fileName, openStream ->
             currentCoroutineContext().ensureActive()
             translation.updateProgress { it.copy(page = index, pages = count) }
             val decodeStart = TimeSource.Monotonic.markNow()
+            var piece: StripPiece? = null
             val bitmap = decodePage(openStream)
             times.decode.addAndGet(decodeStart.elapsedNow().inWholeMilliseconds)
             try {
@@ -643,13 +700,133 @@ class ChapterTranslator(
                     pages[fileName] = page
                     images?.put(fileName, bitmap.toSmallJpeg())
                 }
+                val stripPiece = page.takeIf {
+                    joinsSeams && it.blocks.isNotEmpty() && isStripPiece(bitmap.width, bitmap.height)
+                }
+                if (stripPiece != null) {
+                    above?.takeIf { it.width == bitmap.width }?.let { upper ->
+                        val seamStart = TimeSource.Monotonic.markNow()
+                        joinSeam(upper, stripPiece, bitmap, ocrScale, paddleOcr, fixText)
+                        times.ocr.addAndGet(seamStart.elapsedNow().inWholeMilliseconds)
+                    }
+                    piece = StripPiece.of(fileName, stripPiece, bitmap)
+                }
             } finally {
                 bitmap.recycle()
             }
-            pages[fileName]?.let { onPage(fileName, it) }
+            above?.let { onPage(it.name, it.page) }
+            above?.band?.recycle()
+            above = piece
+            if (piece == null) pages[fileName]?.let { onPage(fileName, it) }
             translation.updateProgress { it.copy(page = index + 1, pages = count) }
         }
+        above?.let { onPage(it.name, it.page) }
+        above?.band?.recycle()
         return pages
+    }
+
+    /** The bottom of a strip piece whose [page] has text near its bottom edge, from [bandTop] down, kept as [band]. */
+    private class StripPiece(
+        val name: String,
+        val page: PageTranslation,
+        val width: Int,
+        val height: Int,
+        val band: Bitmap,
+        val bandTop: Int,
+    ) {
+        companion object {
+            fun of(name: String, page: PageTranslation, bitmap: Bitmap): StripPiece? {
+                val near = blocksNearBottom(page).takeIf { it.isNotEmpty() } ?: return null
+                val top = near.minOf { it.y - it.symHeight }.toInt().coerceIn(0, bitmap.height - 1)
+                val band = Bitmap.createBitmap(bitmap, 0, top, bitmap.width, bitmap.height - top)
+                return StripPiece(name, page, bitmap.width, bitmap.height, band, top)
+            }
+        }
+    }
+
+    /**
+     * Reads each text cut by the edge between [above] and [below], the piece after it, from both pieces put back
+     * together, and keeps it whole in its block above, with the block below as its [TranslationBlock.continuation]. The
+     * text both blocks were read as stays when reading it whole finds fewer English words.
+     */
+    private fun joinSeam(
+        above: StripPiece,
+        below: PageTranslation,
+        belowBitmap: Bitmap,
+        ocrScale: Float,
+        paddleOcr: PaddleOcr?,
+        fixText: (String) -> String,
+    ) {
+        blocksAcrossSeam(above.page, below).forEach { (upper, lower) ->
+            val margin = max(upper.symHeight, lower.symHeight)
+            val left = (min(upper.x, lower.x) - margin).toInt().coerceIn(0, above.width - 1)
+            val right = ceil(max(upper.x + upper.width, lower.x + lower.width) + margin).toInt()
+                .coerceIn(left + 1, above.width)
+            val top = (upper.y - margin).toInt().coerceIn(above.bandTop, above.height - 1)
+            val bottom = ceil(lower.y + lower.height + margin).toInt().coerceIn(1, belowBitmap.height)
+            val upperHeight = above.height - top
+            val seam = createBitmap(right - left, upperHeight + bottom)
+            val words = try {
+                Canvas(seam).apply {
+                    drawBitmap(
+                        above.band,
+                        Rect(left, top - above.bandTop, right, above.height - above.bandTop),
+                        Rect(0, 0, right - left, upperHeight),
+                        null,
+                    )
+                    drawBitmap(
+                        belowBitmap,
+                        Rect(left, 0, right, bottom),
+                        Rect(0, upperHeight, right - left, upperHeight + bottom),
+                        null,
+                    )
+                }
+                if (paddleOcr != null) {
+                    paddleOcr.read(seam, 0)
+                } else {
+                    readCrop(seam, Rect(0, 0, seam.width, seam.height), ocrScale, 1f, 0)
+                }
+            } finally {
+                seam.recycle()
+            }
+            val pieces = upper.text + "\n" + lower.text
+            val read = fixText(joinedText(words)).takeIf { englishScore(it) >= englishScore(pieces) }
+            val textLeft = min(upper.x, lower.x)
+            val textRight = max(upper.x + upper.width, lower.x + lower.width)
+            val joined = upper.paintedToEdge(above.height.toFloat(), textLeft, textRight).apply {
+                text = read ?: pieces
+                shareAbove = read?.let { letterShareAbove(words, upperHeight.toFloat()) }
+                    ?: letterShare(upper.text, lower.text)
+            }
+            val rest = lower.paintedToEdge(0f, textLeft, textRight).apply { continuesAbove = true }
+            joined.continuation = rest
+            above.page.blocks[above.page.blocks.indexOfFirst { it === upper }] = joined
+            below.blocks[below.blocks.indexOfFirst { it === lower }] = rest
+        }
+    }
+
+    private fun englishScore(text: String): Int = text.split(WHITESPACE).sumOf { word ->
+        val letters = word.filter(Char::isLetter)
+        (if (spelling.isWord(letters)) letters.length * ENGLISH_LETTER_WEIGHT else 0) + word.length
+    }
+
+    /** Returns these pages without blocks that go on from the piece above, as the block above holds their text. */
+    private fun Map<String, PageTranslation>.withoutContinuations(): Map<String, PageTranslation> =
+        mapValues { (_, page) ->
+            if (page.blocks.none { it.continuesAbove }) {
+                page
+            } else {
+                page.copy(blocks = page.blocks.filterNot { it.continuesAbove }.toMutableList())
+            }
+        }
+
+    /** Drops from [pages] the blocks a translator dropped from these copies of them, as watermarks. */
+    private fun Map<String, PageTranslation>.keepDroppedBlocksOutOf(pages: Map<String, PageTranslation>) {
+        forEach { (name, copy) ->
+            val page = pages.getValue(name)
+            if (copy === page) return@forEach
+            page.blocks.retainAll { block -> block.continuesAbove || copy.blocks.any { it === block } }
+        }
     }
 
     /** Returns the words ML Kit reads on [page], at its coordinates, and how much the page was enlarged for it. */
@@ -685,9 +862,29 @@ class ChapterTranslator(
         val correct = BatchTimes(start)
         val corrected = AtomicInteger()
         val correctable = AtomicInteger()
+        val correctBatches = AtomicInteger()
+        val correctFailed = AtomicInteger()
+
+        @Volatile
+        var correctError: String? = null
 
         @Volatile
         var ocrEngine = "-"
+
+        @Volatile
+        var readingReused = false
+
+        @Volatile
+        var reusedPages = 0
+
+        fun copyReadingFrom(other: Times) {
+            read.set(other.read.get())
+            decode.set(other.decode.get())
+            ocr.set(other.ocr.get())
+            bubbles.set(other.bubbles.get())
+            detect.set(other.detect.get())
+            ocrEngine = other.ocrEngine
+        }
     }
 
     private class BatchTimes(private val origin: TimeSource.Monotonic.ValueTimeMark) {
@@ -725,18 +922,26 @@ class ChapterTranslator(
         images: Map<String, ByteArray>,
         times: Times,
     ) {
+        times.correctBatches.incrementAndGet()
+        // Text joined across a strip's page edge isn't all on one page image, so the model would cut it
+        val corrected = pages.mapValues { (_, page) ->
+            page.copy(blocks = page.blocks.filterNot { it.isAcrossSeam() }.toMutableList())
+        }
         val corrections = try {
-            corrector.correctText(pages, series, images) {}
+            corrector.correctText(corrected, series, images) {}
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             logcat(LogPriority.WARN, e) { "Text correction failed" }
+            times.correctFailed.incrementAndGet()
+            times.correctError = e.message ?: e.toString()
             emptyMap()
         }
         pages.forEach { (name, page) ->
             val fixed = corrections[name].orEmpty()
             times.correctable.addAndGet(page.blocks.size)
             page.blocks = page.blocks.mapTo(mutableListOf()) { block ->
+                if (block.isAcrossSeam()) return@mapTo block
                 val text = correctionOf(block.text, fixed.values)
                     ?.takeIf { it.joinLines() != block.text.joinLines() }
                     ?: return@mapTo block
@@ -745,6 +950,8 @@ class ChapterTranslator(
             }
         }
     }
+
+    private fun TranslationBlock.isAcrossSeam() = continuation != null || continuesAbove
 
     /** Whether the reader shows [Translation.manga] right to left, as manga, so its bubbles are read that way too. */
     private fun Translation.isRightToLeft(): Boolean {
@@ -1234,6 +1441,8 @@ class ChapterTranslator(
 
         // Letters of English words count far more than other letters, which a bubble's outline also gives
         const val ENGLISH_LETTER_WEIGHT = 10
+
+        val WHITESPACE = Regex("""\s+""")
         const val MAX_GLOSSARY_TERMS = 300
         const val MAX_SEEN_WORDS = 5000
         val LOOKUP_TIMEOUT = 15.seconds
