@@ -257,8 +257,13 @@ private fun TranslationBlock.inBubble(
     }
     val bubble = BooleanArray(cols * rows) { !outside[it] }
     keepArt(bubble, inside, cols, left, top, cell, lineHeight * ART_MIN_LINES, others + this)
-    // Without closed light space around the text there is no bubble, only its letters
-    if (inside.none { it }) return null
+    // Closed light space only inside the box is the holes of letters or the gaps between lines, not a bubble, which a
+    // larger search may still find
+    val reachesPastBox = inside.indices.any {
+        inside[it] &&
+            (it % cols !in boxLeft..boxRight || it / cols !in boxTop..boxBottom)
+    }
+    if (!reachesPastBox) return null
     if (!needsTextRoom) return copy(bubble = bubbleAreas(bubble, cols, rows, left, top, cell))
 
     // Bubbles that touch share their light space, so each block only lays its text out on the cells nearer to it
