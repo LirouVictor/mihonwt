@@ -220,10 +220,7 @@ abstract class LanguageModelTranslator(private val language: TargetLanguage) : P
         schema: JsonObject? = null,
     ): JsonObject {
         val reply = complete(systemPrompt, input, images, onRetry, schema)
-        // Without a JSON mode, models may wrap the object in a code block or a sentence
-        return runCatching {
-            Json.parseToJsonElement(reply.substring(reply.indexOf('{'), reply.lastIndexOf('}') + 1)).jsonObject
-        }.getOrElse { throw InvalidReplyException(name, reply) }
+        return parseReply(reply) ?: throw InvalidReplyException(name, reply)
     }
 
     private fun countMissing(pages: Map<String, PageTranslation>, output: JsonObject): Int {
@@ -250,7 +247,10 @@ abstract class LanguageModelTranslator(private val language: TargetLanguage) : P
 
     /** Thrown when the reply isn't a JSON object. */
     class InvalidReplyException(name: String, reply: String) :
-        IOException("$name returned invalid JSON: ${reply.take(200)}")
+        IOException(
+            "$name returned invalid JSON (${reply.length} characters): " +
+                if (reply.length <= 400) reply else "${reply.take(200)} … ${reply.takeLast(200)}",
+        )
 
     /** Thrown when the reply hit the model's output limit, so a smaller batch may fit. */
     class TruncatedReplyException(name: String) :
@@ -372,3 +372,31 @@ abstract class LanguageModelTranslator(private val language: TargetLanguage) : P
         """.trimIndent()
     }
 }
+
+/**
+ * Returns the JSON object in a model's [reply], or null if there is none. Without a JSON mode, models may wrap it in a
+ * code block or a sentence, or give the pages as an array of objects, which are merged.
+ */
+internal fun parseReply(reply: String): JsonObject? {
+    val start = reply.indexOfFirst { it == '{' || it == '[' }.takeIf { it >= 0 } ?: return null
+    val end = reply.indexOfLast { it == '}' || it == ']' }.takeIf { it > start } ?: return null
+    val json = reply.substring(start, end + 1)
+    val element = runCatching { Json.parseToJsonElement(json) }
+        // Objects one after the other, as when the model left out the array's brackets
+        .recoverCatching { Json.parseToJsonElement("[$json]") }
+        .getOrNull() ?: return null
+    return when (element) {
+        is JsonObject -> element
+        is JsonArray -> element.filterIsInstance<JsonObject>().takeIf { it.isNotEmpty() }?.let(::merged)
+        else -> null
+    }
+}
+
+private fun merged(objects: List<JsonObject>): JsonObject = JsonObject(
+    objects.fold(emptyMap()) { merged, next ->
+        merged + next.mapValues { (key, value) ->
+            val earlier = merged[key]
+            if (earlier is JsonObject && value is JsonObject) JsonObject(earlier + value) else value
+        }
+    },
+)
