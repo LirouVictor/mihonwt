@@ -110,6 +110,19 @@ class BubbleMaskTest {
     }
 
     @Test
+    fun `leaves the bubble its box reaches over to the block inside`() {
+        // One Piece 1199 p.13: "A LETTER FROM 800 YEARS AGO?!" lettered on the art beside a bubble
+        val page = page()
+        page.dark(160, 142, 240, 158)
+        for (y in 140..<180 step 6) page.dark(40, y, 100, y + 3)
+        val inside = block(160f, 142f, 80f, 16f)
+        val caption = block(40f, 140f, 60f, 40f)
+
+        assertNull(caption.inBubble(width, height, listOf(inside, caption), page.pixels()))
+        assertNotNull(inside.inBubble(width, height, listOf(inside, caption), page.pixels()))
+    }
+
+    @Test
     fun `splits a bubble shared by two blocks between them`() {
         val page = page()
         page.dark(110, 120, 170, 136)

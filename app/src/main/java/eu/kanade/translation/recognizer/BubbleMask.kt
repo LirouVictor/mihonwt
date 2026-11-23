@@ -201,6 +201,8 @@ private fun TranslationBlock.inBubble(
                 component.size * cell * cell <= width * height * MAX_CUT_BUBBLE_AREA &&
                 component.size >= component.boundingCells(cols) * MIN_CUT_BUBBLE_FILL
             if (!closed || (pageEdges != 0 && !isCutBubble)) continue
+            // A box reaching over a neighbour's outline also holds light cells of the neighbour's bubble
+            if (isBubbleOfOther(component, cols, left, top, cell, others)) continue
             // Only a toned bubble's own tone: gaps between speed lines that the box reaches past it are tone too
             if (!isToned) {
                 component.forEach { inside[it] = true }
@@ -551,3 +553,21 @@ private const val MIN_TEXT_AREA = 0.6f
 /** Cells in the bounding box of these cells of a grid [cols] wide. */
 private fun List<Int>.boundingCells(cols: Int): Int =
     (maxOf { it % cols } - minOf { it % cols } + 1) * (maxOf { it / cols } - minOf { it / cols } + 1)
+
+/** Whether the bounds of [cells] hold the middle of a block of [others] but not this block's. */
+private fun TranslationBlock.isBubbleOfOther(
+    cells: List<Int>,
+    cols: Int,
+    left: Int,
+    top: Int,
+    cell: Int,
+    others: List<TranslationBlock>,
+): Boolean {
+    val fromX = left + cells.minOf { it % cols } * cell
+    val toX = left + (cells.maxOf { it % cols } + 1) * cell
+    val fromY = top + cells.minOf { it / cols } * cell
+    val toY = top + (cells.maxOf { it / cols } + 1) * cell
+    fun TranslationBlock.isMiddleIn() = x + width / 2 in fromX.toFloat()..toX.toFloat() &&
+        y + height / 2 in fromY.toFloat()..toY.toFloat()
+    return !isMiddleIn() && others.any { it !== this && it.isMiddleIn() }
+}
