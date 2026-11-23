@@ -153,7 +153,8 @@ private fun TranslationBlock.inBubble(
                 val c = index % cols
                 val r = index / cols
                 // The page's edge closes a bubble it cuts, while the edge of the search doesn't. Light space along
-                // more than one edge of the page, or far larger than its text, is a margin or blank art
+                // more than one edge of the page, far larger than its text or filling little of its bounds, is a
+                // margin or blank art
                 val atLeft = c == 0
                 val atTop = r == 0
                 val atRight = c == cols - 1
@@ -180,7 +181,8 @@ private fun TranslationBlock.inBubble(
                 if (!atBottom) visit(index + cols)
             }
             val isCutBubble = pageEdges.countOneBits() <= MAX_PAGE_EDGES &&
-                component.size * cell * cell <= width * height * MAX_CUT_BUBBLE_AREA
+                component.size * cell * cell <= width * height * MAX_CUT_BUBBLE_AREA &&
+                component.size >= component.boundingCells(cols) * MIN_CUT_BUBBLE_FILL
             if (!closed || (pageEdges != 0 && !isCutBubble)) continue
             // Only a toned bubble's own tone: gaps between speed lines that the box reaches past it are tone too
             if (!isToned) {
@@ -499,6 +501,7 @@ private const val RIGHT_EDGE = 4
 private const val BOTTOM_EDGE = 8
 private const val MAX_PAGE_EDGES = 1
 private const val MAX_CUT_BUBBLE_AREA = 8
+private const val MIN_CUT_BUBBLE_FILL = 0.5
 private val REACH_LINES = listOf(6f, 12f, 24f)
 private const val TEXT_MARGIN_LINES = 0.25f
 
@@ -507,3 +510,7 @@ private const val ART_MIN_LINES = 1.5f
 
 // Bubbles whose inside leaves the text much less room than the letters had are probably not bubbles at all
 private const val MIN_TEXT_AREA = 0.6f
+
+/** Cells in the bounding box of these cells of a grid [cols] wide. */
+private fun List<Int>.boundingCells(cols: Int): Int =
+    (maxOf { it % cols } - minOf { it % cols } + 1) * (maxOf { it / cols } - minOf { it / cols } + 1)

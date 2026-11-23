@@ -145,6 +145,14 @@ class BubbleMaskTest {
         blank.dark(140, 20, 260, 30)
         blank.dark(140, 50, 260, 60)
         assertNull(text.inBubble(width, height, listOf(text), blank.pixels()))
+
+        // One Piece 1199 p.13: "...CH.1199/ END" on the art's light space, which reaches the page's bottom
+        val art = Array(height) { BooleanArray(width) { false } }
+        for (y in 100..<300) for (x in 300..<340) art[y][x] = true
+        for (y in 260..<300) for (x in 100..<340) art[y][x] = true
+        val caption = block(150f, 265f, 100f, 30f)
+        for (y in 265..<295 step 6) art.dark(150, y, 250, y + 3)
+        assertNull(caption.inBubble(width, height, listOf(caption), art.pixels()))
     }
 
     @Test
