@@ -81,6 +81,26 @@ class BubbleMaskTest {
     }
 
     @Test
+    fun `leaves art that its box overlaps beside a short line unpainted`() {
+        val page = page()
+        // Two lines, the lower one short, and a fist reaching in over the outline beside it
+        page.dark(140, 130, 260, 146)
+        page.dark(140, 154, 180, 170)
+        page.dark(220, 150, 340, 230)
+        val text = block(140f, 130f, 120f, 40f)
+        val words = listOf(
+            Word("SHUT UP", 140f, 130f, 120f, 16f, 16f, line = 0, angle = 0f),
+            Word("NOW", 140f, 154f, 40f, 16f, 16f, line = 1, angle = 0f),
+        )
+
+        val placed = text.inBubble(width, height, listOf(text), page.pixels(), words)
+
+        assertNotNull(placed)
+        assertTrue(placed!!.covers(160f, 162f))
+        assertFalse(placed.covers(240f, 162f))
+    }
+
+    @Test
     fun `finds nothing around text outside a closed bubble`() {
         val page = Array(height) { BooleanArray(width) { true } }
         page.dark(160, 142, 240, 158)

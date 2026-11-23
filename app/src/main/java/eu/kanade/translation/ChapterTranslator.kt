@@ -322,8 +322,10 @@ class ChapterTranslator(
             val seenWords = provider.getSeenWords(mangaDir).toMutableMap()
             val readWords = ConcurrentHashMap.newKeySet<String>()
             // A translator that reads the pages fixes OCR's mistakes itself
-            val corrector = gemini().takeIf {
-                !translator.readsImages && translationPreferences.correctTextWithGemini.get()
+            val correctors = if (!translator.readsImages && translationPreferences.correctTextWithGemini.get()) {
+                reviewers()
+            } else {
+                emptyList()
             }
             val findsText = translator is LanguageModelTranslator &&
                 translator.readsImages &&
@@ -341,7 +343,7 @@ class ChapterTranslator(
                         cached.forEach { recognized.send(it.toPair()) }
                         cached
                     } else {
-                        val pageImages = images.takeIf { translator.readsImages || corrector != null }
+                        val pageImages = images.takeIf { translator.readsImages || correctors.isNotEmpty() }
                         val detector = bubbleDetector().takeUnless { findsText }
                         val ocr = paddleOcr()
                         // Baberu only rereads bubbles the detector found
@@ -403,8 +405,8 @@ class ChapterTranslator(
                 ) = inFlight.withPermit {
                     val title = translation.manga.title
                     val known = results.withLock { glossary.toMap() }
-                    if (corrector != null) {
-                        times.correct.measure { correctText(corrector, batch, title, images, times) }
+                    if (correctors.isNotEmpty()) {
+                        times.correct.measure { correctText(correctors, batch, title, images, times) }
                     }
                     val terms = times.translate.measure {
                         var foundTerms = emptyMap<String, String>()
@@ -520,6 +522,15 @@ class ChapterTranslator(
                         ),
                     )
                 }
+                if (times.correctFallbacks.get() > 0) {
+                    appendLine(
+                        context.stringResource(
+                            WTMR.strings.translation_times_correct_fallback,
+                            times.correctFallbacks.get(),
+                            REVIEW_FALLBACK_MODEL,
+                        ),
+                    )
+                }
                 times.correctError?.let { error ->
                     appendLine(
                         context.stringResource(
@@ -587,6 +598,22 @@ class ChapterTranslator(
         val model = translationPreferences.model(TranslationService.GEMINI).get()
         val language = translationPreferences.targetLanguage.get()
         return if (apiKey.isBlank() || model.isBlank()) null else GeminiTranslator(apiKey, model, language)
+    }
+
+    /**
+     * Returns the Gemini models that review OCR's text, each tried when the one before is overloaded or out of quota:
+     * the chosen one, then [REVIEW_FALLBACK_MODEL], which answered in seconds while larger models were overloaded. A
+     * failed review only leaves OCR's text, so the last one waits less on an overloaded server than translation does.
+     */
+    private fun reviewers(): List<GeminiTranslator> {
+        val apiKey = ApiKeyCipher.decrypt(translationPreferences.apiKey(TranslationService.GEMINI).get())
+        val model = translationPreferences.model(TranslationService.GEMINI).get()
+        val language = translationPreferences.targetLanguage.get()
+        if (apiKey.isBlank() || model.isBlank()) return emptyList()
+        val models = listOf(model, REVIEW_FALLBACK_MODEL).distinct()
+        return models.mapIndexed { i, it ->
+            GeminiTranslator(apiKey, it, language, if (i == models.lastIndex) REVIEW_RETRY_DELAYS else emptyList())
+        }
     }
 
     private fun createTranslator(): PageTranslator {
@@ -679,7 +706,9 @@ class ChapterTranslator(
                 val page = toPageTranslation(words, bitmap.width, bitmap.height, pixels, textBoxes)
                 val found = page.blocks
                 page.blocks = found
-                    .map { it.inBubble(bitmap.width, bitmap.height, found, pixels) ?: it.grownIntoBubble(bitmap) }
+                    .map {
+                        it.inBubble(bitmap.width, bitmap.height, found, pixels, words) ?: it.grownIntoBubble(bitmap)
+                    }
                     .inReadingOrder(translation.isRightToLeft())
                     .withOverlapsJoined()
                     .let { blocks ->
@@ -864,9 +893,13 @@ class ChapterTranslator(
         val correctable = AtomicInteger()
         val correctBatches = AtomicInteger()
         val correctFailed = AtomicInteger()
+        val correctFallbacks = AtomicInteger()
 
         @Volatile
         var correctError: String? = null
+
+        @Volatile
+        var correctUnavailable = false
 
         @Volatile
         var ocrEngine = "-"
@@ -912,30 +945,45 @@ class ChapterTranslator(
     }
 
     /**
-     * Replaces the text of the blocks of [pages] with how [corrector] reads it on their [images], where that is the
-     * same text with OCR's mistakes fixed. The text OCR read stays if the model fails, as it is only a correction.
+     * Replaces the text of the blocks of [pages] with how the first of [correctors] that answers reads it on their
+     * [images], where that is the same text with OCR's mistakes fixed. The text OCR read stays if they all fail, as it
+     * is only a correction.
      */
     private suspend fun correctText(
-        corrector: LanguageModelTranslator,
+        correctors: List<LanguageModelTranslator>,
         pages: Map<String, PageTranslation>,
         series: String,
         images: Map<String, ByteArray>,
         times: Times,
     ) {
         times.correctBatches.incrementAndGet()
+        // An overloaded server or a used up quota fails the next batches too, after the same wait
+        if (times.correctUnavailable) {
+            times.correctFailed.incrementAndGet()
+            return
+        }
         // Text joined across a strip's page edge isn't all on one page image, so the model would cut it
         val corrected = pages.mapValues { (_, page) ->
             page.copy(blocks = page.blocks.filterNot { it.isAcrossSeam() }.toMutableList())
         }
-        val corrections = try {
-            corrector.correctText(corrected, series, images) {}
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logcat(LogPriority.WARN, e) { "Text correction failed" }
-            times.correctFailed.incrementAndGet()
-            times.correctError = e.message ?: e.toString()
-            emptyMap()
+        var corrections = emptyMap<String, Map<Int, String>>()
+        for ((i, corrector) in correctors.withIndex()) {
+            try {
+                corrections = corrector.correctText(corrected, series, images) {}
+                if (i > 0) times.correctFallbacks.incrementAndGet()
+                break
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                val isUnavailable = e is PageTranslator.QuotaExceededException ||
+                    (e as? PageTranslator.ApiException)?.status in 500..599
+                if (isUnavailable && i < correctors.lastIndex) continue
+                logcat(LogPriority.WARN, e) { "Text correction failed" }
+                times.correctFailed.incrementAndGet()
+                times.correctError = e.message ?: e.toString()
+                if (isUnavailable) times.correctUnavailable = true
+                break
+            }
         }
         pages.forEach { (name, page) ->
             val fixed = corrections[name].orEmpty()
@@ -1047,7 +1095,7 @@ class ChapterTranslator(
             val pixels = bitmap.lightPixels()
             val found = blocksOfFoundText(texts, words)
             blocks = found
-                .map { it.inBubble(bitmap.width, bitmap.height, found, pixels) ?: it.grownIntoBubble(bitmap) }
+                .map { it.inBubble(bitmap.width, bitmap.height, found, pixels, words) ?: it.grownIntoBubble(bitmap) }
                 .withOverlapsJoined()
                 .mapTo(mutableListOf()) { it.withBackground(bitmap).withToneBubble(bitmap, found) }
         } finally {
@@ -1416,6 +1464,12 @@ class ChapterTranslator(
     private companion object {
         const val BATCH_SIZE = 5
         const val PARALLEL_BATCHES = 3
+
+        const val REVIEW_FALLBACK_MODEL = "gemini-3.5-flash-lite"
+
+        // One retry: a review still overloaded after it is likely to stay so for this chapter
+        val REVIEW_RETRY_DELAYS = listOf(15.seconds)
+
         const val MODEL_IMAGE_SIZE = 1024
         const val MODEL_IMAGE_QUALITY = 75
 

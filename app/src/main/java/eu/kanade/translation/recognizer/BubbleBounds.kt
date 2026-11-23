@@ -100,14 +100,24 @@ private fun Bitmap.rowStrip(y: Int, left: Int, right: Int) = BooleanArray(right 
 
 /**
  * Returns this block with the color of the art just around it on [bitmap] as its background, when it isn't in a speech
- * bubble: the median of each channel over a ring half a letter out, along the text's tilt, so stray lines and letters
- * don't tint it. Each point of the ring is the average of the pixels around it, as screentone is dots on white whose
+ * bubble: the median of each channel over a ring a quarter of a letter out, along the text's tilt, so stray lines and
+ * letters don't tint it. Each point of the ring is the average of the pixels around it, as screentone is dots on white whose
  * median is white, while the eye sees grey.
  */
 fun TranslationBlock.withBackground(bitmap: Bitmap): TranslationBlock {
     if (bubble.isNotEmpty()) return this
+    return copy(background = backgroundAround(bitmap.width, bitmap.height, bitmap::averageAround))
+}
+
+/**
+ * Returns the color of the art around this block on a page of [imageWidth] by [imageHeight], as [withBackground] does,
+ * with [colorAround] giving the average color around a pixel.
+ */
+fun TranslationBlock.backgroundAround(imageWidth: Int, imageHeight: Int, colorAround: (x: Int, y: Int) -> Int): Int {
     val size = untilted()
-    val margin = size.letterHeight / 2
+    // Close to the text, as a box grown over the light space around it stops half a letter from the panel's border
+    // or other lines, where a ring further out lands
+    val margin = size.letterHeight * RING_MARGIN_LETTERS
     val halfWidth = size.width / 2 + margin
     val halfHeight = size.height / 2 + margin
     val centerX = x + width / 2
@@ -116,9 +126,9 @@ fun TranslationBlock.withBackground(bitmap: Bitmap): TranslationBlock {
     val cos = cos(radians).toFloat()
     val sin = sin(radians).toFloat()
     fun sample(u: Float, v: Float): Int {
-        val px = (centerX + u * cos - v * sin).toInt().coerceIn(0, bitmap.width - 1)
-        val py = (centerY + u * sin + v * cos).toInt().coerceIn(0, bitmap.height - 1)
-        return bitmap.averageAround(px, py)
+        val px = (centerX + u * cos - v * sin).toInt().coerceIn(0, imageWidth - 1)
+        val py = (centerY + u * sin + v * cos).toInt().coerceIn(0, imageHeight - 1)
+        return colorAround(px, py)
     }
     val ring = buildList {
         var u = -halfWidth
@@ -134,8 +144,8 @@ fun TranslationBlock.withBackground(bitmap: Bitmap): TranslationBlock {
             v += RING_STEP
         }
     }
-    fun median(channel: (Int) -> Int) = ring.map(channel).sorted()[ring.size / 2]
-    return copy(background = Color.rgb(median(Color::red), median(Color::green), median(Color::blue)))
+    fun median(shift: Int) = ring.map { (it shr shift) and 0xFF }.sorted()[ring.size / 2]
+    return (0xFF shl 24) or (median(16) shl 16) or (median(8) shl 8) or median(0)
 }
 
 private fun Bitmap.averageAround(x: Int, y: Int): Int {
@@ -196,6 +206,7 @@ private const val RING_BLUR = 3
 private const val MAX_GROWTH_LINES = 4
 private const val LIGHT_LUMINANCE = 200f
 private const val MIN_TONE_LUMINANCE = 80f
+private const val RING_MARGIN_LETTERS = 0.25f
 
 private const val MAX_JUMP_LINES = 1.5f
 
