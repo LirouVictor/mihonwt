@@ -159,6 +159,9 @@ class ChapterTranslator(
 
     private val recognizedChapters = ConcurrentHashMap<Long, Map<String, PageTranslation>>()
 
+    /** How long reading the pages of [recognizedChapters] took, shown again when a retry reuses them. */
+    private val readingTimes = ConcurrentHashMap<Long, Times>()
+
     /** Small JPEG copies of the pages of [recognizedChapters], for translators that read them. */
     private val recognizedImages = ConcurrentHashMap<Long, MutableMap<String, ByteArray>>()
 
@@ -325,6 +328,8 @@ class ChapterTranslator(
                     // again
                     val cached = recognizedChapters[chapterId]
                     if (cached != null) {
+                        readingTimes[chapterId]?.let(times::copyReadingFrom)
+                        times.readingReused = true
                         cached.forEach { recognized.send(it.toPair()) }
                         cached
                     } else {
@@ -359,11 +364,12 @@ class ChapterTranslator(
                             ->
                             recognized.send(name to page)
                         }
-                            .also { recognizedChapters[chapterId] = it }
-                    }.also {
-                        recognized.close()
-                        times.read.set(readStart.elapsedNow().inWholeMilliseconds)
-                    }
+                            .also {
+                                times.read.set(readStart.elapsedNow().inWholeMilliseconds)
+                                readingTimes[chapterId] = times
+                                recognizedChapters[chapterId] = it
+                            }
+                    }.also { recognized.close() }
                 }
                 // Batches go out as soon as OCR has read their pages, so the reader shows the first pages while the
                 // rest are still being read. Small batches also keep each reply within the model's output limit, and a
@@ -414,6 +420,7 @@ class ChapterTranslator(
                     }
                 }
                 val alreadyDone = done.keys.toSet()
+                times.reusedPages = alreadyDone.size
                 var batch = mutableMapOf<String, PageTranslation>()
                 var lastPage: PageTranslation? = null
                 var beforeBatch: PageTranslation? = null
@@ -449,6 +456,7 @@ class ChapterTranslator(
                 provider.saveSeenWords(mangaDir, seenWords)
             }
             recognizedChapters.remove(chapterId)
+            readingTimes.remove(chapterId)
             recognizedImages.remove(chapterId)
             _partialTranslations.update { it - chapterId }
             translation.progress = null
@@ -466,6 +474,12 @@ class ChapterTranslator(
                         times.ocrEngine,
                     ),
                 )
+                if (times.readingReused) {
+                    appendLine(context.stringResource(WTMR.strings.translation_times_reused_reading))
+                }
+                if (times.reusedPages > 0) {
+                    appendLine(context.stringResource(WTMR.strings.translation_times_reused_pages, times.reusedPages))
+                }
                 if (times.correct.hasBatches) {
                     appendLine(
                         context.stringResource(
@@ -474,6 +488,16 @@ class ChapterTranslator(
                             times.corrected.get(),
                             times.correctable.get(),
                             times.correct.total.inWholeMilliseconds.seconds(),
+                        ),
+                    )
+                }
+                times.correctError?.let { error ->
+                    appendLine(
+                        context.stringResource(
+                            WTMR.strings.translation_times_correct_failed,
+                            times.correctFailed.get(),
+                            times.correctBatches.get(),
+                            error,
                         ),
                     )
                 }
@@ -685,9 +709,29 @@ class ChapterTranslator(
         val correct = BatchTimes(start)
         val corrected = AtomicInteger()
         val correctable = AtomicInteger()
+        val correctBatches = AtomicInteger()
+        val correctFailed = AtomicInteger()
+
+        @Volatile
+        var correctError: String? = null
 
         @Volatile
         var ocrEngine = "-"
+
+        @Volatile
+        var readingReused = false
+
+        @Volatile
+        var reusedPages = 0
+
+        fun copyReadingFrom(other: Times) {
+            read.set(other.read.get())
+            decode.set(other.decode.get())
+            ocr.set(other.ocr.get())
+            bubbles.set(other.bubbles.get())
+            detect.set(other.detect.get())
+            ocrEngine = other.ocrEngine
+        }
     }
 
     private class BatchTimes(private val origin: TimeSource.Monotonic.ValueTimeMark) {
@@ -725,12 +769,15 @@ class ChapterTranslator(
         images: Map<String, ByteArray>,
         times: Times,
     ) {
+        times.correctBatches.incrementAndGet()
         val corrections = try {
             corrector.correctText(pages, series, images) {}
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             logcat(LogPriority.WARN, e) { "Text correction failed" }
+            times.correctFailed.incrementAndGet()
+            times.correctError = e.message ?: e.toString()
             emptyMap()
         }
         pages.forEach { (name, page) ->
