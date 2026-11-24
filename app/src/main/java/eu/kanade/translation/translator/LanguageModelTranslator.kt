@@ -131,9 +131,9 @@ abstract class LanguageModelTranslator(private val language: TargetLanguage) : P
     }
 
     /**
-     * Returns the English text of each block of [pages] as the model reads it on their [images], fixing what OCR
-     * misread, for a translator that can't see the pages: by page name, then by block index. Blocks the
-     * model didn't answer for are left out.
+     * Returns the English text of each block of [pages] as the model reads it on their [images], or as context tells
+     * without them, fixing what OCR misread, for a translator that can't see the pages: by page name, then by block
+     * index. Blocks the model didn't answer for are left out.
      */
     suspend fun correctText(
         pages: Map<String, PageTranslation>,
@@ -141,7 +141,7 @@ abstract class LanguageModelTranslator(private val language: TargetLanguage) : P
         images: Map<String, ByteArray>,
         onRetry: (attempt: Int) -> Unit,
     ): Map<String, Map<Int, String>> {
-        val pageImages = images.filterKeys { it in pages }
+        val pageImages = images.filterKeys { it in pages }.takeIf { readsImages }.orEmpty()
         val input = buildJsonObject {
             pages.forEach { (name, page) ->
                 putJsonObject(name) {
@@ -149,7 +149,11 @@ abstract class LanguageModelTranslator(private val language: TargetLanguage) : P
                 }
             }
         }
-        val prompt = systemPrompt(CORRECT_TEXT_PROMPT, series, emptyMap())
+        val prompt = systemPrompt(
+            if (pageImages.isEmpty()) CORRECT_TEXT_ONLY_PROMPT else CORRECT_TEXT_PROMPT,
+            series,
+            emptyMap(),
+        )
         val output = try {
             request(prompt, input.toString(), pageImages, onRetry, CORRECT_TEXT_SCHEMA)
         } catch (e: TruncatedReplyException) {
@@ -296,6 +300,14 @@ abstract class LanguageModelTranslator(private val language: TargetLanguage) : P
             You fix OCR mistakes in comic lettering. You'll receive page images, each after its file name, and a JSON object mapping each file name to numbered blocks of the English text that OCR read on that page; each block is one speech bubble or caption.
 
             For each block, return its text as it is actually lettered on the page image: fix misread letters (D read for P, 0 for O, 2 for Z or ?), words run together or split, lines OCR skipped inside the same bubble, and punctuation. Keep the text in English and in the same case as lettered; never translate, rephrase, or move text between blocks. If a block is not lettering (sound effects drawn in the art, signs, noise), return it unchanged.
+
+            Under "pages", return an entry per page with its file name as "page" and, under "blocks", each block's number as "n" and its corrected "text".
+        """.trimIndent()
+
+        private val CORRECT_TEXT_ONLY_PROMPT = """
+            You fix OCR mistakes in comic lettering. You'll receive a JSON object mapping each page's file name to numbered blocks of the English text that OCR read on that page; each block is one speech bubble or caption.
+
+            For each block, return its text as it is most likely lettered, judging from the context, the series and how English reads: fix misread letters (D read for P, 0 for O, 2 for Z or ?), words run together or split, and punctuation. Keep the text in English and in the same case as lettered; never translate, rephrase, or move text between blocks. If a block is not lettering (sound effects, signs, noise) or you can't tell what it says, return it unchanged.
 
             Under "pages", return an entry per page with its file name as "page" and, under "blocks", each block's number as "n" and its corrected "text".
         """.trimIndent()

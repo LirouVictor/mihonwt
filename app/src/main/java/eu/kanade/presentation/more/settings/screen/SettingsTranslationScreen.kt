@@ -35,11 +35,14 @@ data object SettingsTranslationScreen : SearchableSettings {
         val context = LocalContext.current
         val translationPreferences = remember { context.appGraph.translationPreferences }
         val service by translationPreferences.service.collectAsState()
-        val correctsText by translationPreferences.correctTextWithGemini.collectAsState()
+        val correctsText by translationPreferences.correctText.collectAsState()
+        val reviewService by translationPreferences.reviewService.collectAsState()
         val engine by translationPreferences.ocrEngine.collectAsState()
         val language by translationPreferences.targetLanguage.collectAsState()
         val bubbleFinder by translationPreferences.bubbleFinder.collectAsState()
         val geminiTranslates = service == TranslationService.GEMINI
+        val groqReviews = reviewService == TranslationService.GROQ
+        val reviews = correctsText && !geminiTranslates
 
         var pickingModelFor by remember { mutableStateOf<TranslationService?>(null) }
         pickingModelFor?.let { picked ->
@@ -79,9 +82,8 @@ data object SettingsTranslationScreen : SearchableSettings {
         }
         val summary = listOfNotNull(
             engineNames.getValue(engine),
-            stringResource(WTMR.strings.translation_settings_gemini_review).takeIf {
-                correctsText && !geminiTranslates
-            },
+            stringResource(WTMR.strings.translation_settings_review, if (groqReviews) "Groq" else "Gemini")
+                .takeIf { reviews },
             serviceNames.getValue(service),
             language.displayName,
         ).joinToString(" → ")
@@ -130,15 +132,34 @@ data object SettingsTranslationScreen : SearchableSettings {
                     ),
                     // Gemini translating already reads the pages, so it would only correct what it then translates
                     Preference.PreferenceItem.SwitchPreference(
-                        preference = translationPreferences.correctTextWithGemini,
-                        title = stringResource(WTMR.strings.pref_correct_text_with_gemini),
-                        subtitle = stringResource(WTMR.strings.pref_correct_text_with_gemini_summary),
+                        preference = translationPreferences.correctText,
+                        title = stringResource(WTMR.strings.pref_correct_text),
+                        subtitle = stringResource(WTMR.strings.pref_correct_text_summary),
                         visible = !geminiTranslates,
+                    ),
+                    Preference.PreferenceItem.ListPreference(
+                        preference = translationPreferences.reviewService,
+                        entries = mapOf(TranslationService.GEMINI to "Gemini", TranslationService.GROQ to "Groq"),
+                        title = stringResource(WTMR.strings.pref_review_service),
+                        subtitleProvider = { _, _ ->
+                            if (groqReviews) {
+                                stringResource(WTMR.strings.pref_review_service_groq_summary)
+                            } else {
+                                stringResource(WTMR.strings.pref_review_service_gemini_summary)
+                            }
+                        },
+                        visible = reviews,
+                    ),
+                    Preference.PreferenceItem.SwitchPreference(
+                        preference = translationPreferences.reviewWithImages,
+                        title = stringResource(WTMR.strings.pref_review_with_images),
+                        subtitle = stringResource(WTMR.strings.pref_review_with_images_summary),
+                        visible = reviews && !groqReviews,
                     ),
                 ) + serviceItems(
                     translationPreferences,
-                    TranslationService.GEMINI,
-                    visible = correctsText && !geminiTranslates,
+                    if (groqReviews) TranslationService.GROQ else TranslationService.GEMINI,
+                    visible = reviews,
                     onPickModel = { pickingModelFor = it },
                 ),
             ),

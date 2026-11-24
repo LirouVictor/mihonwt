@@ -55,11 +55,22 @@ class TranslationPreferences(
     )
 
     /**
-     * Whether Gemini, given the page images, fixes the text OCR read before a translator that can't see the pages
+     * Whether a language model, [reviewService], fixes the text OCR read before a translator that can't see the pages
      * translates it.
      */
-    val correctTextWithGemini: Preference<Boolean> =
-        preferenceStore.getBoolean("translation_correct_text_with_gemini", false)
+    val correctText: Preference<Boolean> = preferenceStore.getBoolean("translation_correct_text_with_gemini", false)
+
+    /** What reviews the text when [correctText] is on: [TranslationService.GEMINI] or [TranslationService.GROQ]. */
+    val reviewService: Preference<TranslationService> = preferenceStore.getEnum(
+        "translation_review_service",
+        TranslationService.GEMINI,
+    )
+
+    /**
+     * Whether Gemini gets the page images to review the text. Without them it fixes what context tells, not sound
+     * effects or text OCR garbled. Groq's models review text only.
+     */
+    val reviewWithImages: Preference<Boolean> = preferenceStore.getBoolean("translation_review_with_images", true)
 
     val translateOnDownload: Preference<Boolean> = preferenceStore.getBoolean("translation_on_download", false)
 
