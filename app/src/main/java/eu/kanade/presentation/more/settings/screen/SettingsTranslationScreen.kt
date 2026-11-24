@@ -205,6 +205,11 @@ data object SettingsTranslationScreen : SearchableSettings {
                         title = stringResource(WTMR.strings.pref_translate_on_download),
                         subtitle = stringResource(WTMR.strings.pref_translate_on_download_summary),
                     ),
+                    Preference.PreferenceItem.SwitchPreference(
+                        preference = translationPreferences.translateAhead,
+                        title = stringResource(WTMR.strings.pref_translate_ahead),
+                        subtitle = stringResource(WTMR.strings.pref_translate_ahead_summary),
+                    ),
                 ),
             ),
         )
