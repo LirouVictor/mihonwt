@@ -95,6 +95,7 @@ import tachiyomi.domain.library.service.LibraryPreferences
 import tachiyomi.domain.manga.interactor.GetManga
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.source.service.SourceManager
+import tachiyomi.domain.translation.TranslationPreferences
 import tachiyomi.source.local.image.LocalCoverManager
 import tachiyomi.source.local.isLocal
 import kotlin.time.Clock
@@ -132,6 +133,7 @@ class ReaderViewModel(
     private val chapterCache: ChapterCache,
     private val downloadCache: DownloadCache,
     private val translationManager: TranslationManager,
+    private val translationPreferences: TranslationPreferences,
     private val getExcludedScanlators: GetExcludedScanlators,
 ) : ViewModel() {
 
@@ -586,6 +588,7 @@ class ReaderViewModel(
 
     /** Translates the next chapter while a translated one is read, so it opens already translated. */
     private fun translateNextChapter(pages: List<ReaderPage>) {
+        if (!translationPreferences.translateAhead.get()) return
         if (pages.none { it.translation != null }) return
         val manga = manga ?: return
         val nextChapter = state.value.viewerChapters?.nextChapter?.chapter ?: return

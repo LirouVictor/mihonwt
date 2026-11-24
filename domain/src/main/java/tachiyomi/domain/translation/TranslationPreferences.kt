@@ -74,6 +74,9 @@ class TranslationPreferences(
 
     val translateOnDownload: Preference<Boolean> = preferenceStore.getBoolean("translation_on_download", false)
 
+    /** Whether the next chapter is translated once half of a translated one has been read. */
+    val translateAhead: Preference<Boolean> = preferenceStore.getBoolean("translation_ahead", true)
+
     val showTranslations: Preference<Boolean> = preferenceStore.getBoolean("translation_show_in_reader", true)
 
     /** Whether the reader keeps the original lettering and shows a bubble's translation only when it is tapped. */
