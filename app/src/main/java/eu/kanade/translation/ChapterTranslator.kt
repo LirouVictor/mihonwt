@@ -80,6 +80,7 @@ import eu.kanade.translation.recognizer.withoutStrayMarks
 import eu.kanade.translation.recognizer.wordOf
 import eu.kanade.translation.translator.GeminiTranslator
 import eu.kanade.translation.translator.LanguageModelTranslator
+import eu.kanade.translation.translator.OpenAiCompatibleTranslator
 import eu.kanade.translation.translator.PageTranslator
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -322,11 +323,13 @@ class ChapterTranslator(
             val seenWords = provider.getSeenWords(mangaDir).toMutableMap()
             val readWords = ConcurrentHashMap.newKeySet<String>()
             // A translator that reads the pages fixes OCR's mistakes itself
-            val correctors = if (!translator.readsImages && translationPreferences.correctTextWithGemini.get()) {
+            val correctors = if (!translator.readsImages && translationPreferences.correctText.get()) {
                 reviewers()
             } else {
                 emptyList()
             }
+            val reviewsImages = correctors.any { it.readsImages } && translationPreferences.reviewWithImages.get()
+            times.reviewer = reviewerName(reviewsImages)
             val findsText = translator is LanguageModelTranslator &&
                 translator.readsImages &&
                 translationPreferences.bubbleFinder.get() == BubbleFinder.GEMINI
@@ -343,7 +346,7 @@ class ChapterTranslator(
                         cached.forEach { recognized.send(it.toPair()) }
                         cached
                     } else {
-                        val pageImages = images.takeIf { translator.readsImages || correctors.isNotEmpty() }
+                        val pageImages = images.takeIf { translator.readsImages || reviewsImages }
                         val detector = bubbleDetector().takeUnless { findsText }
                         val ocr = paddleOcr()
                         // Baberu only rereads bubbles the detector found
@@ -406,7 +409,9 @@ class ChapterTranslator(
                     val title = translation.manga.title
                     val known = results.withLock { glossary.toMap() }
                     if (correctors.isNotEmpty()) {
-                        times.correct.measure { correctText(correctors, batch, title, images, times) }
+                        times.correct.measure {
+                            correctText(correctors, batch, title, images.takeIf { reviewsImages }.orEmpty(), times)
+                        }
                     }
                     val terms = times.translate.measure {
                         var foundTerms = emptyMap<String, String>()
@@ -519,6 +524,7 @@ class ChapterTranslator(
                             times.corrected.get(),
                             times.correctable.get(),
                             times.correct.total.inWholeMilliseconds.seconds(),
+                            times.reviewer,
                         ),
                     )
                 }
@@ -538,6 +544,7 @@ class ChapterTranslator(
                             times.correctFailed.get(),
                             times.correctBatches.get(),
                             error,
+                            times.reviewer,
                         ),
                     )
                 }
@@ -601,19 +608,35 @@ class ChapterTranslator(
     }
 
     /**
-     * Returns the Gemini models that review OCR's text, each tried when the one before is overloaded or out of quota:
-     * the chosen one, then [REVIEW_FALLBACK_MODEL], which answered in seconds while larger models were overloaded. A
-     * failed review only leaves OCR's text, so the last one waits less on an overloaded server than translation does.
+     * Returns the models that review OCR's text, each tried when the one before is overloaded or out of quota. For
+     * Gemini, the chosen one, then [REVIEW_FALLBACK_MODEL], which answered in seconds while larger models were
+     * overloaded; a failed review only leaves OCR's text, so the last one waits less on an overloaded server than
+     * translation does. For Groq, its chosen model.
      */
-    private fun reviewers(): List<GeminiTranslator> {
-        val apiKey = ApiKeyCipher.decrypt(translationPreferences.apiKey(TranslationService.GEMINI).get())
-        val model = translationPreferences.model(TranslationService.GEMINI).get()
+    private fun reviewers(): List<LanguageModelTranslator> {
+        val service = reviewService()
+        val apiKey = ApiKeyCipher.decrypt(translationPreferences.apiKey(service).get())
+        val model = translationPreferences.model(service).get()
         val language = translationPreferences.targetLanguage.get()
         if (apiKey.isBlank() || model.isBlank()) return emptyList()
+        if (service == TranslationService.GROQ) {
+            return listOf(OpenAiCompatibleTranslator(service.baseUrl!!, apiKey, model, language))
+        }
         val models = listOf(model, REVIEW_FALLBACK_MODEL).distinct()
         return models.mapIndexed { i, it ->
             GeminiTranslator(apiKey, it, language, if (i == models.lastIndex) REVIEW_RETRY_DELAYS else emptyList())
         }
+    }
+
+    private fun reviewService() = translationPreferences.reviewService.get()
+        .takeIf { it == TranslationService.GROQ } ?: TranslationService.GEMINI
+
+    /** The service and model that review the text, as the chapter menu shows them. */
+    private fun reviewerName(withImages: Boolean): String {
+        val service = reviewService()
+        val name = (if (service == TranslationService.GROQ) "Groq" else "Gemini") +
+            " (${translationPreferences.model(service).get()})"
+        return if (withImages) name else context.stringResource(WTMR.strings.translation_reviewer_text_only, name)
     }
 
     private fun createTranslator(): PageTranslator {
@@ -900,6 +923,9 @@ class ChapterTranslator(
 
         @Volatile
         var correctUnavailable = false
+
+        @Volatile
+        var reviewer = "-"
 
         @Volatile
         var ocrEngine = "-"
